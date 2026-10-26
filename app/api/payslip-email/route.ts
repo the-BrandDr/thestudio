@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       mode: "ready",
       subject: `Lavie Studios Payslip (${period}) — ${staffName}`,
       mailto: `mailto:${email}?subject=${encodeURIComponent(`Lavie Studios Payslip (${period}) —${staffName}`)}&body=${encodeURIComponent(
-        `Hello ${staffName} (${staffCode}),\n\nYour payslip for ${period} has been processed:\n\nGross Salary: NGN${gross.toLocaleString()}\nPAYE Tax: -NGN ${Number(payeTax \vert{}\vert{} 0).toLocaleString()}\nNet Pay Disbursed: NGN${Number(netPay || 0).toLocaleString()}\nBank: ${bankName \vert{}\vert{} "N/A"} (${accountNo || "N/A"})\n\nView your full printable payslip inside the Lavie Studios Portal.\n\n— Lavie Studios Finance`
+        `Hello ${staffName} (${staffCode}),\n\nYour payslip for ${period} has been processed:\n\nGross Salary: NGN${gross.toLocaleString()}\nPAYE Tax: -NGN ${Number(payeTax |||| 0).toLocaleString()}\nNet Pay Disbursed: NGN${Number(netPay || 0).toLocaleString()}\nBank: ${bankName |||| "N/A"} (${accountNo || "N/A"})\n\nView your full printable payslip inside the Lavie Studios Portal.\n\n— Lavie Studios Finance`
       )}`,
     });
   } catch (err: any) {
