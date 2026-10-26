@@ -70,6 +70,7 @@ export default function HRAndWorkspaceSuite() {
     bank_name: "",
     bank_account_name: "",
     bank_account_no: "",
+    temporary_password: "Lavie@2026",
   });
   const [onboardStatus, setOnboardStatus] = React.useState("");
 
@@ -219,6 +220,22 @@ export default function HRAndWorkspaceSuite() {
 
   // 2. Onboard Staff
   const handleOnboardStaff = async (e: React.FormEvent) => {
+    try {
+      await fetch("/api/admin/onboard-staff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newStaff.email,
+          password: (newStaff as any).temporary_password || "Lavie@2026",
+          first_name: newStaff.first_name,
+          last_name: newStaff.last_name,
+          role: newStaff.role,
+          hierarchy_level: newStaff.hierarchy_level,
+          department: newStaff.department,
+          job_title: newStaff.job_title,
+        }),
+      });
+    } catch (_) {}
     e.preventDefault();
     setSaving(true);
     setOnboardStatus("");
