@@ -9,6 +9,58 @@ import FormattedDate from "@/components/admin/formatted-date";
 
 export default function AdminInquiriesPage() {
   const supabase = createClient();
+  const [subscribers, setSubscribers] = React.useState<any[]>([]);
+  const [canManageNewsletter, setCanManageNewsletter] = React.useState(true);
+
+  React.useEffect(() => {
+    async function loadNewsletterAndAccess() {
+      const { data: subData } = await supabase
+        .from("newsletter_subscribers")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (subData) setSubscribers(subData);
+
+      const { data: authData } = await supabase.auth.getUser();
+      const email = authData?.user?.email?.toLowerCase();
+      if (email && email !== "hipheholluhayegboyin@gmail.com") {
+        const { data: prof } = await supabase.from("staff_profiles").select("*").eq("email", email).maybeSingle();
+        if (prof) {
+          const perms: string[] = prof.permissions || [prof.role];
+          const allowed =
+            prof.staff_id === "LS-01" ||
+            prof.role === "super_admin" ||
+            perms.includes("super_admin") ||
+            perms.includes("chief_strategist") ||
+            perms.includes("newsletter") ||
+            perms.includes("inquiries");
+          setCanManageNewsletter(allowed);
+        }
+      }
+    }
+    loadNewsletterAndAccess();
+  }, [supabase]);
+
+  const exportSubscribersCSV = () => {
+    if (!canManageNewsletter) {
+      alert("View-Only Executive Access: Exporting or modifying subscriber lists requires 'Newsletter & PR' or 'Inquiries' clearance.");
+      return;
+    }
+    const rows = [
+      ["Email", "Subscribed At", "Status"],
+      ...subscribers.map((s) => [
+        s.email || "",
+        s.created_at ? new Date(s.created_at).toISOString().split("T")[0] : "",
+        s.status || "active",
+      ]),
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map((r) => r.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `lavie-studios-newsletter-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "activity">("inquiries");
   const [inquiries, setInquiries] = React.useState<any[]>([]);
   const [quotes, setQuotes] = React.useState<any[]>([]);
@@ -606,6 +658,49 @@ export default function AdminInquiriesPage() {
           </div>
         </div>
       )}
+      {/* NEWSLETTER SUBSCRIBERS PANEL */}
+      <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4 mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] font-bold">
+              Audience & Dispatch
+            </span>
+            <h3 className="font-display text-lg font-bold">
+              Newsletter Subscribers ({subscribers.length})
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              Accessible to Executives (Oversight), Chief Strategist, and staff with Newsletter & PR or Inquiries clearance.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={exportSubscribersCSV}
+            className="px-4 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold uppercase tracking-wider hover:opacity-90 transition cursor-pointer"
+          >
+            Export CSV ({subscribers.length})
+          </button>
+        </div>
+
+        {subscribers.length === 0 ? (
+          <div className="p-8 rounded-2xl bg-[var(--bg-main)] text-center text-xs text-[var(--text-muted)]">
+            No newsletter subscribers recorded yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
+            {subscribers.map((sub, idx) => (
+              <div
+                key={sub.id || idx}
+                className="px-3.5 py-2.5 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex items-center justify-between gap-2"
+              >
+                <span className="text-xs font-mono truncate">{sub.email}</span>
+                <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-[#c7cb2d]/15 text-[#c7cb2d] shrink-0">
+                  {sub.status || "Subscribed"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

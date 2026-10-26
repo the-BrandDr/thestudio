@@ -19,6 +19,18 @@ const HIERARCHY_LEVELS = [
   "L6 - Department Head",
   "L7 - Executive / Director",
 ];
+const STUDIO_DEPARTMENTS = [
+  "Executive & Strategy",
+  "Design & Creative",
+  "Spatial & Event Production",
+  "Out-of-Home (OOH) & Media",
+  "Digital, UI/UX & Engineering",
+  "Motion, Video & Photography",
+  "Client Services & Growth",
+  "Operations, Logistics & Procurement",
+  "Finance, HR & Administration"
+];
+
 
 const ALL_PERMISSIONS = [
   { id: "executive", label: "Executive / Director" },
@@ -28,7 +40,8 @@ const ALL_PERMISSIONS = [
   { id: "hr", label: "HR Management" },
   { id: "finance", label: "Finance Desk" },
   { id: "portfolio", label: "Portfolio CMS" },
-  { id: "inquiries", label: "Inquiries" },
+  { id: "inquiries", label: "Inquiries & Leads" },
+  { id: "newsletter", label: "Newsletter & PR" },
   { id: "staff", label: "Standard Staff" },
 ];
 
