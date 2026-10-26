@@ -228,8 +228,9 @@ export default function HRAndWorkspaceSuite() {
     const tempPass = (newStaff as any).temporary_password || "Lavie@2026";
     const cleanEmail = newStaff.email.trim().toLowerCase();
 
+    let provisionedUserId: string | null = null;
     try {
-      await fetch("/api/admin/onboard-staff", {
+      const authRes = await fetch("/api/admin/onboard-staff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -243,10 +244,14 @@ export default function HRAndWorkspaceSuite() {
           job_title: newStaff.job_title,
         }),
       });
+      const authJson = await authRes.json().catch(() => ({}));
+      if (authJson?.user_id) {
+        provisionedUserId = authJson.user_id;
+      }
     } catch (_) {}
 
     const fullRecord: Record<string, any> = {
-      id: crypto.randomUUID(),
+      id: provisionedUserId || crypto.randomUUID(),
       staff_id: (newStaff.staff_id || "LS-" + Math.floor(10 + Math.random() * 89)).trim().toUpperCase(),
       first_name: newStaff.first_name.trim(),
       last_name: newStaff.last_name.trim(),
@@ -267,7 +272,7 @@ export default function HRAndWorkspaceSuite() {
       status: "active",
     };
 
-    let { error } = await supabase.from("staff_profiles").insert(fullRecord);
+    let { error } = await supabase.from("staff_profiles").upsert(fullRecord, { onConflict: "id" });
 
     // If email already exists, update existing record instead of failing
     if (error && error.message?.toLowerCase().includes("duplicate")) {
