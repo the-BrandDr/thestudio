@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@layer base {
+  /* LIGHT MODE (Editorial Warm Alabaster Canvas) */
+  :root {
+    --bg-main: #FAF4EE;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F5EFEB;
+    --border-subtle: rgba(35, 31, 32, 0.08);
+    --border-strong: rgba(35, 31, 32, 0.16);
+    --text-primary: #1C1D22;
+    --text-muted: #66625D;
+    --text-dim: #99938D;
+
+    /* Palette Accents */
+    --brand-primary: #E55130;
+    --brand-lime: #C7CB2D;
+    --brand-tan: #DCB58A;
+    --brand-amber: #F2A01E;
+    --brand-dark: #1C1D22;
+  }
+
+  /* DARK MODE (Signature Lavie Charcoal/Obsidian) */
+  .dark {
+    --bg-main: #101012;
+    --bg-card: #16161A;
+    --bg-card-hover: #1C1D22;
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --text-primary: #FAF4EE;
+    --text-muted: #A39E99;
+    --text-dim: #6E6964;
+
+    /* Palette Accents */
+    --brand-primary: #E55130;
+    --brand-lime: #C7CB2D;
+    --brand-tan: #DCB58A;
+    --brand-amber: #F2A01E;
+    --brand-dark: #1C1D22;
+  }
+
+  * {
+    border-color: var(--border-subtle);
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+
+/* Strictly enforce logo swapping based on the theme toggle */
+html:not(.dark) .show-in-dark { display: none !important; }
+html.dark .show-in-light { display: none !important; }
