@@ -171,12 +171,32 @@ export default function HRAndWorkspaceSuite() {
     loadWorkspaceData();
   }, [loadWorkspaceData]);
 
-  const myPerms: string[] = currentUser?.permissions || [currentUser?.role];
-  const isSuper = true;
-  const isChiefStrategist = true;
-  const isHeadOfFinance = currentUser?.role === "finance" || (myPerms.includes("head_of_finance") && currentUser?.staff_id !== "LS-01");
-  const isHeadOfOps = myPerms.includes("head_of_operations") && currentUser?.staff_id !== "LS-01";
-  const isHR = true;
+    const myPerms: string[] = currentUser?.permissions || (currentUser?.role ? [currentUser.role] : []);
+  const isPrimaryFounder = !currentUser || currentUser?.staff_id === "LS-01" || currentUser?.email?.toLowerCase() === "hipheholluhayegboyin@gmail.com";
+  const isExecutive =
+    isPrimaryFounder ||
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "executive" ||
+    myPerms.includes("super_admin") ||
+    myPerms.includes("executive") ||
+    myPerms.includes("chief_strategist") ||
+    String(currentUser?.hierarchy_level || "").startsWith("L7");
+
+  // Write permissions for HR: only Primary Founder / Chief Strategist / granted HR clearance can modify HR data
+  const canEditHR =
+    isPrimaryFounder ||
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "hr" ||
+    myPerms.includes("super_admin") ||
+    myPerms.includes("chief_strategist") ||
+    myPerms.includes("hr");
+
+  // Executives can view everything, but modification actions check department clearance
+  const isSuper = canEditHR;
+  const isChiefStrategist = isPrimaryFounder || myPerms.includes("chief_strategist");
+  const isHeadOfFinance = currentUser?.role === "finance" || myPerms.includes("head_of_finance") || myPerms.includes("finance");
+  const isHeadOfOps = isPrimaryFounder || myPerms.includes("head_of_operations");
+  const isHR = canEditHR;
 
   const togglePermission = (list: string[], perm: string) =>
     list.includes(perm) ? list.filter((p) => p !== perm) : [...list, perm];
@@ -189,6 +209,7 @@ export default function HRAndWorkspaceSuite() {
 
   // 1. Save Staff Edits
   const handleSaveStaffEdit = async (e: React.FormEvent) => {
+    if (!canEditHR) { e.preventDefault(); alert("View-Only Executive Access: Only HR Management or Chief Strategist clearance can modify staff records."); return; }
     e.preventDefault();
     if (!editingStaff) return;
     setSaving(true);
@@ -221,6 +242,7 @@ export default function HRAndWorkspaceSuite() {
 
   // 2. Onboard Staff
   const handleOnboardStaff = async (e: React.FormEvent) => {
+    if (!canEditHR) { e.preventDefault(); alert("View-Only Executive Access: Only HR Management or Chief Strategist clearance can onboard staff."); return; }
     e.preventDefault();
     setSaving(true);
     setOnboardStatus("Provisioning portal login & staff record...");

@@ -43,6 +43,26 @@ function computePayeWithRelief(monthlyGross: number, monthlyRelief: number = 0):
 
 export default function EnterpriseFinanceSuite() {
   const supabase = createClient();
+  const [execViewOnly, setExecViewOnly] = React.useState(false);
+  React.useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      const email = data?.user?.email?.toLowerCase();
+      if (!email || email === "hipheholluhayegboyin@gmail.com") return;
+      const { data: prof } = await supabase.from("staff_profiles").select("*").eq("email", email).maybeSingle();
+      if (prof) {
+        const perms: string[] = prof.permissions || [prof.role];
+        const hasFinanceWrite =
+          prof.staff_id === "LS-01" ||
+          prof.role === "super_admin" ||
+          prof.role === "finance" ||
+          perms.includes("super_admin") ||
+          perms.includes("chief_strategist") ||
+          perms.includes("head_of_finance") ||
+          perms.includes("finance");
+        if (!hasFinanceWrite) setExecViewOnly(true);
+      }
+    });
+  }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<"overview" | "sales" | "billing" | "receipts" | "payroll" | "tax">("overview");
   const [projectFilter, setProjectFilter] = React.useState<"all" | "ongoing" | "pending" | "completed">("all");
   const [saving, setSaving] = React.useState(false);
@@ -906,7 +926,7 @@ export default function EnterpriseFinanceSuite() {
       {/* TAB 2: UNIFIED PROJECTS & SALES (ONGOING, PENDING, COMPLETED + PAID INVOICES) */}
       {activeTab === "sales" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 print:hidden">
-          <form onSubmit={handleRecordSale} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit border border-[var(--border-subtle)]/60">
+          <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleRecordSale(e); }} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit border border-[var(--border-subtle)]/60">
             <h2 className="font-display text-base font-bold">Record Project</h2>
             <div>
               <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Project Title</label>
@@ -1035,7 +1055,7 @@ export default function EnterpriseFinanceSuite() {
       {/* TAB 3: BILLING */}
       {activeTab === "billing" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 print:hidden">
-          <form onSubmit={handleCreateInvoice} className="lg:col-span-5 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
+          <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleCreateInvoice(e); }} className="lg:col-span-5 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
             <h2 className="font-display text-base font-bold">Create Invoice</h2>
 
             <div className="grid grid-cols-2 gap-2.5">
@@ -1249,7 +1269,7 @@ export default function EnterpriseFinanceSuite() {
       {/* TAB 4: RECEIPTS PANEL (GENERATE FROM INVOICE OR MANUALLY) */}
       {activeTab === "receipts" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 print:hidden">
-          <form onSubmit={handleCreateManualReceipt} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3 h-fit border border-[var(--border-subtle)]/60">
+          <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleCreateManualReceipt(e); }} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3 h-fit border border-[var(--border-subtle)]/60">
             <h2 className="font-display text-base font-bold">Issue Official Receipt</h2>
 
             <div>
@@ -1525,7 +1545,7 @@ export default function EnterpriseFinanceSuite() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <form onSubmit={handleFileTaxRelief} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
+            <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleFileTaxRelief(e); }} className="lg:col-span-4 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
               <h3 className="font-display text-sm font-bold">File Staff Tax Relief</h3>
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Relief Type</label>
@@ -1581,7 +1601,7 @@ export default function EnterpriseFinanceSuite() {
 
       {receiptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
-          <form onSubmit={handleConfirmPaymentAndReceipt} className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl p-6 w-full max-w-md space-y-4">
+          <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleConfirmPaymentAndReceipt(e); }} className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl p-6 w-full max-w-md space-y-4">
             <h3 className="font-display text-base font-bold">Process Payment & Official Receipt</h3>
             <div>
               <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Amount Received Now (₦)</label>
