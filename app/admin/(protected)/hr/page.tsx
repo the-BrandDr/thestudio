@@ -19,17 +19,7 @@ const HIERARCHY_LEVELS = [
   "L6 - Department Head",
   "L7 - Executive / Director",
 ];
-const STUDIO_DEPARTMENTS = [
-  "Executive & Strategy",
-  "Design & Creative",
-  "Spatial & Event Production",
-  "Out-of-Home (OOH) & Media",
-  "Digital, UI/UX & Engineering",
-  "Motion, Video & Photography",
-  "Client Services & Growth",
-  "Operations, Logistics & Procurement",
-  "Finance, HR & Administration"
-];
+
 
 
 const ALL_PERMISSIONS = [
@@ -46,6 +36,100 @@ const ALL_PERMISSIONS = [
 ];
 
 const QUICK_EMOJIS = ["👍", "✅", "🔥", "👏", "🎯", "🚀", "🙌", "📌", "⚡", "💡", "🤝", "🎉"];
+
+
+const DEPARTMENT_JOB_TITLES: Record<string, string[]> = {
+  "Executive & Board Governance": [
+    "Managing Director / CEO",
+    "Executive Director",
+    "Chief Operating Officer (COO)",
+    "Non-Executive Director",
+    "Board Secretary & Legal Counsel",
+    "Executive Assistant to the Board",
+  ],
+  "Brand Strategy & Positioning": [
+    "Chief Strategist",
+    "Head of Brand Strategy",
+    "Senior Brand Strategist",
+    "Brand & Market Strategist",
+    "Brand Architecture & Naming Specialist",
+    "Consumer Research & Insights Analyst",
+  ],
+  "Brand Communications & PR": [
+    "Head of Brand Communications",
+    "Brand Communications & PR Manager",
+    "Senior Copywriter & Verbal Identity Lead",
+    "Content & Storytelling Strategist",
+    "Public Relations & Media Liaison",
+    "Social Media & Community Manager",
+    "Newsletter & Editorial Specialist",
+  ],
+  "Design & Creative": [
+    "Creative Director",
+    "Art Director",
+    "Senior Brand Identity Designer",
+    "Brand & Graphic Designer",
+    "Print & Packaging Designer",
+    "Presentation & Deck Specialist",
+    "Design Intern",
+  ],
+  "Spatial & Event Production": [
+    "Head of Spatial & Event Production",
+    "Spatial & Environmental Designer",
+    "Stage & Set Architect",
+    "Event Branding Coordinator",
+    "Production & Lighting Technician",
+    "On-Site Installation Lead",
+  ],
+  "Out-of-Home (OOH) & Media": [
+    "Head of OOH & Media",
+    "OOH Media Strategist",
+    "Billboard & Inventory Manager",
+    "Regulatory & Signage Compliance Officer",
+    "Media Buyer & Planner",
+  ],
+  "Digital, UI/UX & Engineering": [
+    "Lead Product & UI/UX Designer",
+    "UI/UX Designer",
+    "Full-Stack Software Engineer",
+    "Frontend Web Developer",
+    "Backend & Systems Engineer",
+    "Digital Product Manager",
+  ],
+  "Motion, Video & Photography": [
+    "Motion Graphics Lead",
+    "2D/3D Motion Designer",
+    "Video Director & Editor",
+    "3D Spatial Visualizer",
+    "Event & Brand Photographer",
+    "Sound & Multimedia Specialist",
+  ],
+  "Client Services & Growth": [
+    "Head of Client Services & Growth",
+    "Business Development Manager",
+    "Senior Account Executive",
+    "Client Relations & Proposals Officer",
+    "Sponsorships & Partnerships Lead",
+  ],
+  "Operations, Logistics & Procurement": [
+    "Head of Operations",
+    "Operations & Studio Manager",
+    "Procurement & Vendor Coordinator",
+    "Fabrication & Print Supervisor",
+    "Logistics & Inventory Officer",
+    "Facility & Power Systems Technician",
+  ],
+  "Finance, HR & Administration": [
+    "Head of Finance",
+    "Accountant & Finance Officer",
+    "Payroll & Tax Compliance Specialist",
+    "HR & People Operations Manager",
+    "Administrative & Compliance Officer",
+    "Front Desk & Studio Coordinator",
+  ],
+};
+
+const STUDIO_DEPARTMENTS = Object.keys(DEPARTMENT_JOB_TITLES);
 
 export default function HRAndWorkspaceSuite() {
   const supabase = createClient();
@@ -64,6 +148,8 @@ export default function HRAndWorkspaceSuite() {
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [editingStaff, setEditingStaff] = React.useState<any | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [isCustomNewJobTitle, setIsCustomNewJobTitle] = React.useState(false);
+  const [isCustomEditJobTitle, setIsCustomEditJobTitle] = React.useState(false);
 
   // Onboarding state
   const [newStaff, setNewStaff] = React.useState({
@@ -744,1373 +830,43 @@ export default function HRAndWorkspaceSuite() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Filter by name, ID (LS-01), level, department..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[var(--bg-card)] rounded-full pl-9 pr-4 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[#c7cb2d]"
-              />
-            </div>
-
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {["all", "active", "on_leave", "suspended", "terminated"].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase cursor-pointer transition ${
-                    statusFilter === st
-                      ? "bg-[var(--text-primary)] text-[var(--bg-main)] font-bold"
-                      : "bg-[var(--bg-card)] text-[var(--text-muted)]"
-                  }`}
-                >
-                  {st.replace("_", " ")}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredStaff.map((member) => {
-              const photo = member.passport_url || member.avatar_url;
-              const initials = `${member.first_name?.[0] || ""}${member.last_name?.[0] || ""}`.toUpperCase();
-              const perms: string[] = member.permissions || [member.role];
-
-              return (
-                <div key={member.id} className="p-5 rounded-3xl bg-[var(--bg-card)] flex flex-col justify-between space-y-4 border border-[var(--border-subtle)]/50">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold">
-                          {member.staff_id}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[var(--bg-main)] text-[var(--text-muted)]">
-                          {(member.hierarchy_level || "L3").split(" - ")[0]}
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono uppercase font-bold ${statusBadge(member.status)}`}>
-                        {member.status?.replace("_", " ")}
-                      </span>
-                    </div>
-
-                    <div className="flex items-start gap-3.5 mb-3">
-                      <div className="w-14 h-[72px] rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)] overflow-hidden shrink-0 flex items-center justify-center">
-                        {photo ? (
-                          <img src={photo} alt={member.first_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-xs font-bold uppercase text-[var(--text-muted)]">{initials}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-display text-sm font-bold text-[var(--text-primary)] truncate">
-                          {member.first_name} {member.last_name}
-                        </h3>
-                        <p className="text-xs font-semibold text-[#c7cb2d] truncate">
-                          {member.job_title || "Specialist"}
-                        </p>
-                        <p className="text-[10px] text-[var(--text-muted)] truncate">
-                          {member.department || "Executive"}
-                        </p>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {perms.slice(0, 4).map((p) => (
-                            <span key={p} className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded bg-[var(--bg-main)] text-[var(--text-dim)]">
-                              {p.replace(/_/g, " ")}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 p-3 rounded-2xl bg-[var(--bg-main)] text-[11px]">
-                      <div className="flex justify-between">
-                        <span className="text-[9px] font-mono uppercase text-[var(--text-dim)]">Bank</span>
-                        <span className="truncate max-w-[160px] text-[var(--text-muted)]">
-                          {member.bank_name ? `${member.bank_name} • ${member.bank_account_no || ""}` : "Not set"}
-                        </span>
-                      </div>
-                      {member.bank_account_name && (
-                        <div className="flex justify-between">
-                          <span className="text-[9px] font-mono uppercase text-[var(--text-dim)]">Account Name</span>
-                          <span className="truncate max-w-[160px] font-medium">{member.bank_account_name}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {isHR && (
-                    <button
-                      onClick={() => setEditingStaff({ ...member, permissions: member.permissions || [member.role] })}
-                      className="w-full py-2 rounded-xl bg-[var(--bg-main)] hover:bg-[var(--text-primary)] hover:text-[var(--bg-main)] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> Edit Personnel Record
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: ONBOARD NEW STAFF */}
-      {activeTab === "onboard" && isHR && (
-        <form onSubmit={handleOnboardStaff} className="bg-[var(--bg-card)] p-6 rounded-3xl max-w-4xl space-y-5">
-          <div className="flex items-center gap-4 pb-4 border-b border-[var(--border-subtle)]">
-            <PassportCropper
-              value={newStaff.passport_url}
-              onChange={(dataUrl) => setNewStaff({ ...newStaff, passport_url: dataUrl })}
-              initials="NEW"
-            />
-            <div>
-              <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">New Personnel</span>
-              <h2 className="font-display text-lg font-bold">Onboard Staff Member</h2>
-              <p className="text-[11px] text-[var(--text-muted)]">Click the passport frame on the left to upload & crop 3:4 photo.</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Staff ID</label>
-              <input
-                type="text"
-                required
-                value={newStaff.staff_id}
-                onChange={(e) => setNewStaff({ ...newStaff, staff_id: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">First Name</label>
-              <input
-                type="text"
-                required
-                value={newStaff.first_name}
-                onChange={(e) => setNewStaff({ ...newStaff, first_name: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Last Name</label>
-              <input
-                type="text"
-                required
-                value={newStaff.last_name}
-                onChange={(e) => setNewStaff({ ...newStaff, last_name: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Corporate Email</label>
-              <input
-                type="email"
-                required
-                value={newStaff.email}
-                onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })}
-                placeholder="name@studioslavie.com"
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
-                    Portal Temporary Password *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={(newStaff as any).temporary_password ?? "Lavie@2026"}
-                    onChange={(e) => setNewStaff({ ...newStaff, temporary_password: e.target.value } as any)}
-                    placeholder="e.g. Lavie@2026"
-                    className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2.5 text-xs font-mono"
-                  />
-                </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Hierarchy Grade</label>
-              <select
-                value={newStaff.hierarchy_level}
-                onChange={(e) => setNewStaff({ ...newStaff, hierarchy_level: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              >
-                {HIERARCHY_LEVELS.map((lvl) => (
-                  <option key={lvl} value={lvl}>{lvl}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Department</label>
-              <input
-                type="text"
-                required
-                value={newStaff.department}
-                onChange={(e) => setNewStaff({ ...newStaff, department: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Job Title</label>
-              <input
-                type="text"
-                required
-                value={newStaff.job_title}
-                onChange={(e) => setNewStaff({ ...newStaff, job_title: e.target.value })}
-                placeholder="e.g. Brand Designer"
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Monthly Salary (₦)</label>
-              <input
-                type="number"
-                value={newStaff.salary_amount}
-                onChange={(e) => setNewStaff({ ...newStaff, salary_amount: e.target.value })}
-                placeholder="150000"
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-[var(--bg-main)]">
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Bank Name</label>
-              <input
-                type="text"
-                value={newStaff.bank_name}
-                onChange={(e) => setNewStaff({ ...newStaff, bank_name: e.target.value })}
-                placeholder="UBA / Polaris Bank"
-                className="w-full bg-[var(--bg-card)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Bank Account Name</label>
-              <input
-                type="text"
-                value={newStaff.bank_account_name}
-                onChange={(e) => setNewStaff({ ...newStaff, bank_account_name: e.target.value })}
-                placeholder="Registered Account Name"
-                className="w-full bg-[var(--bg-card)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Number (NUBAN)</label>
-              <input
-                type="text"
-                maxLength={10}
-                value={newStaff.bank_account_no}
-                onChange={(e) => setNewStaff({ ...newStaff, bank_account_no: e.target.value })}
-                placeholder="10-digit NUBAN"
-                className="w-full bg-[var(--bg-card)] rounded-xl px-3 py-2 text-xs font-mono"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1.5">
-              Portal & Approval Clearances
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_PERMISSIONS.map((perm) => {
-                const active = newStaff.permissions.includes(perm.id);
-                return (
-                  <button
-                    type="button"
-                    key={perm.id}
-                    onClick={() => setNewStaff({ ...newStaff, permissions: togglePermission(newStaff.permissions, perm.id) })}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
-                      active ? "bg-[#c7cb2d] text-black" : "bg-[var(--bg-main)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {active && <Check className="w-3 h-3" />}
-                    {perm.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {onboardStatus && <p className="text-xs font-semibold text-[#c7cb2d]">{onboardStatus}</p>}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer"
-          >
-            {saving ? "Saving..." : "Onboard Personnel"}
-          </button>
-        </form>
-      )}
-
-      {/* TAB 3: 3-TIER LEAVE PORTAL */}
-      {activeTab === "leave" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <form onSubmit={handleApplyLeave} className="bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-base font-bold">Request Leave</h2>
-              <span className="text-[10px] font-mono text-[#c7cb2d]">Used: {myUsedLeaveDays}/20 days</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)] space-y-0.5">
-              <p>• Max Paid Leave: 4 Weeks (20 working days/yr) • Left: <strong>{remainingAnnualAllowance} days</strong></p>
-              <p>• Annual Leave: Max 2 Weeks (10 working days) per request</p>
-              <p>• Sick / Study / Compassionate: Max 3 working days per request</p>
-              {requestedDays > 0 && <p className="text-[#c7cb2d] font-bold">Selected Duration: {requestedDays} working day(s)</p>}
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Leave Type</label>
-              <select
-                value={leaveForm.leave_type}
-                onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              >
-                <option value="Annual Leave">Annual Leave</option>
-                <option value="Sick / Medical Leave">Sick / Medical Leave</option>
-                <option value="Study / Exam Leave">Study / Exam Leave</option>
-                <option value="Compassionate Leave">Compassionate Leave</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Start Date</label>
-                <input
-                  type="date"
-                  required
-                  value={leaveForm.start_date}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Return Date</label>
-                <input
-                  type="date"
-                  required
-                  value={leaveForm.end_date}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Relieving Officer</label>
-              <select
-                required
-                value={leaveForm.handover_staff}
-                onChange={(e) => setLeaveForm({ ...leaveForm, handover_staff: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              >
-                <option value="">-- Select Relieving Staff --</option>
-                {staffList
-                  .filter((s) => s.id !== currentUser?.id && s.status === "active")
-                  .map((s) => (
-                    <option key={s.id} value={`${s.first_name} ${s.last_name} (${s.staff_id})`}>
-                      {s.first_name} {s.last_name} ({s.staff_id} • {s.department})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Reason & Handover Notes</label>
-              <textarea
-                rows={3}
-                required
-                value={leaveForm.reason}
-                onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer"
-            >
-              Submit Leave Request
-            </button>
-          </form>
-
-          <div className="lg:col-span-2 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-base font-bold">Leave Approval Pipeline</h2>
-              <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                HR → Head of Operations → Chief Strategist
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {leaveList.length > 0 ? leaveList.map((lv) => (
-                <div key={lv.id} className="p-4 rounded-2xl bg-[var(--bg-main)] space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold">
-                        {lv.staff_code}
-                      </span>
-                      <span className="text-xs font-bold">{lv.staff_name}</span>
-                      <span className="text-xs text-[var(--text-muted)]">• {lv.leave_type}</span>
-                    </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold ${
-                      lv.status === "approved" ? "bg-[#c7cb2d]/15 text-[#c7cb2d]" :
-                      lv.status === "rejected" ? "bg-red-500/15 text-red-400" :
-                      "bg-amber-500/15 text-amber-400"
-                    }`}>
-                      {lv.status}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[var(--text-primary)]">{lv.reason}</p>
-                  <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                    {lv.start_date} → {lv.end_date} {lv.handover_staff ? `• Handover: ${lv.handover_staff}` : ""}
-                  </p>
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {approvalPill("1. HR", lv.hr_status || "pending", lv.hr_by)}
-                    {approvalPill("2. Head of Ops", lv.ops_status || "pending", lv.ops_by)}
-                    {approvalPill("3. Chief Strategist", lv.strategist_status || "pending", lv.strategist_by)}
-                  </div>
-
-                  {lv.status === "pending" && (
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-subtle)]/50">
-                      {isHR && (lv.hr_status || "pending") === "pending" && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "hr", "approved")}
-                            className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✓ HR Approve
-                          </button>
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "hr", "rejected")}
-                            className="px-2 py-1 rounded-lg bg-red-500/20 text-red-400 text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-
-                      {isHeadOfOps && (lv.ops_status || "pending") === "pending" && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "ops", "approved")}
-                            className="px-2.5 py-1 rounded-lg bg-[var(--text-primary)] text-[var(--bg-main)] font-bold text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✓ Ops Approve
-                          </button>
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "ops", "rejected")}
-                            className="px-2 py-1 rounded-lg bg-red-500/20 text-red-400 text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-
-                      {isChiefStrategist && (lv.strategist_status || "pending") === "pending" && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "strategist", "approved")}
-                            className="px-2.5 py-1 rounded-lg bg-[#c7cb2d]/20 text-[#c7cb2d] text-[10px] font-mono uppercase font-bold cursor-pointer"
-                          >
-                            ✓ Chief Strategist Sign-Off
-                          </button>
-                          <button
-                            onClick={() => handleLeaveStageApproval(lv, "strategist", "rejected")}
-                            className="px-2 py-1 rounded-lg bg-red-500/20 text-red-400 text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )) : (
-                <p className="text-xs text-[var(--text-muted)] py-8 text-center">No leave requests logged.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: DETAILED VOUCHERS */}
-      {activeTab === "vouchers" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <form onSubmit={handleRaiseVoucher} className="lg:col-span-5 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
-            <h2 className="font-display text-base font-bold">Raise Payment Voucher</h2>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Voucher Title</label>
-                <input
-                  type="text"
-                  required
-                  value={voucherForm.title}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, title: e.target.value })}
-                  placeholder="e.g. Print Run"
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Project / Client Ref</label>
-                <input
-                  type="text"
-                  value={voucherForm.project_ref}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, project_ref: e.target.value })}
-                  placeholder="Project Code"
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Category</label>
-                <select
-                  value={voucherForm.category}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, category: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                >
-                  <option value="Operational Expense">Operations</option>
-                  <option value="Rent & Facility Lease">Rent & Facility Lease</option>
-                  <option value="Electricity, Power & Fuel">Electricity, Power & Fuel</option>
-                  <option value="Staff Support & Welfare">Staff Support & Welfare</option>
-                  <option value="Adhoc Vendors Payment">Adhoc Vendors Payment</option>
-                  <option value="Print & Production">Print & Production</option>
-                  <option value="Software & Cloud">Software / Cloud</option>
-                  <option value="Client Logistics & Rigging">Client Logistics & Rigging</option>
-                  <option value="Equipment & Hardware">Equipment & Hardware</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Payment Method</label>
-                <select
-                  value={voucherForm.payment_method}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, payment_method: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                >
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Corporate Card">Corporate Card</option>
-                  <option value="Reimbursement">Staff Reimbursement</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-[var(--bg-main)] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase text-[var(--text-dim)] font-bold">Line Items</span>
-                <button
-                  type="button"
-                  onClick={() => setVoucherItems([...voucherItems, { item: "", qty: 1, unitPrice: 0 }])}
-                  className="text-[10px] font-mono text-[#c7cb2d] flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3 h-3" /> Add Item
-                </button>
-              </div>
-
-              {voucherItems.map((row, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Description"
-                    value={row.item}
-                    onChange={(e) => {
-                      const copy = [...voucherItems];
-                      copy[idx].item = e.target.value;
-                      setVoucherItems(copy);
-                    }}
-                    className="col-span-6 bg-[var(--bg-card)] rounded-lg px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={row.qty}
-                    onChange={(e) => {
-                      const copy = [...voucherItems];
-                      copy[idx].qty = Number(e.target.value);
-                      setVoucherItems(copy);
-                    }}
-                    className="col-span-2 bg-[var(--bg-card)] rounded-lg px-2 py-1.5 text-xs text-center"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    placeholder="Unit ₦"
-                    value={row.unitPrice || ""}
-                    onChange={(e) => {
-                      const copy = [...voucherItems];
-                      copy[idx].unitPrice = Number(e.target.value);
-                      setVoucherItems(copy);
-                    }}
-                    className="col-span-3 bg-[var(--bg-card)] rounded-lg px-2 py-1.5 text-xs font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setVoucherItems(voucherItems.filter((_, i) => i !== idx))}
-                    disabled={voucherItems.length === 1}
-                    className="col-span-1 text-[var(--text-dim)] hover:text-red-400 disabled:opacity-30 flex justify-center"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-
-              <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-xs font-bold">
-                <span>Total Amount</span>
-                <span className="font-mono text-[#c7cb2d]">₦{computedVoucherTotal.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  required
-                  value={voucherForm.bank_name}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, bank_name: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-2.5 py-2 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Name</label>
-                <input
-                  type="text"
-                  required
-                  value={voucherForm.bank_account_name}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, bank_account_name: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-2.5 py-2 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Number</label>
-                <input
-                  type="text"
-                  required
-                  maxLength={10}
-                  value={voucherForm.bank_account_no}
-                  onChange={(e) => setVoucherForm({ ...voucherForm, bank_account_no: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-2.5 py-2 text-xs font-mono"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Supporting Receipt</label>
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={handleVoucherAttachment}
-                className="w-full text-xs text-[var(--text-muted)] file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-[var(--bg-main)] file:text-xs file:font-semibold"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer"
-            >
-              Submit Voucher (₦{computedVoucherTotal.toLocaleString()})
-            </button>
-          </form>
-
-          <div className="lg:col-span-7 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-base font-bold">Voucher Approval Queue</h2>
-              <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                Head of Finance + Chief Strategist
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {voucherList.length > 0 ? voucherList.map((vc) => (
-                <div key={vc.id} className="p-4 rounded-2xl bg-[var(--bg-main)] space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold">
-                        {vc.voucher_code}
-                      </span>
-                      <span className="text-xs font-bold">{vc.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-bold text-[#c7cb2d]">
-                        ₦{Number(vc.amount).toLocaleString()}
-                      </span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold ${
-                        vc.status === "paid" ? "bg-[#c7cb2d]/15 text-[#c7cb2d]" :
-                        vc.status === "approved" ? "bg-[var(--bg-main)] text-[var(--text-primary)] border border-[var(--border-subtle)]" :
-                        vc.status === "rejected" ? "bg-red-500/15 text-red-400" :
-                        "bg-amber-500/15 text-amber-400"
-                      }`}>
-                        {vc.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {Array.isArray(vc.line_items) && vc.line_items.length > 0 && (
-                    <div className="bg-[var(--bg-card)] rounded-xl p-2.5 space-y-1 text-[11px]">
-                      {vc.line_items.map((li: any, i: number) => (
-                        <div key={i} className="flex justify-between font-mono">
-                          <span className="font-sans text-[var(--text-primary)]">{li.item} (x{li.qty})</span>
-                          <span>₦{(Number(li.qty) * Number(li.unitPrice)).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-[var(--text-dim)]">
-                    <span>By: {vc.staff_name} ({vc.staff_code})</span>
-                    <span>
-                      Payee: <strong className="text-[var(--text-primary)]">{vc.bank_account_name || vc.staff_name}</strong> • {vc.bank_name} ({vc.bank_account_no})
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {approvalPill("1. Head of Finance", vc.finance_status || "pending", vc.finance_by)}
-                    {approvalPill("2. Chief Strategist", vc.strategist_status || "pending", vc.strategist_by)}
-                  </div>
-
-                  {vc.status !== "paid" && vc.status !== "rejected" && (
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-subtle)]/50">
-                      {isHeadOfFinance && (vc.finance_status || "pending") === "pending" && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleVoucherStageApproval(vc, "finance", "approved")}
-                            className="px-2.5 py-1 rounded-lg bg-[var(--text-primary)] text-[var(--bg-main)] font-bold text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✓ Finance Approve
-                          </button>
-                          <button
-                            onClick={() => handleVoucherStageApproval(vc, "finance", "rejected")}
-                            className="px-2 py-1 rounded-lg bg-red-500/20 text-red-400 text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-
-                      {isChiefStrategist && (vc.strategist_status || "pending") === "pending" && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleVoucherStageApproval(vc, "strategist", "approved")}
-                            className="px-2.5 py-1 rounded-lg bg-[#c7cb2d]/20 text-[#c7cb2d] text-[10px] font-mono uppercase font-bold cursor-pointer"
-                          >
-                            ✓ Strategist Approve
-                          </button>
-                          <button
-                            onClick={() => handleVoucherStageApproval(vc, "strategist", "rejected")}
-                            className="px-2 py-1 rounded-lg bg-red-500/20 text-red-400 text-[10px] font-mono uppercase cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-
-                      {isHeadOfFinance && vc.finance_status === "approved" && vc.strategist_status === "approved" && (
-                        <button
-                          onClick={() => handleVoucherStageApproval(vc, "disburse", "paid")}
-                          className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold text-[10px] font-mono uppercase font-bold cursor-pointer"
-                        >
-                          ₦ Mark Paid
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )) : (
-                <p className="text-xs text-[var(--text-muted)] py-8 text-center">No vouchers raised yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: HIERARCHICAL LEVEL PROMOTIONS */}
-      {activeTab === "promotions" && (
-        <div className="space-y-5">
-          <div className="bg-[var(--bg-card)] p-3.5 rounded-2xl flex items-center justify-between gap-2 overflow-x-auto">
-            {HIERARCHY_LEVELS.map((lvl, index) => {
-              const code = lvl.split(" - ")[0];
-              const title = lvl.split(" - ")[1];
-              const count = staffList.filter((s) => (s.hierarchy_level || "L3 - Mid-Level Specialist").startsWith(code)).length;
-              return (
-                <div key={lvl} className="flex items-center gap-2 shrink-0">
-                  <div className="px-3 py-2 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 min-w-[125px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold text-[#c7cb2d]">{code}</span>
-                      <span className="text-[10px] font-mono text-[var(--text-dim)]">{count}</span>
-                    </div>
-                    <p className="text-[11px] font-semibold truncate mt-0.5">{title}</p>
-                  </div>
-                  {index < HIERARCHY_LEVELS.length - 1 && <ArrowRight className="w-3.5 h-3.5 text-[var(--text-dim)] shrink-0" />}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {isHR && (
-              <form onSubmit={handleIssuePromotion} className="bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
-                <h2 className="font-display text-base font-bold">Promote Personnel</h2>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Select Staff</label>
-                  <select
-                    required
-                    value={promoForm.target_staff_id}
-                    onChange={(e) => setPromoForm({ ...promoForm, target_staff_id: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    <option value="">-- Choose Personnel --</option>
-                    {staffList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.staff_id} — {s.first_name} {s.last_name} ({(s.hierarchy_level || "L3").split(" - ")[0]})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Hierarchy Level</label>
-                  <select
-                    value={promoForm.new_level}
-                    onChange={(e) => setPromoForm({ ...promoForm, new_level: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    {HIERARCHY_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Job Title</label>
-                  <input
-                    type="text"
-                    required
-                    value={promoForm.new_title}
-                    onChange={(e) => setPromoForm({ ...promoForm, new_title: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Clearance</label>
+              <div className="space-y-2">
+                    <div className="space-y-2">
                     <select
-                      value={promoForm.new_role}
-                      onChange={(e) => setPromoForm({ ...promoForm, new_role: e.target.value })}
-                      className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="hr">HR Manager</option>
-                      <option value="finance">Finance Officer</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Salary (₦)</label>
-                    <input
-                      type="number"
-                      value={promoForm.new_salary}
-                      onChange={(e) => setPromoForm({ ...promoForm, new_salary: e.target.value })}
-                      className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Notes</label>
-                  <textarea
-                    rows={2}
-                    value={promoForm.notes}
-                    onChange={(e) => setPromoForm({ ...promoForm, notes: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer"
-                >
-                  Confirm Promotion
-                </button>
-              </form>
-            )}
-
-            <div className={`${isHR ? "lg:col-span-2" : "lg:col-span-3"} bg-[var(--bg-card)] p-5 rounded-3xl space-y-3`}>
-              <h2 className="font-display text-base font-bold">Promotions History</h2>
-              <div className="space-y-2.5">
-                {promotionList.length > 0 ? promotionList.map((pr) => (
-                  <div key={pr.id} className="p-4 rounded-2xl bg-[var(--bg-main)] space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold">
-                          {pr.staff_code}
-                        </span>
-                        <span className="text-xs font-bold">{pr.staff_name}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-[var(--text-dim)]">
-                        <FormattedDate dateString={pr.effective_date || pr.created_at} />
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-[var(--bg-card)] font-mono text-[10px]">
-                        {(pr.previous_level || "L3").split(" - ")[0]} → <strong className="text-[#c7cb2d]">{(pr.new_level || "L4").split(" - ")[0]}</strong>
-                      </span>
-                      <span className="font-semibold text-[#c7cb2d]">
-                        {pr.previous_title} → {pr.new_title}
-                      </span>
-                    </div>
-                    {pr.notes && <p className="text-xs text-[var(--text-muted)]">{pr.notes}</p>}
-                  </div>
-                )) : (
-                  <p className="text-xs text-[var(--text-muted)] py-8 text-center">No promotions logged yet.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: COMPACT, INTENTIONAL STUDIO CHAT + MULTI-SELECT INDIVIDUAL INBOX DISPATCH */}
-      {activeTab === "chat" && (
-        <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-subtle)]/60 overflow-hidden grid grid-cols-1 lg:grid-cols-12 h-[540px]">
-          
-          {/* Compact Left Sidebar (Channels, 1-on-1 DMs, & Multi-Select Dispatch) */}
-          <div className="lg:col-span-3 border-r border-[var(--border-subtle)]/60 p-3.5 flex flex-col justify-between bg-[var(--bg-main)]/40 overflow-y-auto">
-            <div className="space-y-4">
-              {/* Mode Switcher */}
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--bg-main)] text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => { setChatChannelType("group"); setChatTarget("All Staff"); }}
-                  className={`py-1.5 rounded-lg cursor-pointer transition ${chatChannelType === "group" ? "bg-[var(--text-primary)] text-[var(--bg-main)]" : "text-[var(--text-muted)]"}`}
-                >
-                  Channels
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setChatChannelType("direct"); if (staffList[0]) setChatTarget(staffList[0].staff_id); }}
-                  className={`py-1.5 rounded-lg cursor-pointer transition ${chatChannelType === "direct" ? "bg-[var(--text-primary)] text-[var(--bg-main)]" : "text-[var(--text-muted)]"}`}
-                >
-                  1-on-1 DM
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChatChannelType("multi_dm")}
-                  className={`py-1.5 rounded-lg cursor-pointer transition ${chatChannelType === "multi_dm" ? "bg-[#c7cb2d] text-black" : "text-[var(--text-muted)]"}`}
-                  title="Select multiple individuals and send a private message to each inbox separately"
-                >
-                  Multi-DM
-                </button>
-              </div>
-
-              {chatChannelType === "group" && (
-                <div className="space-y-1">
-                  <p className="text-[9px] font-mono uppercase text-[var(--text-dim)] px-2 mb-1">Studio Rooms</p>
-                  {["All Staff", "Executive", "Design & Creative", "Operations", "Finance & HR"].map((grp) => (
-                    <button
-                      key={grp}
-                      onClick={() => setChatTarget(grp)}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                        chatTarget === grp
-                          ? "bg-[var(--text-primary)] text-[var(--bg-main)] font-bold"
-                          : "text-[var(--text-muted)] hover:bg-[var(--bg-main)]"
-                      }`}
-                    >
-                      # {grp}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {chatChannelType === "direct" && (
-                <div className="space-y-1">
-                  <p className="text-[9px] font-mono uppercase text-[var(--text-dim)] px-2 mb-1">Direct Inbox</p>
-                  {staffList.map((st) => (
-                    <button
-                      key={st.id}
-                      onClick={() => setChatTarget(st.staff_id)}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center justify-between ${
-                        chatTarget === st.staff_id
-                          ? "bg-[var(--text-primary)] text-[var(--bg-main)] font-bold"
-                          : "text-[var(--text-muted)] hover:bg-[var(--bg-main)]"
-                      }`}
-                    >
-                      <span className="truncate">{st.first_name} {st.last_name}</span>
-                      <span className="text-[9px] font-mono opacity-60">{st.staff_id}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {chatChannelType === "multi_dm" && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-1">
-                    <p className="text-[9px] font-mono uppercase text-[#c7cb2d] font-bold">
-                      Select Recipients ({selectedRecipients.length})
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedRecipients(
-                          selectedRecipients.length === staffList.length ? [] : staffList.map((s) => s.staff_id)
-                        )
+                      value={
+                        isCustomEditJobTitle
+                          ? "__OTHER__"
+                          : (DEPARTMENT_JOB_TITLES[editingStaff.department] || []).includes(editingStaff.job_title)
+                          ? editingStaff.job_title
+                          : "__OTHER__"
                       }
-                      className="text-[9px] font-mono underline text-[var(--text-muted)] cursor-pointer"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__OTHER__") {
+                          setIsCustomEditJobTitle(true);
+                          setEditingStaff({ ...editingStaff, job_title: "" });
+                        } else {
+                          setIsCustomEditJobTitle(false);
+                          setEditingStaff({ ...editingStaff, job_title: val });
+                        }
+                      }}
+                      className="w-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 rounded-xl px-3 py-2 text-xs"
                     >
-                      {selectedRecipients.length === staffList.length ? "Clear" : "Select All"}
-                    </button>
+                      {(DEPARTMENT_JOB_TITLES[editingStaff.department] || STUDIO_DEPARTMENTS.flatMap((d) => DEPARTMENT_JOB_TITLES[d])).map((title) => (
+                        <option key={title} value={title}>{title}</option>
+                      ))}
+                      <option value="__OTHER__">Other (Specify Manually...)</option>
+                    </select>
+                    {(isCustomEditJobTitle || !(DEPARTMENT_JOB_TITLES[editingStaff.department] || []).includes(editingStaff.job_title)) && (
+                      <input
+                        type="text"
+                        value={editingStaff.job_title || ""}
+                        onChange={(e) => setEditingStaff({ ...editingStaff, job_title: e.target.value })}
+                        placeholder="Type custom job title..."
+                        className="w-full bg-[var(--bg-card)] border border-[#c7cb2d]/60 rounded-xl px-3 py-2 text-xs"
+                      />
+                    )}
                   </div>
-                  <div className="space-y-1">
-                    {staffList.map((st) => {
-                      const checked = selectedRecipients.includes(st.staff_id);
-                      return (
-                        <button
-                          type="button"
-                          key={st.id}
-                          onClick={() => toggleRecipientSelection(st.staff_id)}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-between ${
-                            checked ? "bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold" : "text-[var(--text-muted)] hover:bg-[var(--bg-main)]"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            {checked ? <CheckSquare className="w-3.5 h-3.5 shrink-0" /> : <Square className="w-3.5 h-3.5 shrink-0 opacity-50" />}
-                            <span className="truncate">{st.first_name} {st.last_name}</span>
-                          </div>
-                          <span className="text-[9px] font-mono opacity-75">{st.staff_id}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Compact Chat Stream & Composer */}
-          <div className="lg:col-span-9 flex flex-col justify-between h-full p-4 overflow-hidden">
-            
-            {/* Compact Top Bar */}
-            <div className="pb-2.5 border-b border-[var(--border-subtle)]/60 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="px-2 py-0.5 rounded text-[9px] font-mono uppercase bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold shrink-0">
-                  {chatChannelType === "group" ? "Channel" : chatChannelType === "direct" ? "1-on-1" : "Multi-Inbox"}
-                </span>
-                <h3 className="font-display text-sm font-bold truncate">
-                  {chatChannelType === "group"
-                    ? `#${chatTarget}`
-                    : chatChannelType === "direct"
-                    ? `${staffList.find((s) => s.staff_id === chatTarget)?.first_name || chatTarget} (${chatTarget})`
-                    : selectedRecipients.length > 0
-                    ? `Separate DMs to: ${selectedRecipients.join(", ")}`
-                    : "Select individuals on the left"}
-                </h3>
-              </div>
-
-              <div className="relative w-40 shrink-0">
-                <Search className="w-3 h-3 text-[var(--text-dim)] absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Filter chat..."
-                  value={chatSearch}
-                  onChange={(e) => setChatSearch(e.target.value)}
-                  className="w-full bg-[var(--bg-main)] rounded-full pl-7 pr-2.5 py-1 text-[10px]"
-                />
-              </div>
-            </div>
-
-            {/* Pinned Notice */}
-            {chatChannelType !== "multi_dm" && messages.some((m) => m.is_pinned && m.channel_target === chatTarget) && (
-              <div className="my-1.5 px-2.5 py-1 rounded-lg bg-[#c7cb2d]/10 border border-[#c7cb2d]/30 flex items-center gap-1.5 text-[11px] shrink-0">
-                <Pin className="w-3 h-3 text-[#c7cb2d] shrink-0" />
-                <span className="truncate">
-                  {messages.find((m) => m.is_pinned && m.channel_target === chatTarget)?.message}
-                </span>
-              </div>
-            )}
-
-            {/* Message Feed */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-2 pr-1">
-              {chatChannelType === "multi_dm" ? (
-                <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
-                  <div className="px-3 py-1 rounded-full bg-[#c7cb2d]/15 text-[#c7cb2d] text-[10px] font-mono uppercase font-bold">
-                    Individual Multi-Dispatch Mode
-                  </div>
-                  <p className="text-xs text-[var(--text-muted)] max-w-md">
-                    Check any number of people in the left sidebar and send your message below. Each selected staff member receives an independent 1-on-1 message directly in their private inbox.
-                  </p>
-                  {dispatchNotice && (
-                    <p className="text-xs font-bold text-[#c7cb2d]">{dispatchNotice}</p>
-                  )}
-                </div>
-              ) : (
-                messages
-                  .filter((m) => {
-                    const inChan =
-                      chatChannelType === "group"
-                        ? m.channel_type === "group" && m.channel_target === chatTarget
-                        : m.channel_type === "direct" &&
-                          ((m.sender_code === currentUser?.staff_id && m.channel_target === chatTarget) ||
-                            (m.sender_code === chatTarget && m.channel_target === currentUser?.staff_id));
-                    const matchText = !chatSearch || m.message?.toLowerCase().includes(chatSearch.toLowerCase());
-                    return inChan && matchText;
-                  })
-                  .map((m) => {
-                    const isMe = m.sender_code === currentUser?.staff_id;
-                    return (
-                      <div key={m.id} className={`group flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                        <div className={`max-w-md px-3 py-2 rounded-2xl text-xs space-y-1 ${
-                          isMe ? "bg-[var(--text-primary)] text-[var(--bg-main)]" : "bg-[var(--bg-main)] text-[var(--text-primary)]"
-                        }`}>
-                          <div className="flex items-center justify-between gap-3 opacity-70 text-[9px] font-mono">
-                            <span className="font-bold">{m.sender_name} ({m.sender_code})</span>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                              <button type="button" onClick={() => setReplyingTo(m)} className="cursor-pointer">
-                                <Reply className="w-2.5 h-2.5" />
-                              </button>
-                              <button type="button" onClick={() => togglePinMessage(m)} className="cursor-pointer">
-                                <Pin className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {m.reply_to_snippet && (
-                            <div className="px-2 py-0.5 rounded bg-black/15 text-[10px] opacity-80 border-l-2 border-[#c7cb2d] truncate">
-                              ↩ {m.reply_to_snippet}
-                            </div>
-                          )}
-
-                          <p className="leading-snug">{m.message}</p>
-
-                          {m.attachment_url && (
-                            <div className="pt-1">
-                              {m.attachment_type?.startsWith("image/") ? (
-                                <img
-                                  src={m.attachment_url}
-                                  alt={m.attachment_name || "Attachment"}
-                                  className="max-h-36 rounded-lg object-cover"
-                                />
-                              ) : (
-                                <a
-                                  href={m.attachment_url}
-                                  download={m.attachment_name || "file"}
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded bg-black/20 text-[10px] font-mono underline"
-                                >
-                                  <FileText className="w-3 h-3" /> {m.attachment_name || "File"}
-                                </a>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-
-            {/* Compact Intentional Composer */}
-            <div className="pt-2 border-t border-[var(--border-subtle)]/60 space-y-1.5 shrink-0">
-              {replyingTo && (
-                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[var(--bg-main)] text-[10px]">
-                  <span className="truncate">Replying to <strong>{replyingTo.sender_name}</strong>: {replyingTo.message}</span>
-                  <button type="button" onClick={() => setReplyingTo(null)}><X className="w-3 h-3" /></button>
-                </div>
-              )}
-
-              {chatAttachment && (
-                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#c7cb2d]/15 text-[#c7cb2d] text-[10px] font-mono">
-                  <span className="truncate">📎 {chatAttachment.name}</span>
-                  <button type="button" onClick={() => setChatAttachment(null)}><X className="w-3 h-3" /></button>
-                </div>
-              )}
-
-              {showEmojiPicker && (
-                <div className="flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[var(--bg-main)]">
-                  {QUICK_EMOJIS.map((em) => (
-                    <button
-                      key={em}
-                      type="button"
-                      onClick={() => setChatInput((prev) => prev + em)}
-                      className="text-sm hover:scale-125 transition px-1 cursor-pointer"
-                    >
-                      {em}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <form onSubmit={handleSendMessage} className="flex items-center gap-1.5">
-                <input ref={chatFileRef} type="file" onChange={handleChatFileSelect} className="hidden" />
-                <button
-                  type="button"
-                  onClick={() => chatFileRef.current?.click()}
-                  className="p-2 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  title="Attach File"
-                >
-                  <Paperclip className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="p-2 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  title="Emoji"
-                >
-                  <Smile className="w-3.5 h-3.5" />
-                </button>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={
-                    chatChannelType === "multi_dm"
-                      ? `Send separate DMs to ${selectedRecipients.length} selected staff...`
-                      : `Message ${chatChannelType === "group" ? "#" + chatTarget : chatTarget}...`
-                  }
-                  className="flex-1 bg-[var(--bg-main)] rounded-full px-3.5 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[#c7cb2d]"
-                />
-                <button
-                  type="submit"
-                  disabled={chatChannelType === "multi_dm" && selectedRecipients.length === 0}
-                  className="px-4 py-2 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40"
-                >
-                  <Send className="w-3 h-3" />
-                  <span>{chatChannelType === "multi_dm" ? `Send (${selectedRecipients.length})` : "Send"}</span>
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PROMINENT CENTERED PERSONNEL EDIT MODAL (No right-side view distortion) */}
-      {editingStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl p-6 shadow-2xl max-h-[90vh] flex flex-col justify-between overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--border-subtle)] shrink-0">
-              <div className="flex items-center gap-3.5">
-                <PassportCropper
-                  value={editingStaff.passport_url}
-                  onChange={(dataUrl) => setEditingStaff({ ...editingStaff, passport_url: dataUrl })}
-                  initials={`${editingStaff.first_name?.[0] || ""}${editingStaff.last_name?.[0] || ""}`}
-                />
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
-                    {editingStaff.staff_id} • Personnel Record
-                  </span>
-                  <h2 className="font-display text-lg font-bold">
-                    {editingStaff.first_name} {editingStaff.last_name}
-                  </h2>
-                  <p className="text-[11px] text-[var(--text-muted)]">Hover on passport photo to re-crop or replace</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingStaff(null)}
-                className="p-2 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Scrollable Centered Form Body */}
-            <form id="edit-staff-form" onSubmit={handleSaveStaffEdit} className="space-y-4 overflow-y-auto pr-1 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">First Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingStaff.first_name}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, first_name: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingStaff.last_name}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, last_name: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Staff ID</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingStaff.staff_id}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, staff_id: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Hierarchy Grade</label>
-                  <select
-                    value={editingStaff.hierarchy_level || "L3 - Mid-Level Specialist"}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, hierarchy_level: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    {HIERARCHY_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Employment Status</label>
-                  <select
-                    value={editingStaff.status}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, status: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    <option value="active">Active</option>
-                    <option value="on_leave">On Leave</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="terminated">Terminated</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Monthly Salary (₦)</label>
-                  <input
-                    type="number"
-                    value={editingStaff.salary_amount || ""}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, salary_amount: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={editingStaff.department || ""}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, department: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Job Title</label>
-                  <input
-                    type="text"
-                    value={editingStaff.job_title || ""}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, job_title: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
                 </div>
               </div>
 
