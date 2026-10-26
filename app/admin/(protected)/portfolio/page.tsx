@@ -133,46 +133,129 @@ export default function AdminPortfolioPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleSaveProject = async (e: React.FormEvent) => {
+    const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (uploadState.active) return;
     setSaving(true);
+    setStatusBanner(null);
 
-    const slug = (form.slug || form.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const deliverablesArr = form.deliverables_text
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const galleryArr = form.images.length > 0 ? form.images : form.cover_image ? [form.cover_image] : [];
+    try {
+      const baseSlug = (form.slug || form.title || "project")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
 
-    const payload = {
-      title: form.title,
-      slug,
-      client: form.client,
-      category: form.category,
-      year: form.year,
-      summary: form.summary,
-      challenge: form.challenge,
-      solution: form.solution,
-      metrics: form.metrics,
-      services: deliverablesArr,
-      deliverables: deliverablesArr,
-      cover_image: form.cover_image || galleryArr[0] || null,
-      images: galleryArr,
-      gallery_media: galleryArr,
-      is_featured: form.is_featured,
-      status: "published",
-    };
+      const deliverablesArr = form.deliverables_text
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-    if (editingId) {
-      await supabase.from("case_studies").update(payload).eq("id", editingId);
-    } else {
-      await supabase.from("case_studies").insert(payload);
+      const galleryArr = form.images.length > 0 ? form.images : form.cover_image ? [form.cover_image] : [];
+      const primaryCover = form.cover_image || galleryArr[0] || "";
+
+      // Detect actual column names from existing rows in case_studies so Supabase PostgREST never rejects an unknown column
+      const sampleRow = projects[0] || {};
+      const knownCols = Object.keys(sampleRow);
+
+      const candidatePayload: Record<string, any> = {
+        title: form.title.trim(),
+        slug: editingId ? baseSlug : (projects.some((p) => p.slug === baseSlug) ? `${baseSlug}-${Date.now().toString().slice(-4)}` : baseSlug),
+        client: form.client.trim(),
+        category: form.category,
+        year: form.year || "2026",
+        summary: form.summary,
+        challenge: form.challenge,
+        solution: form.solution,
+        metrics: form.metrics,
+        deliverables: deliverablesArr,
+        services: deliverablesArr,
+        cover_image: primaryCover,
+        images: galleryArr,
+        gallery_media: galleryArr,
+        is_featured: form.is_featured,
+      };
+
+      // Filter payload to only columns that exist on case_studies (if table already has rows)
+      let payloadToSend: Record<string, any> = {};
+      if (knownCols.length > 0) {
+        for (const k of Object.keys(candidatePayload)) {
+          if (knownCols.includes(k)) {
+            payloadToSend[k] = candidatePayload[k];
+          }
+        }
+        // Always ensure images or gallery_media is sent if either exists
+        if (!("images" in payloadToSend) && !("gallery_media" in payloadToSend)) {
+          payloadToSend.images = galleryArr;
+        }
+      } else {
+        payloadToSend = {
+          title: candidatePayload.title,
+          slug: candidatePayload.slug,
+          client: candidatePayload.client,
+          category: candidatePayload.category,
+          year: candidatePayload.year,
+          summary: candidatePayload.summary,
+          challenge: candidatePayload.challenge,
+          solution: candidatePayload.solution,
+          metrics: candidatePayload.metrics,
+          deliverables: candidatePayload.deliverables,
+          cover_image: candidatePayload.cover_image,
+          images: candidatePayload.images,
+          is_featured: candidatePayload.is_featured,
+        };
+      }
+
+      // Auto-retry loop: if PostgREST complains about a specific missing column, strip that column and retry immediately
+      let attempts = 0;
+      let lastError: any = null;
+
+      while (attempts < 6) {
+        attempts++;
+        const res = editingId
+          ? await supabase.from("case_studies").update(payloadToSend).eq("id", editingId).select()
+          : await supabase.from("case_studies").insert([payloadToSend]).select();
+
+        if (!res.error) {
+          lastError = null;
+          break;
+        }
+
+        lastError = res.error;
+        const colMatch = res.error.message?.match(/Could not find the '([^']+)' column/i) ||
+                         res.error.message?.match(/column "([^"]+)" of relation/i);
+        if (colMatch && colMatch[1] && colMatch[1] in payloadToSend) {
+          delete payloadToSend[colMatch[1]];
+          continue;
+        }
+        break;
+      }
+
+      if (lastError) {
+        setStatusBanner({
+          type: "error",
+          text: `Database rejected save: ${lastError.message}`,
+        });
+        alert("Portfolio Save Error: " + lastError.message);
+      } else {
+        await loadProjects();
+        setStatusBanner({
+          type: "success",
+          text: editingId
+            ? `Saved changes to "${form.title}" (${galleryArr.length} photos)!`
+            : `Published "${form.title}" (${galleryArr.length} photos) to Portfolio!`,
+        });
+        resetForm();
+      }
+    } catch (err: any) {
+      setStatusBanner({
+        type: "error",
+        text: err?.message || "Unexpected error while saving project.",
+      });
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    resetForm();
-    loadProjects();
   };
+
 
   const handleDelete = async (id: string) => {
     await supabase.from("case_studies").delete().eq("id", id);
