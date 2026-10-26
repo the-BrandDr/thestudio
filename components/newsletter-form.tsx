@@ -5,7 +5,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { NewsletterForm } from '@/components/newsletter-form';
+// import { NewsletterForm } from '@/components/newsletter-form'; // Fix: Removed invalid self-import
 
 function YearDisplay() {
   const [year, setYear] = React.useState<number | null>(null);
