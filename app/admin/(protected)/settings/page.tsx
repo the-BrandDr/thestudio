@@ -41,6 +41,33 @@ const MONTHS = [
 
 export default function StaffProfileAndSelfServicePage() {
   const supabase = createClient();
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [pwLoading, setPwLoading] = React.useState(false);
+  const [pwMessage, setPwMessage] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMessage(null);
+    if (newPassword.length < 6) {
+      setPwMessage({ type: "error", text: "Password must be at least 6 characters." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwMessage({ type: "error", text: "Passwords do not match." });
+      return;
+    }
+    setPwLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setPwLoading(false);
+    if (error) {
+      setPwMessage({ type: "error", text: error.message });
+    } else {
+      setNewPassword("");
+      setConfirmPassword("");
+      setPwMessage({ type: "success", text: "Your portal password has been updated!" });
+    }
+  };
   const router = useRouter();
   const [activeSection, setActiveSection] = React.useState<"profile" | "leave" | "voucher" | "relief" | "payslips">("profile");
   const [loading, setLoading] = React.useState(true);
@@ -1109,6 +1136,68 @@ export default function StaffProfileAndSelfServicePage() {
       {printSlip && (
         <OfficialDocumentModal type="payslip" data={printSlip} onClose={() => setPrintSlip(null)} />
       )}
+      {/* PORTAL PASSWORD RESET SECTION */}
+      <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4 mt-6">
+        <div>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] font-bold">
+            Account Security
+          </span>
+          <h3 className="font-display text-base font-bold">Update Portal Password</h3>
+          <p className="text-xs text-[var(--text-muted)]">
+            Change your temporary onboarding password or update your personal sign-in credentials.
+          </p>
+        </div>
+
+        {pwMessage && (
+          <div
+            className={`p-3 rounded-xl text-xs font-semibold border ${
+              pwMessage.type === "success"
+                ? "bg-[#c7cb2d]/10 border-[#c7cb2d]/40 text-[#c7cb2d]"
+                : "bg-red-500/10 border-red-500/30 text-red-400"
+            }`}
+          >
+            {pwMessage.text}
+          </div>
+        )}
+
+        <form onSubmit={handlePasswordReset} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+              New Password *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password"
+              className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+              Confirm New Password *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter new password"
+              className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pwLoading}
+            className="py-2.5 px-5 rounded-xl bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider hover:opacity-90 transition cursor-pointer disabled:opacity-50"
+          >
+            {pwLoading ? "Updating..." : "Update Password"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

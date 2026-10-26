@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Check } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 const PORTFOLIO_CATEGORIES = [
   "Brand Strategy & Positioning",
@@ -16,12 +16,60 @@ const PORTFOLIO_CATEGORIES = [
   "Creative Direction & Campaigns",
 ];
 
+async function compressImageFile(file: File, maxWidth = 1600, quality = 0.82): Promise<{ blob: Blob; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas context failed"));
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressedDataUrl = canvas.toDataURL("image/webp", quality);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve({ blob, dataUrl: compressedDataUrl });
+            else reject(new Error("Blob compression failed"));
+          },
+          "image/webp",
+          quality
+        );
+      };
+      img.onerror = reject;
+      img.src = ev.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AdminPortfolioPage() {
   const supabase = createClient();
   const [projects, setProjects] = React.useState<any[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [statusBanner, setStatusBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [uploadState, setUploadState] = React.useState<{
+    active: boolean;
+    current: number;
+    total: number;
+    percent: number;
+    etaSeconds: number;
+    fileName: string;
+  }>({
+    active: false,
+    current: 0,
+    total: 0,
+    percent: 0,
+    etaSeconds: 0,
+    fileName: "",
+  });
 
   const [form, setForm] = React.useState({
     title: "",
@@ -40,44 +88,116 @@ export default function AdminPortfolioPage() {
   });
 
   const loadProjects = React.useCallback(async () => {
-    const { data } = await supabase.from("case_studies").select("*").order("created_at", { ascending: false });
-    if (data) setProjects(data);
+    const { data, error } = await supabase.from("case_studies").select("*").order("created_at", { ascending: false });
+    if (!error && data) setProjects(data);
   }, [supabase]);
 
   React.useEffect(() => {
     loadProjects();
   }, [loadProjects]);
 
-  // Multi-image file selector (appends to form.images[] array and sets cover_image if empty)
-  const handleMultiImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMultiImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setForm((prev) => {
-          const nextImages = [...prev.images, dataUrl];
-          return {
-            ...prev,
-            cover_image: prev.cover_image || dataUrl,
-            images: nextImages,
-          };
-        });
-      };
-      reader.readAsDataURL(file);
-    });
     e.target.value = "";
+
+    const total = files.length;
+    const startTime = Date.now();
+    const uploadedUrls: string[] = [];
+
+    setUploadState({
+      active: true,
+      current: 0,
+      total,
+      percent: 5,
+      etaSeconds: Math.max(2, total * 2),
+      fileName: files[0].name,
+    });
+
+    for (let i = 0; i < total; i++) {
+      const file = files[i];
+      const stepStart = Date.now();
+
+      setUploadState((prev) => ({
+        ...prev,
+        current: i + 1,
+        fileName: file.name,
+        percent: Math.round(((i + 0.3) / total) * 100),
+      }));
+
+      try {
+        const { blob, dataUrl } = await compressImageFile(file, 1600, 0.82);
+        let finalUrl = dataUrl;
+
+        const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.[^.]+$/, "") + ".webp";
+        const storagePath = `case-studies/${Date.now()}-${i}-${cleanName}`;
+
+        for (const bucketName of ["portfolio", "media", "public", "assets"]) {
+          const { data: upData, error: upErr } = await supabase.storage
+            .from(bucketName)
+            .upload(storagePath, blob, { contentType: "image/webp", upsert: true });
+
+          if (!upErr && upData?.path) {
+            const { data: pubUrl } = supabase.storage.from(bucketName).getPublicUrl(upData.path);
+            if (pubUrl?.publicUrl) {
+              finalUrl = pubUrl.publicUrl;
+              break;
+            }
+          }
+        }
+
+        uploadedUrls.push(finalUrl);
+      } catch (err) {
+        const fallbackUrl = await new Promise<string>((res) => {
+          const r = new FileReader();
+          r.onload = (ev) => res((ev.target?.result as string) || "");
+          r.readAsDataURL(file);
+        });
+        if (fallbackUrl) uploadedUrls.push(fallbackUrl);
+      }
+
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      const avgPerFile = elapsedSec / (i + 1);
+      const remainingFiles = total - (i + 1);
+      const eta = Math.max(0, Math.ceil(avgPerFile * remainingFiles));
+      const pct = Math.round(((i + 1) / total) * 100);
+
+      if (Date.now() - stepStart < 250) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+
+      setUploadState({
+        active: true,
+        current: i + 1,
+        total,
+        percent: pct,
+        etaSeconds: eta,
+        fileName: file.name,
+      });
+    }
+
+    setForm((prev) => {
+      const nextImages = [...prev.images, ...uploadedUrls];
+      return {
+        ...prev,
+        cover_image: prev.cover_image || nextImages[0] || "",
+        images: nextImages,
+      };
+    });
+
+    setTimeout(() => {
+      setUploadState((prev) => ({ ...prev, active: false }));
+    }, 600);
   };
 
   const removeGalleryImage = (idx: number) => {
     setForm((prev) => {
       const next = prev.images.filter((_, i) => i !== idx);
+      const removedUrl = prev.images[idx];
       return {
         ...prev,
         images: next,
-        cover_image: idx === 0 ? next[0] || "" : prev.cover_image,
+        cover_image: prev.cover_image === removedUrl ? next[0] || "" : prev.cover_image,
       };
     });
   };
@@ -106,13 +226,15 @@ export default function AdminPortfolioPage() {
   };
 
   const startEditingProject = (item: any) => {
-    const existingArray: string[] = Array.isArray(item.images) && item.images.length > 0
-      ? item.images
-      : Array.isArray(item.gallery_media) && item.gallery_media.length > 0
-      ? item.gallery_media
-      : item.cover_image
-      ? [item.cover_image]
-      : [];
+    setStatusBanner(null);
+    const existingArray: string[] =
+      Array.isArray(item.images) && item.images.length > 0
+        ? item.images
+        : Array.isArray(item.gallery_media) && item.gallery_media.length > 0
+        ? item.gallery_media
+        : item.cover_image
+        ? [item.cover_image]
+        : [];
 
     setEditingId(item.id);
     setForm({
@@ -125,7 +247,11 @@ export default function AdminPortfolioPage() {
       challenge: item.challenge || "",
       solution: item.solution || "",
       metrics: item.metrics || "",
-      deliverables_text: Array.isArray(item.deliverables) ? item.deliverables.join(", ") : (item.services || []).join(", "),
+      deliverables_text: Array.isArray(item.deliverables)
+        ? item.deliverables.join(", ")
+        : Array.isArray(item.services)
+        ? item.services.join(", ")
+        : "Brand Strategy, Visual Identity, Guidelines",
       cover_image: item.cover_image || existingArray[0] || "",
       images: existingArray,
       is_featured: item.is_featured ?? true,
@@ -133,7 +259,7 @@ export default function AdminPortfolioPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-    const handleSaveProject = async (e: React.FormEvent) => {
+  const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (uploadState.active) return;
     setSaving(true);
@@ -153,7 +279,6 @@ export default function AdminPortfolioPage() {
       const galleryArr = form.images.length > 0 ? form.images : form.cover_image ? [form.cover_image] : [];
       const primaryCover = form.cover_image || galleryArr[0] || "";
 
-      // Detect actual column names from existing rows in case_studies so Supabase PostgREST never rejects an unknown column
       const sampleRow = projects[0] || {};
       const knownCols = Object.keys(sampleRow);
 
@@ -175,7 +300,6 @@ export default function AdminPortfolioPage() {
         is_featured: form.is_featured,
       };
 
-      // Filter payload to only columns that exist on case_studies (if table already has rows)
       let payloadToSend: Record<string, any> = {};
       if (knownCols.length > 0) {
         for (const k of Object.keys(candidatePayload)) {
@@ -183,7 +307,6 @@ export default function AdminPortfolioPage() {
             payloadToSend[k] = candidatePayload[k];
           }
         }
-        // Always ensure images or gallery_media is sent if either exists
         if (!("images" in payloadToSend) && !("gallery_media" in payloadToSend)) {
           payloadToSend.images = galleryArr;
         }
@@ -205,7 +328,6 @@ export default function AdminPortfolioPage() {
         };
       }
 
-      // Auto-retry loop: if PostgREST complains about a specific missing column, strip that column and retry immediately
       let attempts = 0;
       let lastError: any = null;
 
@@ -221,8 +343,9 @@ export default function AdminPortfolioPage() {
         }
 
         lastError = res.error;
-        const colMatch = res.error.message?.match(/Could not find the '([^']+)' column/i) ||
-                         res.error.message?.match(/column "([^"]+)" of relation/i);
+        const colMatch =
+          res.error.message?.match(/Could not find the '([^']+)' column/i) ||
+          res.error.message?.match(/column "([^"]+)" of relation/i);
         if (colMatch && colMatch[1] && colMatch[1] in payloadToSend) {
           delete payloadToSend[colMatch[1]];
           continue;
@@ -233,15 +356,14 @@ export default function AdminPortfolioPage() {
       if (lastError) {
         setStatusBanner({
           type: "error",
-          text: `Database rejected save: ${lastError.message}`,
+          text: `Database error: ${lastError.message}`,
         });
-        alert("Portfolio Save Error: " + lastError.message);
       } else {
         await loadProjects();
         setStatusBanner({
           type: "success",
           text: editingId
-            ? `Saved changes to "${form.title}" (${galleryArr.length} photos)!`
+            ? `Updated "${form.title}" (${galleryArr.length} photos) successfully!`
             : `Published "${form.title}" (${galleryArr.length} photos) to Portfolio!`,
         });
         resetForm();
@@ -256,200 +378,284 @@ export default function AdminPortfolioPage() {
     }
   };
 
-
   const handleDelete = async (id: string) => {
-    await supabase.from("case_studies").delete().eq("id", id);
-    if (editingId === id) resetForm();
-    loadProjects();
+    if (!window.confirm("Remove this case study from the portfolio?")) return;
+    const { error } = await supabase.from("case_studies").delete().eq("id", id);
+    if (!error) {
+      await loadProjects();
+      if (editingId === id) resetForm();
+    }
   };
 
-  const filteredProjects = projects.filter((p) => categoryFilter === "all" || p.category === categoryFilter);
+  const filteredProjects =
+    categoryFilter === "all" ? projects : projects.filter((p) => p.category === categoryFilter);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-      
-      {/* Create / Edit Case Study Form with Multi-Image Array Builder */}
-      <form onSubmit={handleSaveProject} className="lg:col-span-5 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit border border-[var(--border-subtle)]/60">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <form
+        onSubmit={handleSaveProject}
+        className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4 sticky top-6"
+      >
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
-              {editingId ? "Editing Existing Case Study" : "Portfolio CMS"}
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] font-bold">
+              {editingId ? "Editing Case Study" : "Portfolio CMS"}
             </span>
-            <h2 className="font-display text-base font-bold">
-              {editingId ? "Update Project & Gallery" : "Publish New Case Study"}
+            <h2 className="font-display text-lg font-bold">
+              {editingId ? "Update Project & Gallery" : "Add Portfolio Case Study"}
             </h2>
           </div>
           {editingId && (
             <button
               type="button"
               onClick={resetForm}
-              className="px-2.5 py-1 rounded-full bg-[var(--bg-main)] text-[10px] font-mono uppercase flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-full bg-[var(--bg-main)] text-xs font-semibold flex items-center gap-1 cursor-pointer"
             >
-              <X className="w-3 h-3" /> Cancel Edit
+              <X className="w-3.5 h-3.5" /> Cancel Edit
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        {statusBanner && (
+          <div
+            className={`p-3.5 rounded-2xl text-xs font-medium flex items-start gap-2.5 border ${
+              statusBanner.type === "success"
+                ? "bg-[#c7cb2d]/10 border-[#c7cb2d]/40 text-[var(--text-primary)]"
+                : "bg-red-500/10 border-red-500/30 text-red-400"
+            }`}
+          >
+            {statusBanner.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-[#c7cb2d] shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            )}
+            <span>{statusBanner.text}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Project Title</label>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Project Title *</label>
             <input
-              type="text"
               required
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              placeholder="e.g. Future Tech Africa Summit"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Client / Brand</label>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Client / Brand *</label>
             <input
-              type="text"
               required
               value={form.client}
               onChange={(e) => setForm({ ...form, client: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              placeholder="e.g. Polaris Bank"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="sm:col-span-2">
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Service Category</label>
             <select
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             >
               {PORTFOLIO_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Year</label>
             <input
-              type="text"
               value={form.year}
               onChange={(e) => setForm({ ...form, year: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
+              placeholder="2026"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs font-mono"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Deliverables (Comma Separated)</label>
-          <input
-            type="text"
-            value={form.deliverables_text}
-            onChange={(e) => setForm({ ...form, deliverables_text: e.target.value })}
-            placeholder="Brand Strategy, Visual Identity, Motion, Web"
-            className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Executive Summary</label>
+          <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Executive Summary *</label>
           <textarea
-            rows={2}
             required
+            rows={2}
             value={form.summary}
             onChange={(e) => setForm({ ...form, summary: e.target.value })}
-            className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+            placeholder="Brief overview of the spatial or brand execution..."
+            className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">The Challenge</label>
             <textarea
               rows={2}
               value={form.challenge}
               onChange={(e) => setForm({ ...form, challenge: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              placeholder="What problem needed solving?"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">The Solution & Impact</label>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Our Solution</label>
             <textarea
               rows={2}
               value={form.solution}
               onChange={(e) => setForm({ ...form, solution: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              placeholder="How Lavie Studios executed it..."
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
             />
           </div>
         </div>
 
-        {/* Multi-Image Array Uploader for [slug] Gallery Pages */}
-        <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] space-y-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Deliverables (Comma separated)</label>
+            <input
+              value={form.deliverables_text}
+              onChange={(e) => setForm({ ...form, deliverables_text: e.target.value })}
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Impact / Metrics</label>
+            <input
+              value={form.metrics}
+              onChange={(e) => setForm({ ...form, metrics: e.target.value })}
+              placeholder="e.g. 5,000+ Attendees, +240% Engagement"
+              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-[10px] font-mono uppercase text-[var(--text-dim)] font-bold">
-              Project Gallery Images ({form.images.length} in array)
-            </label>
-            <label className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold cursor-pointer flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Add Multiple Photos
+            <div>
+              <span className="text-[10px] font-mono uppercase text-[var(--text-dim)] block">
+                Project Gallery ({form.images.length} {form.images.length === 1 ? "photo" : "photos"})
+              </span>
+              <span className="text-[11px] text-[var(--text-muted)]">
+                Upload multiple photos; click any thumbnail to set as Cover.
+              </span>
+            </div>
+            <label className="px-3.5 py-2 rounded-xl bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer flex items-center gap-1.5 shrink-0 hover:opacity-90 transition">
+              <Plus className="w-3.5 h-3.5" /> Add Photos
               <input
                 type="file"
                 accept="image/*"
                 multiple
                 onChange={handleMultiImageUpload}
+                disabled={uploadState.active}
                 className="hidden"
               />
             </label>
           </div>
 
-          {form.images.length > 0 ? (
-            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pt-1">
+          {uploadState.active && (
+            <div className="p-3.5 rounded-xl bg-[var(--bg-card)] border border-[#c7cb2d]/50 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold flex items-center gap-2 text-[var(--text-primary)]">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c7cb2d]" />
+                  Uploading photo {uploadState.current} of {uploadState.total}...
+                </span>
+                <span className="font-mono text-[11px] text-[#c7cb2d] font-bold">
+                  {uploadState.percent}% • {uploadState.etaSeconds > 0 ? `~${uploadState.etaSeconds}s remaining` : "Finalizing..."}
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-[var(--bg-main)] overflow-hidden">
+                <div
+                  className="h-full bg-[#c7cb2d] transition-all duration-300 rounded-full"
+                  style={{ width: `${uploadState.percent}%` }}
+                />
+              </div>
+              <p className="text-[10px] font-mono text-[var(--text-dim)] truncate">
+                Optimizing & storing: {uploadState.fileName}
+              </p>
+            </div>
+          )}
+
+          {form.images.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-1">
               {form.images.map((imgUrl, idx) => {
-                const isCover = form.cover_image === imgUrl;
+                const isCover = form.cover_image === imgUrl || (!form.cover_image && idx === 0);
                 return (
-                  <div key={idx} className={`relative group rounded-xl overflow-hidden border-2 h-16 ${isCover ? "border-[#c7cb2d]" : "border-transparent"}`}>
-                    <img src={imgUrl} alt={`Slide ${idx + 1}`} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setAsCover(imgUrl)}
-                        className="px-1.5 py-0.5 rounded bg-[#c7cb2d] text-black text-[8px] font-mono uppercase font-bold cursor-pointer"
-                        title="Set as Cover"
-                      >
+                  <div
+                    key={idx}
+                    className={`relative group h-20 rounded-xl overflow-hidden border-2 transition ${
+                      isCover ? "border-[#c7cb2d]" : "border-transparent"
+                    }`}
+                  >
+                    <img
+                      src={imgUrl}
+                      alt={`Gallery ${idx + 1}`}
+                      onClick={() => setAsCover(imgUrl)}
+                      className="w-full h-full object-cover cursor-pointer"
+                      title="Click to set as primary cover photo"
+                    />
+                    {isCover && (
+                      <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-[#c7cb2d] text-black text-[8px] font-mono font-bold uppercase">
                         Cover
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeGalleryImage(idx)}
-                        className="p-1 rounded bg-red-500 text-white cursor-pointer"
-                        title="Remove image"
-                      >
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeGalleryImage(idx)}
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/80 text-white flex items-center justify-center opacity-90 hover:bg-red-500 cursor-pointer"
+                      title="Remove photo"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <p className="text-[11px] text-[var(--text-muted)] text-center py-3">
-              Select multiple images at once to populate the project [slug] gallery array.
-            </p>
           )}
         </div>
 
+        <label className="flex items-center gap-2 text-xs cursor-pointer select-none pt-1">
+          <input
+            type="checkbox"
+            checked={form.is_featured}
+            onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
+            className="rounded accent-[#c7cb2d]"
+          />
+          <span>Feature this project on the Homepage showcase</span>
+        </label>
+
         <button
           type="submit"
-          disabled={saving}
-          className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer"
+          disabled={saving || uploadState.active}
+          className="w-full py-3 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
-          {saving ? "Saving..." : editingId ? "Save Project Changes" : "Publish Case Study"}
+          {(saving || uploadState.active) && <Loader2 className="w-4 h-4 animate-spin" />}
+          {uploadState.active
+            ? `Uploading Photos (${uploadState.percent}%)...`
+            : saving
+            ? "Saving to Portfolio Database..."
+            : editingId
+            ? `Save Changes (${form.images.length} Photos)`
+            : `Publish Project (${form.images.length} Photos)`}
         </button>
       </form>
 
-      {/* Published Portfolio List + Category Filter */}
       <div className="lg:col-span-7 space-y-4">
-        <div className="bg-[var(--bg-card)] p-2.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto">
+        <div className="flex flex-wrap gap-1.5">
           <button
+            type="button"
             onClick={() => setCategoryFilter("all")}
-            className={`px-3 py-1 rounded-xl text-[10px] font-mono uppercase shrink-0 cursor-pointer ${
-              categoryFilter === "all" ? "bg-[var(--text-primary)] text-[var(--bg-main)] font-bold" : "text-[var(--text-muted)]"
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition ${
+              categoryFilter === "all"
+                ? "bg-[#c7cb2d] text-black"
+                : "bg-[var(--bg-card)] text-[var(--text-muted)]"
             }`}
           >
             All ({projects.length})
@@ -457,9 +663,12 @@ export default function AdminPortfolioPage() {
           {PORTFOLIO_CATEGORIES.map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1 rounded-xl text-[10px] font-mono uppercase shrink-0 cursor-pointer ${
-                categoryFilter === cat ? "bg-[var(--text-primary)] text-[var(--bg-main)] font-bold" : "text-[var(--text-muted)]"
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition ${
+                categoryFilter === cat
+                  ? "bg-[#c7cb2d] text-black"
+                  : "bg-[var(--bg-card)] text-[var(--bg-card)] text-[var(--text-muted)]"
               }`}
             >
               {cat.split(" & ")[0]}
@@ -469,37 +678,47 @@ export default function AdminPortfolioPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredProjects.map((item) => {
-            const imgCount = Array.isArray(item.images) ? item.images.length : item.cover_image ? 1 : 0;
+            const imgCount = Array.isArray(item.images) && item.images.length > 0 ? item.images.length : item.cover_image ? 1 : 0;
+            const displayCover = item.cover_image || (Array.isArray(item.images) && item.images[0]) || "";
             return (
-              <div key={item.id} className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 overflow-hidden flex flex-col justify-between">
+              <div
+                key={item.id}
+                className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 overflow-hidden flex flex-col justify-between"
+              >
                 <div>
                   <div className="relative h-40 bg-[var(--bg-main)]">
-                    {item.cover_image ? (
-                      <img src={item.cover_image} alt={item.title} className="w-full h-full object-cover" />
+                    {displayCover ? (
+                      <img src={displayCover} alt={item.title} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-[var(--text-dim)]">No Cover</div>
+                      <div className="w-full h-full flex items-center justify-center text-xs text-[var(--text-dim)]">
+                        No Cover
+                      </div>
                     )}
                     <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/75 text-white text-[9px] font-mono flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3 text-[#c7cb2d]" /> {imgCount} photos
+                      <ImageIcon className="w-3 h-3 text-[#c7cb2d]" /> {imgCount} {imgCount === 1 ? "photo" : "photos"}
                     </span>
                   </div>
 
                   <div className="p-4 space-y-1.5">
                     <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">{item.category}</span>
                     <h3 className="font-display text-sm font-bold">{item.title}</h3>
-                    <p className="text-[11px] font-medium text-[var(--text-muted)]">{item.client} • {item.year || "2026"}</p>
+                    <p className="text-[11px] font-medium text-[var(--text-muted)]">
+                      {item.client} • {item.year || "2026"}
+                    </p>
                     <p className="text-xs text-[var(--text-muted)] line-clamp-2">{item.summary}</p>
                   </div>
                 </div>
 
                 <div className="px-4 py-3 border-t border-[var(--border-subtle)]/50 flex items-center justify-between gap-2">
                   <button
+                    type="button"
                     onClick={() => startEditingProject(item)}
-                    className="flex-1 py-1.5 rounded-xl bg-[var(--bg-main)] hover:bg-[var(--text-primary)] hover:text-[var(--bg-main)] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-1.5 rounded-xl bg-[var(--bg-main)] hover:bg-[#c7cb2d] hover:text-black text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Edit3 className="w-3 h-3" /> Edit Project & Photos
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(item.id)}
                     className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-dim)] hover:text-red-400 cursor-pointer"
                     title="Delete project"

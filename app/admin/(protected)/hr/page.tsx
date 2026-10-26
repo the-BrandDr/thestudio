@@ -17,10 +17,11 @@ const HIERARCHY_LEVELS = [
   "L4 - Senior Specialist",
   "L5 - Lead / Principal",
   "L6 - Department Head",
-  "L7 - Chief Strategist / Executive",
+  "L7 - Executive / Director",
 ];
 
 const ALL_PERMISSIONS = [
+  { id: "executive", label: "Executive / Director" },
   { id: "chief_strategist", label: "Chief Strategist" },
   { id: "head_of_operations", label: "Head of Operations" },
   { id: "head_of_finance", label: "Head of Finance" },
