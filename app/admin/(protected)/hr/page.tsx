@@ -160,14 +160,14 @@ const HIERARCHY_LEVELS = [
 const SALARY_STEPS = [1, 2, 3, 4, 5, 6, 7];
 
 const DEFAULT_LEVEL_STEP_CONFIG: Record<string, { step1Gross: number; stepIncrement: number }> = {
-  "L0 - Auxiliary & Facility Support": { step1Gross: 20000, stepIncrement: 2500 },
-  "L1 - Intern / Graduate Trainee": { step1Gross: 30000, stepIncrement: 3500 },
-  "L2 - Junior Associate": { step1Gross: 45000, stepIncrement: 5000 },
-  "L3 - Mid-Level Specialist": { step1Gross: 65000, stepIncrement: 7500 },
-  "L4 - Senior Specialist": { step1Gross: 95000, stepIncrement: 10000 },
-  "L5 - Lead / Principal": { step1Gross: 135000, stepIncrement: 15000 },
-  "L6 - Department Head": { step1Gross: 185000, stepIncrement: 20000 },
-  "L7 - Executive / Director": { step1Gross: 250000, stepIncrement: 30000 },
+  "L0 - Auxiliary & Facility Support": { step1Gross: 15000, stepIncrement: 1500 },
+  "L1 - Intern / Graduate Trainee": { step1Gross: 20000, stepIncrement: 2000 },
+  "L2 - Junior Associate": { step1Gross: 35000, stepIncrement: 3500 },
+  "L3 - Mid-Level Specialist": { step1Gross: 50000, stepIncrement: 5000 },
+  "L4 - Senior Specialist": { step1Gross: 75000, stepIncrement: 7500 },
+  "L5 - Lead / Principal": { step1Gross: 110000, stepIncrement: 10000 },
+  "L6 - Department Head": { step1Gross: 150000, stepIncrement: 15000 },
+  "L7 - Executive / Director": { step1Gross: 200000, stepIncrement: 20000 },
 };
 
 const ALL_PERMISSIONS = [
