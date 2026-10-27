@@ -200,7 +200,8 @@ export default function AdminInquiriesPage() {
       status: "quoted",
       responded_by: actor,
       responded_at: new Date().toISOString(),
-    }).eq("id", quoteModal.id);
+    }).select().maybeSingle();
+    await supabase.from("contact_inquiries").update({ status: "quoted" }).eq("id", quoteModal.id);
 
     await recordStaffAction("Generated Client Quote", `${qNo} for ${quoteModal.name}`);
     setSaving(false);
@@ -545,119 +546,15 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
-      {/* PRINTABLE CAC-COMPLIANT QUOTE PDF MODAL */}
+      {/* OFFICIAL BRANDED QUOTE PDF MODAL (Matches Invoice, Receipt & Payslip Header/Footer) */}
       {printQuote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white text-zinc-900 rounded-2xl w-full max-w-2xl p-8 shadow-2xl space-y-6 my-8 print:shadow-none print:m-0 print:p-4">
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-200 print:hidden">
-              <span className="text-xs font-mono uppercase text-zinc-500 font-bold">Client Quote PDF Preview</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" /> Save / Print Quote PDF
-                </button>
-                <button onClick={() => setPrintQuote(null)} className="px-3 py-1.5 rounded-full bg-zinc-100 text-zinc-700 text-xs font-semibold">
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-start justify-between border-b-2 border-zinc-900 pb-5">
-              <div>
-                <img src="/logo-dark2.svg" alt="Lavie Studios Ltd" className="h-7 object-contain mb-2" onError={(e) => { (e.target as HTMLImageElement).src = "/logo-light.svg"; }} />
-                <p className="text-xs font-bold uppercase tracking-wider">Lavie Studios Ltd</p>
-                <p className="text-[11px] text-zinc-600">Behind Attimaggies Hotel, Yoaco Area, Ogbomoso, Oyo State, Nigeria</p>
-                <p className="text-[11px] font-mono text-zinc-600">+234 (0) 8134629836 • info@studioslavie.com</p>
-              </div>
-              <div className="text-right">
-                <span className="inline-block px-3 py-1 rounded bg-zinc-900 text-[#c7cb2d] font-mono text-xs font-bold uppercase">
-                  COMMERCIAL QUOTE
-                </span>
-                <p className="text-xs font-mono font-bold mt-2">{printQuote.quote_no}</p>
-                <p className="text-[11px] text-zinc-500">Date: {new Date(printQuote.created_at).toLocaleDateString()}</p>
-              </div>
-            </div>
-
-            <div className="flex justify-between text-xs">
-              <div>
-                <p className="text-[10px] font-mono uppercase text-zinc-400">Prepared For</p>
-                <p className="font-bold text-sm">{printQuote.client_name}</p>
-                <p className="text-zinc-600">{printQuote.client_email} {printQuote.client_phone ? `• ${printQuote.client_phone}` : ""}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-mono uppercase text-zinc-400">Subject</p>
-                <p className="font-bold">{printQuote.project_title}</p>
-              </div>
-            </div>
-
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-zinc-300 text-[10px] font-mono uppercase text-zinc-500">
-                  <th className="py-2">Deliverable</th>
-                  <th className="py-2 text-center">Qty</th>
-                  <th className="py-2 text-right">Rate (₦)</th>
-                  <th className="py-2 text-right">Total (₦)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200">
-                {(printQuote.line_items || []).map((li: any, i: number) => (
-                  <tr key={i}>
-                    <td className="py-2.5 font-medium">{li.description}</td>
-                    <td className="py-2.5 text-center font-mono">{li.qty}</td>
-                    <td className="py-2.5 text-right font-mono">₦{Number(li.unitPrice).toLocaleString()}</td>
-                    <td className="py-2.5 text-right font-mono font-bold">₦{(Number(li.qty) * Number(li.unitPrice)).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="flex justify-between items-start pt-3 border-t border-zinc-300 text-xs">
-              <div className="max-w-xs space-y-1">
-                <p className="font-bold uppercase text-[10px] font-mono text-zinc-500">Terms & Bank Details</p>
-                <p className="text-[11px] text-zinc-600">{printQuote.notes}</p>
-                <p className="pt-1">Bank: <strong>UBA / Polaris Bank — Lavie Studios Ltd</strong></p>
-              </div>
-              <div className="w-56 space-y-1 font-mono text-right">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>₦{Number(printQuote.subtotal).toLocaleString()}</span>
-                </div>
-                {Number(printQuote.discount_amount) > 0 && (
-                  <div className="flex justify-between text-amber-700">
-                    <span>Discount ({printQuote.discount_percent}%):</span>
-                    <span>-₦{Number(printQuote.discount_amount).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>VAT ({printQuote.vat_rate}%):</span>
-                  <span>+₦{Number(printQuote.vat_amount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm font-bold border-t border-zinc-900 pt-1.5">
-                  <span>Total Quote:</span>
-                  <span>₦{Number(printQuote.total_amount).toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-8 pt-6 border-t border-zinc-200 text-xs">
-              <div>
-                <p className="italic text-base text-zinc-800">Ifeoluwa Ayegboyin</p>
-                <div className="w-44 h-px bg-zinc-400 my-1" />
-                <p className="font-bold">Ifeoluwa Ayegboyin</p>
-                <p className="text-[10px] font-mono uppercase text-zinc-500">Chief Strategist • Lavie Studios Ltd</p>
-              </div>
-              <div className="text-right">
-                <p className="italic text-base text-zinc-800">{printQuote.prepared_by}</p>
-                <div className="w-44 h-px bg-zinc-400 my-1 ml-auto" />
-                <p className="font-bold">Prepared By</p>
-                <p className="text-[10px] font-mono uppercase text-zinc-500">Lavie Studios Desk</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OfficialDocumentModal
+          type="quote"
+          data={printQuote}
+          onClose={() => setPrintQuote(null)}
+        />
       )}
+
       {/* NEWSLETTER SUBSCRIBERS PANEL */}
       <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4 mt-8">
         <div className="flex flex-wrap items-center justify-between gap-4">

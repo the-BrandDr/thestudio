@@ -205,9 +205,9 @@ export default function HRAndWorkspaceSuite() {
       const validStep = Math.min(7, Math.max(1, Number(stepNum) || 1));
       const totalGross = Number(cfg.step1Gross || 20000) + (validStep - 1) * Number(cfg.stepIncrement || 2500);
 
-      const basic = Math.round(totalGross * 0.6);
-      const transportHousing = Math.round(totalGross * 0.25);
-      const internet = totalGross - basic - transportHousing;
+      const basic = Math.round(totalGross * 0.85);
+      const transportHousing = Math.round(totalGross * 0.10);
+      const internet = totalGross - basic - transportHousing; // 5%
 
       return { totalGross, basic, internet, transportHousing };
     },
@@ -538,9 +538,9 @@ export default function HRAndWorkspaceSuite() {
       phone: editingStaff.phone,
       location: editingStaff.location,
       passport_url: editingStaff.passport_url,
-      basic_salary: Number(editingStaff.basic_salary || Math.round(totalGross * 0.6)),
-      internet_allowance: Number(editingStaff.internet_allowance || Math.round(totalGross * 0.15)),
-      transport_housing_allowance: Number(editingStaff.transport_housing_allowance || Math.round(totalGross * 0.25)),
+      basic_salary: Number(editingStaff.basic_salary || Math.round(totalGross * 0.85)),
+      internet_allowance: Number(editingStaff.internet_allowance || Math.round(totalGross * 0.05)),
+      transport_housing_allowance: Number(editingStaff.transport_housing_allowance || Math.round(totalGross * 0.10)),
       salary_amount: totalGross,
       bank_name: editingStaff.bank_name,
       bank_account_name: editingStaff.bank_account_name,
@@ -1185,8 +1185,8 @@ export default function HRAndWorkspaceSuite() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredStaff.map((person) => {
               const totalSal = Number(person.salary_amount || 0);
-              const basicSal = Number(person.basic_salary || Math.round(totalSal * 0.6));
-              const transSal = Number(person.transport_housing_allowance || Math.round(totalSal * 0.25));
+              const basicSal = Number(person.basic_salary || Math.round(totalSal * 0.85));
+              const transSal = Number(person.transport_housing_allowance || Math.round(totalSal * 0.10));
               const netAllow = Number(person.internet_allowance || totalSal - basicSal - transSal);
               const stepNum = person.step_level || 1;
 
@@ -1654,7 +1654,7 @@ export default function HRAndWorkspaceSuite() {
         <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-5 overflow-x-auto">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="font-display text-lg font-bold">Salary Structure (Base: ₦20,000)</h2>
+              <h2 className="font-display text-lg font-bold">Salary Structure</h2>
               <p className="text-xs text-[var(--text-muted)]">
                 Adjust Step 1 Base or Step Increment below to update the 7-step scale across all levels.
               </p>
