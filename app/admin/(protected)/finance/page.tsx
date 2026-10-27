@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
+import TaxComplianceSuite from "@/components/admin/tax-compliance-suite";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 import { 
   Landmark, Briefcase, FileSpreadsheet, Users, ShieldAlert, Plus, Trash2, 
@@ -1618,6 +1619,8 @@ export default function EnterpriseFinanceSuite() {
       {printDoc && (
         <OfficialDocumentModal type={printDoc.type} data={printDoc.data} onClose={() => setPrintDoc(null)} />
       )}
+      {/* STATUTORY NIGERIAN TAX & COMPLIANCE LEDGER */}
+      <TaxComplianceSuite execViewOnly={typeof execViewOnly !== "undefined" ? execViewOnly : false} />
     </div>
   );
 }
