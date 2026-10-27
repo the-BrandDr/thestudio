@@ -1514,6 +1514,8 @@ export default function EnterpriseFinanceSuite() {
       {/* TAB 6: TAX & STAFF TAX RELIEFS */}
       {activeTab === "tax" && (
         <div className="space-y-5 print:hidden">
+          <TaxComplianceSuite execViewOnly={typeof execViewOnly !== "undefined" ? execViewOnly : false} />
+
           <div className="bg-[var(--bg-card)] p-5 rounded-3xl space-y-4 border border-[var(--border-subtle)]/60">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-base font-bold">Tax</h2>
