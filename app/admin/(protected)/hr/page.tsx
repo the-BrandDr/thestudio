@@ -2571,12 +2571,29 @@ export default function HRAndWorkspaceSuite() {
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
               />
             </div>
-            <input
-              value={leaveForm.handover_staff}
-              onChange={(e) => setLeaveForm({ ...leaveForm, handover_staff: e.target.value })}
-              placeholder="Handover Staff"
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Relief / Handover Officer *
+              </label>
+              <select
+                required
+                value={leaveForm.handover_staff}
+                onChange={(e) => setLeaveForm({ ...leaveForm, handover_staff: e.target.value })}
+                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
+              >
+                <option value="">-- Select Available Relief Officer --</option>
+                {staffList
+                  .filter((st) => st.id !== currentUser?.id && (st.status || "active") === "active")
+                  .map((st) => (
+                    <option
+                      key={st.id}
+                      value={`${st.first_name} ${st.last_name} (${st.staff_id} — ${st.job_title || st.department})`}
+                    >
+                      {st.first_name} {st.last_name} ({st.staff_id}) — {st.job_title || st.department}
+                    </option>
+                  ))}
+              </select>
+            </div>
             <textarea
               required
               rows={2}
