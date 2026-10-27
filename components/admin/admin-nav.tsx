@@ -54,7 +54,7 @@ export default function AdminNav({ profile }: { profile: StaffProfile }) {
     { name: "Feedbacks", href: "/admin/feedbacks", icon: MessageSquareQuote, allowed: ["super_admin", "portfolio", "hr", "staff"] },
     { name: "Newsletter", href: "/admin/newsletter", icon: Send, allowed: ["super_admin", "chief_strategist", "head_of_operations", "portfolio", "inquiries", "staff"] },
     { name: "Hero Media", href: "/admin/media", icon: Film, allowed: ["super_admin", "chief_strategist", "portfolio"] },
-    { name: "HR & Workspace", href: "/admin/hr", icon: Users, allowed: ["super_admin", "hr", "finance", "staff", "intern"] },
+    { name: "HR & Workspace", href: "/admin/hr", icon: Users, allowed: ["super_admin", "hr", "finance", "staff", "intern", "support_staff", "executive"] },
     { name: "Finance", href: "/admin/finance", icon: Landmark, allowed: ["super_admin", "finance"] },
     { name: "Profile", href: "/admin/settings", icon: Settings, allowed: ["super_admin", "hr", "finance", "staff", "intern"] },
   ];

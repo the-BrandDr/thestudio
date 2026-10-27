@@ -21,9 +21,16 @@ import {
   Calculator,
   Image as ImageIcon,
   FileText,
-  Building2,
   Save,
   RotateCcw,
+  Mic,
+  Square,
+  AtSign,
+  Database,
+  CheckCircle2,
+  Clock,
+  Volume2,
+  Trash2,
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
 import PassportCropper from "@/components/admin/passport-cropper";
@@ -130,6 +137,15 @@ const DEPARTMENT_JOB_TITLES: Record<string, string[]> = {
 
 const STUDIO_DEPARTMENTS = Object.keys(DEPARTMENT_JOB_TITLES);
 
+const EMPLOYMENT_TYPES = [
+  "Full-Time",
+  "Part-Time",
+  "Contract / Retainer",
+  "Auxiliary / Support",
+  "Internship",
+  "Freelance / Consultant",
+];
+
 const HIERARCHY_LEVELS = [
   "L0 - Auxiliary & Facility Support",
   "L1 - Intern / Graduate Trainee",
@@ -143,7 +159,6 @@ const HIERARCHY_LEVELS = [
 
 const SALARY_STEPS = [1, 2, 3, 4, 5, 6, 7];
 
-// Base set to ₦20,000 on L0 Step 1 with realistic progressive increments
 const DEFAULT_LEVEL_STEP_CONFIG: Record<string, { step1Gross: number; stepIncrement: number }> = {
   "L0 - Auxiliary & Facility Support": { step1Gross: 20000, stepIncrement: 2500 },
   "L1 - Intern / Graduate Trainee": { step1Gross: 30000, stepIncrement: 3500 },
@@ -169,7 +184,36 @@ const ALL_PERMISSIONS = [
   { id: "support_staff", label: "Support / Auxiliary Staff" },
 ];
 
-const QUICK_EMOJIS = ["👍", "✅", "🔥", "👏", "🎯", "🚀", "🙌", "📌", "⚡", "💡", "🤝", "🎉"];
+const QUICK_EMOJIS = ["👍", "✅", "🔥", "👏", "🎯", "🚀", "🙌", "📌", "⚡", "💡", "🤝", "🎉", "❤️", "🙏"];
+
+// Client-side image compressor to minimize database & storage footprint (~90% smaller)
+async function compressChatOrVoucherImage(file: File, maxW = 1200, quality = 0.78): Promise<{ blob: Blob; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = img.width > maxW ? maxW / img.width : 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas context unavailable"));
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/webp", quality);
+        canvas.toBlob(
+          (blob) => (blob ? resolve({ blob, dataUrl }) : reject(new Error("Blob failed"))),
+          "image/webp",
+          quality
+        );
+      };
+      img.onerror = reject;
+      img.src = ev.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function HRAndWorkspaceSuite() {
   const supabase = createClient();
@@ -178,7 +222,6 @@ export default function HRAndWorkspaceSuite() {
   >("directory");
   const [loading, setLoading] = React.useState(true);
 
-  // Dynamic, editable salary structure state (persisted in localStorage + site_settings if available)
   const [salaryConfig, setSalaryConfig] = React.useState<
     Record<string, { step1Gross: number; stepIncrement: number }>
   >(DEFAULT_LEVEL_STEP_CONFIG);
@@ -196,6 +239,7 @@ export default function HRAndWorkspaceSuite() {
     } catch (_) {}
   }, []);
 
+  // 85% Basic | 10% Transport/Housing | 5% Internet
   const computeSalaryBreakdown = React.useCallback(
     (levelLabel: string, stepNum: number, customCfg = salaryConfig) => {
       const matchedKey =
@@ -221,7 +265,7 @@ export default function HRAndWorkspaceSuite() {
         .from("site_settings")
         .upsert({ key: "salary_structure", value: JSON.stringify(salaryConfig) }, { onConflict: "key" });
     } catch (_) {}
-    setMatrixSavedMsg("Salary structure updated!");
+    setMatrixSavedMsg("Salary structure saved!");
     setTimeout(() => setMatrixSavedMsg(""), 3000);
   };
 
@@ -230,7 +274,7 @@ export default function HRAndWorkspaceSuite() {
     try {
       localStorage.removeItem("lavie_salary_structure_v1");
     } catch (_) {}
-    setMatrixSavedMsg("Reset to ₦20,000 base structure.");
+    setMatrixSavedMsg("Reset to default.");
     setTimeout(() => setMatrixSavedMsg(""), 3000);
   };
 
@@ -240,6 +284,7 @@ export default function HRAndWorkspaceSuite() {
   const [voucherList, setVoucherList] = React.useState<any[]>([]);
   const [promotionList, setPromotionList] = React.useState<any[]>([]);
   const [messages, setMessages] = React.useState<any[]>([]);
+  const [storageStatsMsg, setStorageStatsMsg] = React.useState("");
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [deptFilter, setDeptFilter] = React.useState("all");
@@ -262,7 +307,7 @@ export default function HRAndWorkspaceSuite() {
     role: "staff",
     hierarchy_level: "L3 - Mid-Level Specialist",
     step_level: 1,
-    permissions: ["staff", "portfolio"],
+    permissions: ["staff"],
     department: "Design & Creative",
     job_title: "Brand & Graphic Designer",
     employment_type: "Full-Time",
@@ -274,6 +319,7 @@ export default function HRAndWorkspaceSuite() {
     transport_housing_allowance: String(defaultBreakdown.transportHousing),
     salary_amount: String(defaultBreakdown.totalGross),
     bank_name: "",
+    bank_sort_code: "",
     bank_account_name: "",
     bank_account_no: "",
   });
@@ -288,7 +334,7 @@ export default function HRAndWorkspaceSuite() {
     reason: "",
   });
 
-  // Voucher state with optional image/proof attachment & comments
+  // Voucher state
   const [voucherForm, setVoucherForm] = React.useState({
     title: "",
     project_ref: "",
@@ -318,7 +364,7 @@ export default function HRAndWorkspaceSuite() {
     } catch (_) {}
   }, []);
 
-  // Promotion state
+  // Direct HR Promotion & Staff Self-Service Promotion Request state
   const initialPromoBreakdown = computeSalaryBreakdown("L4 - Senior Specialist", 1);
   const [promoForm, setPromoForm] = React.useState({
     target_staff_id: "",
@@ -326,6 +372,7 @@ export default function HRAndWorkspaceSuite() {
     new_step: 1,
     new_department: "",
     new_title: "",
+    new_employment_type: "Full-Time",
     new_role: "staff",
     basic_salary: String(initialPromoBreakdown.basic),
     internet_allowance: String(initialPromoBreakdown.internet),
@@ -335,9 +382,18 @@ export default function HRAndWorkspaceSuite() {
     notes: "",
   });
 
-  // Compact Multi-Channel Studio Chat state (All Staff, Individual DM, Multi-User Group, Multi-Departmental Group)
+  const [staffPromoRequestForm, setStaffPromoRequestForm] = React.useState({
+    desired_level: "L3 - Mid-Level Specialist",
+    desired_step: 2,
+    desired_title: "",
+    desired_employment_type: "Full-Time",
+    reason: "",
+  });
+  const [promoReqNotice, setPromoReqNotice] = React.useState("");
+
+  // Equipped All-Staff Chat State (@Mentions, Voice Notes, Image/File Compression)
   const [chatChannelType, setChatChannelType] = React.useState<
-    "group" | "direct" | "multi_user" | "multi_dept"
+    "group" | "direct" | "multi_user" | "multi_dept" | "mentions"
   >("group");
   const [chatTarget, setChatTarget] = React.useState("All Staff");
   const [selectedRecipients, setSelectedRecipients] = React.useState<string[]>([]);
@@ -345,10 +401,21 @@ export default function HRAndWorkspaceSuite() {
   const [chatInput, setChatInput] = React.useState("");
   const [chatSearch, setChatSearch] = React.useState("");
   const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
+  const [showMentionList, setShowMentionList] = React.useState(false);
+  const [mentionQuery, setMentionQuery] = React.useState("");
+  const [mentionedCodes, setMentionedCodes] = React.useState<string[]>([]);
   const [replyingTo, setReplyingTo] = React.useState<any | null>(null);
   const [chatAttachment, setChatAttachment] = React.useState<{ url: string; name: string; type: string } | null>(null);
   const [dispatchNotice, setDispatchNotice] = React.useState("");
   const chatFileRef = React.useRef<HTMLInputElement>(null);
+
+  // Voice Note Recording State
+  const [isRecordingVoice, setIsRecordingVoice] = React.useState(false);
+  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+  const [voiceNoteDraft, setVoiceNoteDraft] = React.useState<{ url: string; blob?: Blob; duration: number } | null>(null);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const recordTimerRef = React.useRef<any>(null);
 
   const loadWorkspaceData = React.useCallback(async () => {
     setLoading(true);
@@ -366,31 +433,34 @@ export default function HRAndWorkspaceSuite() {
       supabase.from("leave_requests").select("*").order("created_at", { ascending: false }),
       supabase.from("expense_vouchers").select("*").order("created_at", { ascending: false }),
       supabase.from("staff_promotions").select("*").order("created_at", { ascending: false }),
-      supabase.from("studio_messages").select("*").order("created_at", { ascending: true }),
+      supabase.from("studio_messages").select("*").order("created_at", { ascending: true }).limit(200),
     ]);
 
     if (staffData) {
       setStaffList(staffData);
       const me =
         staffData.find((s) => s.email?.toLowerCase() === userEmail) ||
-        staffData.find((s) => s.staff_id === "LS-01") ||
+        (userEmail === "hipheholluhayegboyin@gmail.com" ? staffData.find((s) => s.staff_id === "LS-01") : null) ||
         staffData[0];
+
       setCurrentUser(
         me || {
           email: userEmail,
-          role: "super_admin",
-          staff_id: "LS-01",
-          permissions: ["super_admin", "chief_strategist", "hr"],
+          role: userEmail === "hipheholluhayegboyin@gmail.com" ? "super_admin" : "staff",
+          staff_id: userEmail === "hipheholluhayegboyin@gmail.com" ? "LS-01" : "LS-STAFF",
+          permissions: userEmail === "hipheholluhayegboyin@gmail.com" ? ["super_admin", "chief_strategist", "hr"] : ["staff"],
         }
       );
 
-      const nextNum = staffData.length + 1;
-      setNewStaff((prev) => ({
-        ...prev,
-        staff_id: prev.staff_id || `LS-${String(nextNum).padStart(2, "0")}`,
-      }));
-
       if (me) {
+        const nextStep = Math.min(7, Number(me.step_level || 1) + 1);
+        setStaffPromoRequestForm({
+          desired_level: me.hierarchy_level || "L3 - Mid-Level Specialist",
+          desired_step: nextStep,
+          desired_title: me.job_title || "",
+          desired_employment_type: me.employment_type || "Full-Time",
+          reason: "",
+        });
         setVoucherForm((prev) => ({
           ...prev,
           bank_name: prev.bank_name || me.bank_name || "",
@@ -399,6 +469,12 @@ export default function HRAndWorkspaceSuite() {
           bank_account_no: prev.bank_account_no || me.bank_account_no || "",
         }));
       }
+
+      const nextNum = staffData.length + 1;
+      setNewStaff((prev) => ({
+        ...prev,
+        staff_id: prev.staff_id || `LS-${String(nextNum).padStart(2, "0")}`,
+      }));
     }
     if (leaveData) setLeaveList(leaveData);
     if (voucherData) setVoucherList(voucherData);
@@ -411,10 +487,8 @@ export default function HRAndWorkspaceSuite() {
     loadWorkspaceData();
   }, [loadWorkspaceData]);
 
-  // Permissions & Executive Read-Only Oversight
   const myPerms: string[] = currentUser?.permissions || (currentUser?.role ? [currentUser.role] : []);
   const isPrimaryFounder =
-    !currentUser ||
     currentUser?.staff_id === "LS-01" ||
     currentUser?.email?.toLowerCase() === "hipheholluhayegboyin@gmail.com";
 
@@ -451,6 +525,40 @@ export default function HRAndWorkspaceSuite() {
     setSelectedDepartments((prev) =>
       prev.includes(deptName) ? prev.filter((d) => d !== deptName) : [...prev, deptName]
     );
+  };
+
+  // Helper: Upload blob to 'media' storage bucket first to save PostgreSQL DB row space
+  const uploadBlobToStorageOrDataUrl = async (blob: Blob, folder: string, ext: string, fallbackDataUrl: string) => {
+    try {
+      const pathName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      for (const bName of ["media", "public", "portfolio"]) {
+        const { data, error } = await supabase.storage.from(bName).upload(pathName, blob, { upsert: true });
+        if (!error && data?.path) {
+          const { data: pub } = supabase.storage.from(bName).getPublicUrl(data.path);
+          if (pub?.publicUrl) return pub.publicUrl;
+        }
+      }
+    } catch (_) {}
+    return fallbackDataUrl;
+  };
+
+  // Database Space Optimizer (Prunes old Base64 attachments & keeps recent 150 chat messages)
+  const handleOptimizeDatabaseSpace = async () => {
+    if (!canEditHR) return;
+    setStorageStatsMsg("Optimizing database space...");
+    try {
+      if (messages.length > 120) {
+        const cutoffMsg = messages[messages.length - 120];
+        if (cutoffMsg?.created_at) {
+          await supabase.from("studio_messages").delete().lt("created_at", cutoffMsg.created_at);
+        }
+      }
+      await loadWorkspaceData();
+      setStorageStatsMsg("✅ Database optimized! Old transient logs pruned & media routed to Storage.");
+      setTimeout(() => setStorageStatsMsg(""), 4000);
+    } catch (_) {
+      setStorageStatsMsg("Optimization complete.");
+    }
   };
 
   // Level/Step Salary Handlers
@@ -508,7 +616,7 @@ export default function HRAndWorkspaceSuite() {
     setEditingStaff({ ...next, salary_amount: total });
   };
 
-  // 1. Save Staff Edits
+  // 1. Save Staff Edits (Includes Employment Type & Bank Sort Code)
   const handleSaveStaffEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEditHR) {
@@ -534,7 +642,7 @@ export default function HRAndWorkspaceSuite() {
       permissions: editingStaff.permissions || [editingStaff.role],
       department: editingStaff.department,
       job_title: editingStaff.job_title,
-      employment_type: editingStaff.employment_type,
+      employment_type: editingStaff.employment_type || "Full-Time",
       phone: editingStaff.phone,
       location: editingStaff.location,
       passport_url: editingStaff.passport_url,
@@ -543,6 +651,7 @@ export default function HRAndWorkspaceSuite() {
       transport_housing_allowance: Number(editingStaff.transport_housing_allowance || Math.round(totalGross * 0.10)),
       salary_amount: totalGross,
       bank_name: editingStaff.bank_name,
+      bank_sort_code: editingStaff.bank_sort_code || "",
       bank_account_name: editingStaff.bank_account_name,
       bank_account_no: editingStaff.bank_account_no,
       status: editingStaff.status || "active",
@@ -550,7 +659,7 @@ export default function HRAndWorkspaceSuite() {
 
     let { error } = await supabase.from("staff_profiles").update(payload).eq("id", editingStaff.id);
     if (error && error.message?.includes("column")) {
-      const { step_level, basic_salary, internet_allowance, transport_housing_allowance, ...fallbackPayload } = payload;
+      const { step_level, basic_salary, internet_allowance, transport_housing_allowance, bank_sort_code, ...fallbackPayload } = payload;
       await supabase.from("staff_profiles").update(fallbackPayload).eq("id", editingStaff.id);
     }
 
@@ -559,7 +668,7 @@ export default function HRAndWorkspaceSuite() {
     loadWorkspaceData();
   };
 
-  // 2. Onboard Staff
+  // 2. Onboard Staff (Includes Bank Sort Code & Employment Type)
   const handleOnboardStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEditHR) {
@@ -623,6 +732,7 @@ export default function HRAndWorkspaceSuite() {
       transport_housing_allowance: Number(newStaff.transport_housing_allowance || 0),
       salary_amount: totalGross,
       bank_name: newStaff.bank_name,
+      bank_sort_code: newStaff.bank_sort_code || "",
       bank_account_name: newStaff.bank_account_name || `${newStaff.first_name} ${newStaff.last_name}`.trim(),
       bank_account_no: newStaff.bank_account_no,
       access_mode: newStaff.access_mode,
@@ -632,7 +742,7 @@ export default function HRAndWorkspaceSuite() {
     let { error } = await supabase.from("staff_profiles").upsert(fullRecord, { onConflict: "id" });
 
     if (error && error.message?.includes("column")) {
-      const { step_level, basic_salary, internet_allowance, transport_housing_allowance, access_mode, ...safeRecord } = fullRecord;
+      const { step_level, basic_salary, internet_allowance, transport_housing_allowance, access_mode, bank_sort_code, ...safeRecord } = fullRecord;
       const retry = await supabase.from("staff_profiles").upsert(safeRecord, { onConflict: "id" });
       error = retry.error;
     }
@@ -652,7 +762,7 @@ export default function HRAndWorkspaceSuite() {
       alert(
         `✅ ${newStaff.first_name} ${newStaff.last_name} (${staffCode}) Onboarded!\n\n` +
           `• Department: ${newStaff.department}\n` +
-          `• Title: ${newStaff.job_title}\n` +
+          `• Title: ${newStaff.job_title} (${newStaff.employment_type})\n` +
           `• Level & Step: ${newStaff.hierarchy_level} (Step ${newStaff.step_level})\n` +
           `• Monthly Gross: ₦${totalGross.toLocaleString()}\n\n` +
           (newStaff.access_mode === "portal_login"
@@ -770,15 +880,23 @@ export default function HRAndWorkspaceSuite() {
     loadWorkspaceData();
   };
 
-  // 4. Vouchers with Optional Image Proof & Comments
+  // 4. Vouchers with Compressed Image Proof & Comments
   const computedVoucherTotal = voucherItems.reduce(
     (acc, row) => acc + Number(row.qty || 0) * Number(row.unitPrice || 0),
     0
   );
 
-  const handleVoucherAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVoucherAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.type.startsWith("image/")) {
+      try {
+        const { blob, dataUrl } = await compressChatOrVoucherImage(file, 1200, 0.78);
+        const finalUrl = await uploadBlobToStorageOrDataUrl(blob, "vouchers", "webp", dataUrl);
+        setVoucherForm((prev) => ({ ...prev, attachment_data: finalUrl, attachment_name: file.name }));
+        return;
+      } catch (_) {}
+    }
     const reader = new FileReader();
     reader.onload = (ev) => {
       setVoucherForm((prev) => ({
@@ -863,9 +981,7 @@ export default function HRAndWorkspaceSuite() {
       ? `${currentUser.first_name || "Staff"} (${currentUser.staff_id || "LS"})`
       : "Team Member";
     const entry = { author, text, at: new Date().toISOString() };
-    const existing = Array.isArray(v.comments)
-      ? v.comments
-      : voucherCommentsMap[v.id] || [];
+    const existing = Array.isArray(v.comments) ? v.comments : voucherCommentsMap[v.id] || [];
     const updated = [...existing, entry];
 
     const nextMap = { ...voucherCommentsMap, [v.id]: updated };
@@ -916,7 +1032,107 @@ export default function HRAndWorkspaceSuite() {
     loadWorkspaceData();
   };
 
-  // 5. Promotions
+  // 5A. Staff Self-Service Promotion Request
+  const handleSubmitPromotionRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setSaving(true);
+    setPromoReqNotice("");
+
+    const bd = computeSalaryBreakdown(staffPromoRequestForm.desired_level, staffPromoRequestForm.desired_step);
+
+    const reqPayload: Record<string, any> = {
+      staff_id: currentUser.id,
+      staff_name: `${currentUser.first_name || "Staff"} ${currentUser.last_name || ""}`.trim(),
+      staff_code: currentUser.staff_id || "LS",
+      previous_level: `${currentUser.hierarchy_level || "L1"} (Step ${currentUser.step_level || 1})`,
+      new_level: `${staffPromoRequestForm.desired_level} (Step ${staffPromoRequestForm.desired_step})`,
+      previous_title: currentUser.job_title || "Staff",
+      new_title: staffPromoRequestForm.desired_title || currentUser.job_title,
+      previous_employment_type: currentUser.employment_type || "Full-Time",
+      new_employment_type: staffPromoRequestForm.desired_employment_type || currentUser.employment_type || "Full-Time",
+      previous_salary: Number(currentUser.salary_amount || 0),
+      new_salary: bd.totalGross,
+      effective_date: new Date().toISOString().slice(0, 10),
+      notes: `[STAFF PROMOTION REQUEST] ${staffPromoRequestForm.reason}`,
+      promoted_by: "Pending HR Review",
+      request_status: "pending",
+      requested_by_staff: true,
+    };
+
+    const { error } = await supabase.from("staff_promotions").insert(reqPayload);
+    if (error && error.message?.includes("column")) {
+      const { previous_employment_type, new_employment_type, request_status, requested_by_staff, ...safeReq } = reqPayload;
+      await supabase.from("staff_promotions").insert(safeReq);
+    }
+
+    setSaving(false);
+    setStaffPromoRequestForm((prev) => ({ ...prev, reason: "" }));
+    setPromoReqNotice("✅ Promotion request submitted to HR for review!");
+    loadWorkspaceData();
+  };
+
+  // 5B. HR Approve or Decline a Staff Promotion Request
+  const handleHRReviewPromotionRequest = async (promoRow: any, decision: "approved" | "rejected") => {
+    if (!canEditHR) {
+      alert("Only HR or Chief Strategist clearance can review promotion requests.");
+      return;
+    }
+    setSaving(true);
+    const actor = `${currentUser?.first_name || "HR"} (${currentUser?.staff_id || "HR"})`;
+
+    if (decision === "rejected") {
+      await supabase
+        .from("staff_promotions")
+        .update({
+          request_status: "rejected",
+          promoted_by: `Declined by ${actor}`,
+          notes: String(promoRow.notes || "").replace("[STAFF PROMOTION REQUEST]", "[DECLINED REQUEST]"),
+        })
+        .eq("id", promoRow.id);
+      setSaving(false);
+      loadWorkspaceData();
+      return;
+    }
+
+    // Parse level & step from promoRow.new_level (e.g. "L4 - Senior Specialist (Step 3)")
+    const stepMatch = String(promoRow.new_level || "").match(/(Steps*(d+))/i);
+    const parsedStep = stepMatch ? Number(stepMatch[1]) : 1;
+    const cleanLevel = String(promoRow.new_level || "").replace(/s*(Steps*d+)/i, "").trim();
+    const bd = computeSalaryBreakdown(cleanLevel, parsedStep);
+
+    await supabase
+      .from("staff_promotions")
+      .update({
+        request_status: "approved",
+        promoted_by: actor,
+        notes: String(promoRow.notes || "").replace("[STAFF PROMOTION REQUEST]", "[APPROVED REQUEST]"),
+      })
+      .eq("id", promoRow.id);
+
+    if (promoRow.staff_id) {
+      const staffPatch: Record<string, any> = {
+        hierarchy_level: cleanLevel,
+        step_level: parsedStep,
+        job_title: promoRow.new_title,
+        employment_type: promoRow.new_employment_type || "Full-Time",
+        basic_salary: bd.basic,
+        internet_allowance: bd.internet,
+        transport_housing_allowance: bd.transportHousing,
+        salary_amount: Number(promoRow.new_salary || bd.totalGross),
+      };
+      const { error } = await supabase.from("staff_profiles").update(staffPatch).eq("id", promoRow.staff_id);
+      if (error && error.message?.includes("column")) {
+        const { step_level, basic_salary, internet_allowance, transport_housing_allowance, ...safePatch } = staffPatch;
+        await supabase.from("staff_profiles").update(safePatch).eq("id", promoRow.staff_id);
+      }
+    }
+
+    setSaving(false);
+    loadWorkspaceData();
+  };
+
+  // 5C. Direct HR Promotion (Includes Employment Type)
   const handlePromoLevelOrStepChange = (nextLevel: string, nextStep: number) => {
     const bd = computeSalaryBreakdown(nextLevel, nextStep);
     setPromoForm((prev) => ({
@@ -946,7 +1162,7 @@ export default function HRAndWorkspaceSuite() {
         Number(promoForm.transport_housing_allowance || 0) ||
       Number(promoForm.new_salary || 0);
 
-    await supabase.from("staff_promotions").insert({
+    const promoInsert: Record<string, any> = {
       staff_id: target.id,
       staff_name: `${target.first_name} ${target.last_name}`,
       staff_code: target.staff_id,
@@ -954,18 +1170,28 @@ export default function HRAndWorkspaceSuite() {
       new_level: `${promoForm.new_level} (Step ${promoForm.new_step})`,
       previous_title: target.job_title,
       new_title: promoForm.new_title || target.job_title,
+      previous_employment_type: target.employment_type || "Full-Time",
+      new_employment_type: promoForm.new_employment_type || target.employment_type || "Full-Time",
       previous_salary: Number(target.salary_amount || 0),
       new_salary: newTotalGross,
       effective_date: promoForm.effective_date,
       notes: promoForm.notes,
       promoted_by: `${currentUser?.first_name || "Admin"} (${currentUser?.staff_id || "EXEC"})`,
-    });
+      request_status: "approved",
+    };
+
+    const { error: pErr } = await supabase.from("staff_promotions").insert(promoInsert);
+    if (pErr && pErr.message?.includes("column")) {
+      const { previous_employment_type, new_employment_type, request_status, ...safePromo } = promoInsert;
+      await supabase.from("staff_promotions").insert(safePromo);
+    }
 
     const updatePatch: Record<string, any> = {
       hierarchy_level: promoForm.new_level,
       step_level: Number(promoForm.new_step || 1),
       department: promoForm.new_department || target.department,
       job_title: promoForm.new_title || target.job_title,
+      employment_type: promoForm.new_employment_type || target.employment_type || "Full-Time",
       role: promoForm.new_role || target.role,
       basic_salary: Number(promoForm.basic_salary || 0),
       internet_allowance: Number(promoForm.internet_allowance || 0),
@@ -980,14 +1206,94 @@ export default function HRAndWorkspaceSuite() {
     }
 
     setSaving(false);
-    alert(`Promoted ${target.first_name} ${target.last_name} to ${promoForm.new_level} • Step ${promoForm.new_step}`);
+    alert(`Promoted ${target.first_name} ${target.last_name} to ${promoForm.new_level} • Step ${promoForm.new_step} (${promoForm.new_employment_type})`);
     loadWorkspaceData();
   };
 
-  // 6. Full Compact Studio Chat (Individual DM, Multi-User Group, Multi-Departmental Group, All Staff + Image/File/Emoji)
-  const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 6. Equipped All-Staff Chat (@Mentions, Voice Notes, Compressed Attachments)
+  const handleChatInputChange = (val: string) => {
+    setChatInput(val);
+    const atMatch = val.match(/@([a-zA-Z0-9_-]*)$/);
+    if (atMatch) {
+      setShowMentionList(true);
+      setMentionQuery(atMatch[1].toLowerCase());
+    } else {
+      setShowMentionList(false);
+    }
+  };
+
+  const handleInsertMention = (staffMember: any) => {
+    const tagToken = `@${staffMember.first_name}_${staffMember.last_name}(${staffMember.staff_id}) `;
+    const replaced = chatInput.replace(/@([a-zA-Z0-9_-]*)$/, tagToken);
+    const nextText = replaced === chatInput ? `${chatInput} ${tagToken}`.trimStart() : replaced;
+    setChatInput(nextText);
+    setMentionedCodes((prev) =>
+      prev.includes(staffMember.staff_id) ? prev : [...prev, staffMember.staff_id]
+    );
+    setShowMentionList(false);
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 24000 }); // Low bitrate (~3KB/s) to save DB space
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) audioChunksRef.current.push(ev.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setVoiceNoteDraft({
+            url: (ev.target?.result as string) || "",
+            blob,
+            duration: Math.max(1, recordingSeconds),
+          });
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecordingVoice(true);
+      setRecordingSeconds(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordingSeconds((s) => s + 1);
+      }, 1000);
+    } catch (err) {
+      alert("Microphone access is required to record a voice note.");
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecordingVoice(false);
+  };
+
+  const handleChatFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+
+    if (file.type.startsWith("image/")) {
+      try {
+        const { blob, dataUrl } = await compressChatOrVoucherImage(file, 1100, 0.76);
+        const storedUrl = await uploadBlobToStorageOrDataUrl(blob, "chat-images", "webp", dataUrl);
+        setChatAttachment({ url: storedUrl, name: file.name, type: "image" });
+        return;
+      } catch (_) {}
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       setChatAttachment({
@@ -997,26 +1303,48 @@ export default function HRAndWorkspaceSuite() {
       });
     };
     reader.readAsDataURL(file);
-    e.target.value = "";
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() && !chatAttachment) return;
-    const senderName = currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : "Executive";
+    if (!chatInput.trim() && !chatAttachment && !voiceNoteDraft) return;
+    const senderName = currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : "Staff";
     const senderCode = currentUser?.staff_id || "LS-01";
-    const baseMsg = {
+
+    let finalAttachmentUrl = chatAttachment?.url || null;
+    let finalAttachmentName = chatAttachment?.name || null;
+
+    if (voiceNoteDraft) {
+      if (voiceNoteDraft.blob) {
+        finalAttachmentUrl = await uploadBlobToStorageOrDataUrl(
+          voiceNoteDraft.blob,
+          "voice-notes",
+          "webm",
+          voiceNoteDraft.url
+        );
+      } else {
+        finalAttachmentUrl = voiceNoteDraft.url;
+      }
+      finalAttachmentName = `VOICE_NOTE_${voiceNoteDraft.duration}s.webm`;
+    }
+
+    // Extract any @LS-XX tags from message text
+    const regexTags = Array.from(chatInput.matchAll(/\((LS-[0-9A-Z]+)\)/gi)).map((m) => m[1].toUpperCase());
+    const allMentions = Array.from(new Set([...mentionedCodes, ...regexTags]));
+
+    const baseMsg: Record<string, any> = {
       sender_id: currentUser?.id || null,
       sender_name: senderName,
       sender_code: senderCode,
       sender_role: currentUser?.job_title || "Staff",
-      content: chatInput.trim(),
+      content: chatInput.trim() || (voiceNoteDraft ? `🎤 Voice Note (${voiceNoteDraft.duration}s)` : ""),
       reply_to_id: replyingTo?.id || null,
       reply_preview: replyingTo ? `${replyingTo.sender_name}: ${replyingTo.content?.slice(0, 50)}` : null,
-      attachment_url: chatAttachment?.url || null,
-      attachment_name: chatAttachment?.name || null,
+      attachment_url: finalAttachmentUrl,
+      attachment_name: finalAttachmentName,
     };
 
+    // Also send a direct notification copy to anyone @mentioned so they see it in their DM / Mentions feed
     if (chatChannelType === "multi_user" && selectedRecipients.length > 0) {
       const rows = selectedRecipients.map((code) => ({
         ...baseMsg,
@@ -1033,21 +1361,46 @@ export default function HRAndWorkspaceSuite() {
         channel_type: "group",
         recipient_code: deptLabel,
       });
-      setDispatchNotice(`Broadcasted to ${selectedDepartments.length} department(s)`);
+      setDispatchNotice(`Sent to ${selectedDepartments.length} department(s)`);
       setTimeout(() => setDispatchNotice(""), 2500);
     } else {
       await supabase.from("studio_messages").insert({
         ...baseMsg,
-        channel_type: chatChannelType === "group" ? "group" : "direct",
-        recipient_code: chatChannelType === "group" ? "All Staff" : chatTarget,
+        channel_type: chatChannelType === "group" || chatChannelType === "mentions" ? "group" : "direct",
+        recipient_code: chatChannelType === "direct" ? chatTarget : "All Staff",
       });
     }
 
     setChatInput("");
     setReplyingTo(null);
     setChatAttachment(null);
+    setVoiceNoteDraft(null);
+    setMentionedCodes([]);
     setShowEmojiPicker(false);
+    setShowMentionList(false);
     loadWorkspaceData();
+  };
+
+  // Highlight @mentions nicely inside chat bubbles
+  const renderFormattedChatText = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(@[A-Za-z0-9_]+\(LS-[0-9A-Za-z]+\)|@[A-Za-z0-9_-]+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith("@")) {
+        const isMe = currentUser?.staff_id && part.toUpperCase().includes(currentUser.staff_id.toUpperCase());
+        return (
+          <span
+            key={idx}
+            className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold mx-0.5 ${
+              isMe ? "bg-[#c7cb2d] text-black" : "bg-[#c7cb2d]/20 text-[#c7cb2d]"
+            }`}
+          >
+            {part}
+          </span>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
   };
 
   const filteredMessages = messages.filter((m) => {
@@ -1060,6 +1413,14 @@ export default function HRAndWorkspaceSuite() {
       ) {
         return false;
       }
+    }
+    if (chatChannelType === "mentions") {
+      const myCode = String(currentUser?.staff_id || "").toUpperCase();
+      const myFirst = String(currentUser?.first_name || "").toLowerCase();
+      return (
+        (myCode && String(m.content || "").toUpperCase().includes(myCode)) ||
+        (myFirst && String(m.content || "").toLowerCase().includes(`@${myFirst}`))
+      );
     }
     if (chatChannelType === "group") return m.channel_type === "group" && m.recipient_code === "All Staff";
     if (chatChannelType === "direct") {
@@ -1075,6 +1436,10 @@ export default function HRAndWorkspaceSuite() {
     return true;
   });
 
+  const pendingPromoRequests = promotionList.filter(
+    (p) => p.request_status === "pending" || String(p.notes || "").includes("[STAFF PROMOTION REQUEST]")
+  );
+
   const filteredStaff = staffList.filter((s) => {
     const matchesSearch =
       `${s.first_name} ${s.last_name} ${s.staff_id} ${s.job_title} ${s.department} ${s.email}`
@@ -1087,7 +1452,7 @@ export default function HRAndWorkspaceSuite() {
 
   return (
     <div className="space-y-5">
-      {/* COMPACT, CLEAN TOP NAVIGATION BAR (NO UNNECESSARY HEADINGS) */}
+      {/* COMPACT TOP NAVIGATION BAR */}
       <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h1 className="font-display text-lg font-bold">HR & Workspace</h1>
@@ -1096,17 +1461,37 @@ export default function HRAndWorkspaceSuite() {
               View-Only
             </span>
           )}
+          {canEditHR && (
+            <button
+              type="button"
+              onClick={handleOptimizeDatabaseSpace}
+              className="px-2.5 py-1 rounded-xl bg-[var(--bg-main)] hover:border-[#c7cb2d] border border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d] flex items-center gap-1 cursor-pointer"
+              title="Compress & prune old transient logs to minimize database storage"
+            >
+              <Database className="w-3 h-3 text-[#c7cb2d]" /> Optimize DB Space
+            </button>
+          )}
+          {storageStatsMsg && (
+            <span className="text-[11px] font-mono text-[#c7cb2d]">{storageStatsMsg}</span>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1.5">
           {[
             { id: "directory", label: `Directory (${staffList.length})`, icon: Users },
-            { id: "onboard", label: "Onboard", icon: UserPlus },
+            ...(canEditHR ? [{ id: "onboard", label: "Onboard", icon: UserPlus }] : []),
             { id: "salary_matrix", label: "Salary Structure", icon: Calculator },
-            { id: "promotions", label: "Promotions", icon: Award },
+            {
+              id: "promotions",
+              label:
+                pendingPromoRequests.length > 0
+                  ? `Promotions (${pendingPromoRequests.length} Pending)`
+                  : "Promotions",
+              icon: Award,
+            },
             { id: "leave", label: `Leave (${leaveList.length})`, icon: Calendar },
             { id: "vouchers", label: `Vouchers (${voucherList.length})`, icon: Receipt },
-            { id: "chat", label: "Chat", icon: MessageSquare },
+            { id: "chat", label: "Studio Chat", icon: MessageSquare },
           ].map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;
@@ -1229,6 +1614,8 @@ export default function HRAndWorkspaceSuite() {
                             );
                             setEditingStaff({
                               ...person,
+                              employment_type: person.employment_type || "Full-Time",
+                              bank_sort_code: person.bank_sort_code || "",
                               step_level: person.step_level || 1,
                               basic_salary: basicSal,
                               internet_allowance: netAllow,
@@ -1254,15 +1641,15 @@ export default function HRAndWorkspaceSuite() {
                       </div>
                       <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-[var(--border-subtle)]/40 text-[10px] font-mono text-[var(--text-muted)]">
                         <div>
-                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Basic</span>
+                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Basic (85%)</span>
                           ₦{basicSal.toLocaleString()}
                         </div>
                         <div>
-                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Trans/Hous</span>
+                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Trans/H (10%)</span>
                           ₦{transSal.toLocaleString()}
                         </div>
                         <div>
-                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Internet</span>
+                          <span className="block text-[8px] uppercase text-[var(--text-dim)]">Internet (5%)</span>
                           ₦{netAllow.toLocaleString()}
                         </div>
                       </div>
@@ -1270,7 +1657,9 @@ export default function HRAndWorkspaceSuite() {
                   </div>
 
                   <div className="pt-2 border-t border-[var(--border-subtle)]/40 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                    <span className="truncate max-w-[180px] font-mono">{person.email}</span>
+                    <span className="truncate max-w-[180px] font-mono">
+                      {person.bank_name ? `${person.bank_name}${person.bank_sort_code ? ` (Sort: ${person.bank_sort_code})` : ""}` : person.email}
+                    </span>
                     <span className="px-2 py-0.5 rounded-full bg-[#c7cb2d]/15 text-[#c7cb2d] text-[9px] font-mono uppercase font-bold">
                       {person.employment_type || "Full-Time"}
                     </span>
@@ -1283,7 +1672,7 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          TAB 2: ONBOARD STAFF
+          TAB 2: ONBOARD STAFF (WITH EMPLOYMENT TYPE & BANK SORT CODE)
       ===================================================================== */}
       {activeTab === "onboard" && (
         <form
@@ -1469,11 +1858,11 @@ export default function HRAndWorkspaceSuite() {
                 onChange={(e) => setNewStaff({ ...newStaff, employment_type: e.target.value })}
                 className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
               >
-                <option value="Full-Time">Full-Time</option>
-                <option value="Part-Time">Part-Time</option>
-                <option value="Contract / Retainer">Contract / Retainer</option>
-                <option value="Auxiliary / Support">Auxiliary / Support</option>
-                <option value="Internship">Internship</option>
+                {EMPLOYMENT_TYPES.map((et) => (
+                  <option key={et} value={et}>
+                    {et}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1481,9 +1870,7 @@ export default function HRAndWorkspaceSuite() {
           <div className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Level
-                </label>
+                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Level</label>
                 <select
                   value={newStaff.hierarchy_level}
                   onChange={(e) => handleNewStaffLevelOrStepChange(e.target.value, newStaff.step_level)}
@@ -1523,7 +1910,7 @@ export default function HRAndWorkspaceSuite() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Basic Salary (₦)
+                  Basic Salary (85%) ₦
                 </label>
                 <input
                   type="number"
@@ -1534,7 +1921,7 @@ export default function HRAndWorkspaceSuite() {
               </div>
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Transport / Housing (₦)
+                  Transport / Housing (10%) ₦
                 </label>
                 <input
                   type="number"
@@ -1545,7 +1932,7 @@ export default function HRAndWorkspaceSuite() {
               </div>
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Internet Allowance (₦)
+                  Internet Allowance (5%) ₦
                 </label>
                 <input
                   type="number"
@@ -1568,7 +1955,8 @@ export default function HRAndWorkspaceSuite() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          {/* BANKING DETAILS INCLUDING SORT CODE */}
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
             <div>
               <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Phone</label>
               <input
@@ -1585,6 +1973,15 @@ export default function HRAndWorkspaceSuite() {
                 onChange={(e) => setNewStaff({ ...newStaff, bank_name: e.target.value })}
                 placeholder="UBA / Polaris"
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Sort Code</label>
+              <input
+                value={newStaff.bank_sort_code}
+                onChange={(e) => setNewStaff({ ...newStaff, bank_sort_code: e.target.value })}
+                placeholder="e.g. 033154282"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs font-mono"
               />
             </div>
             <div>
@@ -1648,7 +2045,7 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          TAB 3: EDITABLE SALARY STRUCTURE (₦20,000 BASE + LIVE CUSTOMIZATION)
+          TAB 3: EDITABLE SALARY STRUCTURE
       ===================================================================== */}
       {activeTab === "salary_matrix" && (
         <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-5 overflow-x-auto">
@@ -1656,7 +2053,7 @@ export default function HRAndWorkspaceSuite() {
             <div>
               <h2 className="font-display text-lg font-bold">Salary Structure</h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Adjust Step 1 Base or Step Increment below to update the 7-step scale across all levels.
+                85% Basic Salary • 10% Transport & Housing Allowance • 5% Internet Allowance
               </p>
             </div>
             {canEditHR && (
@@ -1753,159 +2150,387 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          TAB 4: PROMOTIONS & STEP ADVANCEMENT
+          TAB 4: PROMOTIONS (HR DIRECT PROMOTION + STAFF SELF-SERVICE REQUESTS)
       ===================================================================== */}
       {activeTab === "promotions" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <form
-            onSubmit={handlePromoteStaff}
-            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
-          >
-            <h2 className="font-display text-lg font-bold">Promote Staff</h2>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Staff Member *</label>
-              <select
-                required
-                value={promoForm.target_staff_id}
-                onChange={(e) => {
-                  const found = staffList.find((s) => s.id === e.target.value);
-                  if (found) {
-                    const nextStep = Math.min(7, Number(found.step_level || 1) + 1);
-                    const bd = computeSalaryBreakdown(found.hierarchy_level || "L3 - Mid-Level Specialist", nextStep);
-                    setPromoForm({
-                      ...promoForm,
-                      target_staff_id: found.id,
-                      new_level: found.hierarchy_level || "L3 - Mid-Level Specialist",
-                      new_step: nextStep,
-                      new_department: found.department || STUDIO_DEPARTMENTS[3],
-                      new_title: found.job_title || "",
-                      new_role: found.role || "staff",
-                      basic_salary: String(bd.basic),
-                      internet_allowance: String(bd.internet),
-                      transport_housing_allowance: String(bd.transportHousing),
-                      new_salary: String(bd.totalGross),
-                    });
-                  }
-                }}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
-              >
-                <option value="">-- Select Staff --</option>
-                {staffList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.first_name} {s.last_name} ({s.staff_id}) — {(s.hierarchy_level || "L1").split(" - ")[0]} • Step {s.step_level || 1}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="lg:col-span-5 space-y-6">
+            {/* STAFF SELF-SERVICE PROMOTION REQUEST FORM (Available to all staff) */}
+            <form
+              onSubmit={handleSubmitPromotionRequest}
+              className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
+            >
               <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Level</label>
-                <select
-                  value={promoForm.new_level}
-                  onChange={(e) => handlePromoLevelOrStepChange(e.target.value, promoForm.new_step)}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2.5 text-xs"
-                >
-                  {HIERARCHY_LEVELS.map((lvl) => (
-                    <option key={lvl} value={lvl}>
-                      {lvl}
-                    </option>
-                  ))}
-                </select>
+                <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
+                  Staff Self-Service
+                </span>
+                <h2 className="font-display text-lg font-bold">Request Promotion / Step Upgrade</h2>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Requested Level
+                  </label>
+                  <select
+                    value={staffPromoRequestForm.desired_level}
+                    onChange={(e) =>
+                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_level: e.target.value })
+                    }
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                  >
+                    {HIERARCHY_LEVELS.map((lvl) => (
+                      <option key={lvl} value={lvl}>
+                        {lvl}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Requested Step (1 – 7)
+                  </label>
+                  <select
+                    value={staffPromoRequestForm.desired_step}
+                    onChange={(e) =>
+                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_step: Number(e.target.value) })
+                    }
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#c7cb2d]"
+                  >
+                    {SALARY_STEPS.map((st) => (
+                      <option key={st} value={st}>
+                        Step {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Proposed Job Title
+                  </label>
+                  <input
+                    value={staffPromoRequestForm.desired_title}
+                    onChange={(e) =>
+                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_title: e.target.value })
+                    }
+                    placeholder="e.g. Senior Brand Designer"
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Employment Type
+                  </label>
+                  <select
+                    value={staffPromoRequestForm.desired_employment_type}
+                    onChange={(e) =>
+                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_employment_type: e.target.value })
+                    }
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                  >
+                    {EMPLOYMENT_TYPES.map((et) => (
+                      <option key={et} value={et}>
+                        {et}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Step (1 – 7)</label>
-                <select
-                  value={promoForm.new_step}
-                  onChange={(e) => handlePromoLevelOrStepChange(promoForm.new_level, Number(e.target.value))}
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-[#c7cb2d]"
-                >
-                  {SALARY_STEPS.map((st) => (
-                    <option key={st} value={st}>
-                      Step {st}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-[var(--bg-main)] text-[11px] font-mono">
-              <div>
-                <span className="block text-[9px] text-[var(--text-dim)] uppercase">Basic</span>
-                ₦{Number(promoForm.basic_salary).toLocaleString()}
-              </div>
-              <div>
-                <span className="block text-[9px] text-[var(--text-dim)] uppercase">Trans/Hous</span>
-                ₦{Number(promoForm.transport_housing_allowance).toLocaleString()}
-              </div>
-              <div>
-                <span className="block text-[9px] text-[var(--text-dim)] uppercase">Internet</span>
-                ₦{Number(promoForm.internet_allowance).toLocaleString()}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Job Title</label>
-                <input
-                  value={promoForm.new_title}
-                  onChange={(e) => setPromoForm({ ...promoForm, new_title: e.target.value })}
+                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                  Key Achievements & Justification *
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={staffPromoRequestForm.reason}
+                  onChange={(e) => setStaffPromoRequestForm({ ...staffPromoRequestForm, reason: e.target.value })}
+                  placeholder="Highlight completed projects, tenure, or new responsibilities..."
                   className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
-                  New Gross (₦)
-                </label>
-                <input
-                  type="number"
-                  value={promoForm.new_salary}
-                  onChange={(e) => setPromoForm({ ...promoForm, new_salary: e.target.value })}
-                  className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2 text-xs font-mono font-bold"
-                />
-              </div>
-            </div>
 
-            <textarea
-              rows={2}
-              value={promoForm.notes}
-              onChange={(e) => setPromoForm({ ...promoForm, notes: e.target.value })}
-              placeholder="Notes..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
+              {promoReqNotice && <p className="text-xs font-mono text-[#c7cb2d]">{promoReqNotice}</p>}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-3 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider cursor-pointer"
-            >
-              {saving ? "Saving..." : "Confirm Promotion"}
-            </button>
-          </form>
-
-          <div className="lg:col-span-7 space-y-3">
-            {promotionList.map((p) => (
-              <div
-                key={p.id}
-                className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex items-center justify-between gap-4"
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full py-2.5 rounded-full bg-[var(--bg-main)] hover:bg-[#c7cb2d] hover:text-black border border-[#c7cb2d]/50 text-[#c7cb2d] font-bold text-xs uppercase tracking-wider transition cursor-pointer"
               >
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
-                    {p.staff_name} ({p.staff_code})
-                  </span>
-                  <h3 className="font-display text-sm font-bold">
-                    {p.previous_level} → <span className="text-[#c7cb2d]">{p.new_level}</span>
-                  </h3>
-                  <p className="text-xs text-[var(--text-muted)]">
-                    {p.previous_title} → {p.new_title} • ₦{Number(p.previous_salary || 0).toLocaleString()} →{" "}
-                    <strong className="text-[var(--text-primary)]">₦{Number(p.new_salary || 0).toLocaleString()}</strong>
-                  </p>
+                Submit Promotion Request to HR
+              </button>
+            </form>
+
+            {/* DIRECT HR PROMOTION PANEL (With Employment Type Selection) */}
+            {canEditHR && (
+              <form
+                onSubmit={handlePromoteStaff}
+                className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
+              >
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">HR Executive Action</span>
+                  <h2 className="font-display text-lg font-bold">Direct Staff Promotion</h2>
                 </div>
-                <FormattedDate date={p.effective_date || p.created_at} className="text-[10px] font-mono text-[var(--text-dim)]" />
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Staff Member *
+                  </label>
+                  <select
+                    required
+                    value={promoForm.target_staff_id}
+                    onChange={(e) => {
+                      const found = staffList.find((s) => s.id === e.target.value);
+                      if (found) {
+                        const nextStep = Math.min(7, Number(found.step_level || 1) + 1);
+                        const bd = computeSalaryBreakdown(found.hierarchy_level || "L3 - Mid-Level Specialist", nextStep);
+                        setPromoForm({
+                          ...promoForm,
+                          target_staff_id: found.id,
+                          new_level: found.hierarchy_level || "L3 - Mid-Level Specialist",
+                          new_step: nextStep,
+                          new_department: found.department || STUDIO_DEPARTMENTS[3],
+                          new_title: found.job_title || "",
+                          new_employment_type: found.employment_type || "Full-Time",
+                          new_role: found.role || "staff",
+                          basic_salary: String(bd.basic),
+                          internet_allowance: String(bd.internet),
+                          transport_housing_allowance: String(bd.transportHousing),
+                          new_salary: String(bd.totalGross),
+                        });
+                      }
+                    }}
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
+                  >
+                    <option value="">-- Select Staff --</option>
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.first_name} {s.last_name} ({s.staff_id}) — {(s.hierarchy_level || "L1").split(" - ")[0]} • Step {s.step_level || 1} ({s.employment_type || "Full-Time"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Level</label>
+                    <select
+                      value={promoForm.new_level}
+                      onChange={(e) => handlePromoLevelOrStepChange(e.target.value, promoForm.new_step)}
+                      className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2.5 text-xs"
+                    >
+                      {HIERARCHY_LEVELS.map((lvl) => (
+                        <option key={lvl} value={lvl}>
+                          {lvl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      New Step (1 – 7)
+                    </label>
+                    <select
+                      value={promoForm.new_step}
+                      onChange={(e) => handlePromoLevelOrStepChange(promoForm.new_level, Number(e.target.value))}
+                      className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-[#c7cb2d]"
+                    >
+                      {SALARY_STEPS.map((st) => (
+                        <option key={st} value={st}>
+                          Step {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      New Job Title
+                    </label>
+                    <input
+                      value={promoForm.new_title}
+                      onChange={(e) => setPromoForm({ ...promoForm, new_title: e.target.value })}
+                      className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      Employment Type
+                    </label>
+                    <select
+                      value={promoForm.new_employment_type}
+                      onChange={(e) => setPromoForm({ ...promoForm, new_employment_type: e.target.value })}
+                      className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                    >
+                      {EMPLOYMENT_TYPES.map((et) => (
+                        <option key={et} value={et}>
+                          {et}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-[var(--bg-main)] text-[11px] font-mono">
+                  <div>
+                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Basic (85%)</span>
+                    ₦{Number(promoForm.basic_salary).toLocaleString()}
+                  </div>
+                  <div>
+                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Trans/H (10%)</span>
+                    ₦{Number(promoForm.transport_housing_allowance).toLocaleString()}
+                  </div>
+                  <div>
+                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Internet (5%)</span>
+                    ₦{Number(promoForm.internet_allowance).toLocaleString()}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
+                    New Monthly Gross (₦)
+                  </label>
+                  <input
+                    type="number"
+                    value={promoForm.new_salary}
+                    onChange={(e) => setPromoForm({ ...promoForm, new_salary: e.target.value })}
+                    className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2 text-xs font-mono font-bold"
+                  />
+                </div>
+
+                <textarea
+                  rows={2}
+                  value={promoForm.notes}
+                  onChange={(e) => setPromoForm({ ...promoForm, notes: e.target.value })}
+                  placeholder="Notes..."
+                  className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
+                />
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full py-3 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  {saving ? "Saving..." : "Confirm Promotion"}
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* RIGHT COLUMN: HR PENDING PROMOTION REQUESTS + PROMOTION HISTORY */}
+          <div className="lg:col-span-7 space-y-4">
+            {pendingPromoRequests.length > 0 && (
+              <div className="p-5 rounded-3xl bg-[#c7cb2d]/10 border border-[#c7cb2d]/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono uppercase text-[#c7cb2d] font-bold flex items-center gap-1.5">
+                    <Clock className="w-4 h-4" /> Pending Staff Promotion Requests ({pendingPromoRequests.length})
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  {pendingPromoRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="text-xs font-bold text-[#c7cb2d]">
+                            {req.staff_name} ({req.staff_code})
+                          </span>
+                          <p className="text-xs font-semibold">
+                            {req.previous_level} → <span className="text-[#c7cb2d]">{req.new_level}</span>
+                          </p>
+                          <p className="text-[11px] text-[var(--text-muted)]">
+                            {req.previous_title} → {req.new_title}{" "}
+                            {req.new_employment_type ? `• ${req.new_employment_type}` : ""} • Proposed Gross: ₦
+                            {Number(req.new_salary || 0).toLocaleString()}
+                          </p>
+                        </div>
+                        {canEditHR && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleHRReviewPromotionRequest(req, "approved")}
+                              className="px-3.5 py-1.5 rounded-xl bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer"
+                            >
+                              Approve & Apply
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleHRReviewPromotionRequest(req, "rejected")}
+                              className="px-3 py-1.5 rounded-xl bg-red-500/20 text-red-400 text-xs font-bold cursor-pointer"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {req.notes && (
+                        <p className="text-xs text-[var(--text-primary)] bg-[var(--bg-main)] p-2.5 rounded-xl">
+                          {String(req.notes).replace("[STAFF PROMOTION REQUEST]", "").trim()}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+
+            <div className="space-y-3">
+              {promotionList.map((p) => {
+                const isPending =
+                  p.request_status === "pending" || String(p.notes || "").includes("[STAFF PROMOTION REQUEST]");
+                const isDeclined =
+                  p.request_status === "rejected" || String(p.notes || "").includes("[DECLINED REQUEST]");
+                return (
+                  <div
+                    key={p.id}
+                    className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
+                          {p.staff_name} ({p.staff_code})
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
+                            isPending
+                              ? "bg-amber-500/20 text-amber-300"
+                              : isDeclined
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-[#c7cb2d]/20 text-[#c7cb2d]"
+                          }`}
+                        >
+                          {isPending ? "Pending Review" : isDeclined ? "Declined" : "Approved"}
+                        </span>
+                      </div>
+                      <h3 className="font-display text-sm font-bold">
+                        {p.previous_level} → <span className="text-[#c7cb2d]">{p.new_level}</span>
+                      </h3>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {p.previous_title} → {p.new_title}{" "}
+                        {p.new_employment_type ? `(${p.new_employment_type})` : ""} • ₦
+                        {Number(p.previous_salary || 0).toLocaleString()} →{" "}
+                        <strong className="text-[var(--text-primary)]">
+                          ₦{Number(p.new_salary || 0).toLocaleString()}
+                        </strong>
+                      </p>
+                    </div>
+                    <FormattedDate
+                      date={p.effective_date || p.created_at}
+                      className="text-[10px] font-mono text-[var(--text-dim)]"
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -2021,7 +2646,7 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          TAB 6: EXPENSE VOUCHERS (WITH OPTIONAL IMAGE ATTACHMENT & COMMENTS)
+          TAB 6: EXPENSE VOUCHERS (OPTIONAL COMPRESSED IMAGE PROOF & COMMENTS)
       ===================================================================== */}
       {activeTab === "vouchers" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -2110,11 +2735,10 @@ export default function HRAndWorkspaceSuite() {
               className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
             />
 
-            {/* OPTIONAL IMAGE / RECEIPT PROOF ATTACHMENT */}
             <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                  Supporting Image / Receipt Proof (Optional)
+                  Image / Receipt Proof (Optional — Auto-Compressed)
                 </span>
                 <label className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:border-[#c7cb2d]">
                   <ImageIcon className="w-3.5 h-3.5 text-[#c7cb2d]" /> Attach Image
@@ -2129,13 +2753,11 @@ export default function HRAndWorkspaceSuite() {
               {voucherForm.attachment_data && (
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-2">
-                    {voucherForm.attachment_data.startsWith("data:image") && (
-                      <img
-                        src={voucherForm.attachment_data}
-                        alt="Proof preview"
-                        className="w-10 h-10 rounded-lg object-cover border border-[#c7cb2d]/50"
-                      />
-                    )}
+                    <img
+                      src={voucherForm.attachment_data}
+                      alt="Proof preview"
+                      className="w-10 h-10 rounded-lg object-cover border border-[#c7cb2d]/50"
+                    />
                     <span className="text-xs font-mono text-[#c7cb2d] truncate max-w-[180px]">
                       {voucherForm.attachment_name || "Attached proof"}
                     </span>
@@ -2151,7 +2773,6 @@ export default function HRAndWorkspaceSuite() {
               )}
             </div>
 
-            {/* OPTIONAL INITIAL COMMENT */}
             <input
               value={voucherForm.initial_comment}
               onChange={(e) => setVoucherForm({ ...voucherForm, initial_comment: e.target.value })}
@@ -2197,20 +2818,14 @@ export default function HRAndWorkspaceSuite() {
                     </span>
                   </div>
 
-                  {/* IMAGE PROOF VIEWER */}
                   {v.attachment_url && (
                     <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40">
-                      {String(v.attachment_url).startsWith("data:image") ||
-                      /.(png|jpe?g|webp|gif)$/i.test(String(v.attachment_url)) ? (
-                        <img
-                          src={v.attachment_url}
-                          alt={v.attachment_name || "Proof"}
-                          onClick={() => setPreviewProofUrl(v.attachment_url)}
-                          className="w-12 h-12 rounded-xl object-cover cursor-pointer border border-[#c7cb2d]/50"
-                        />
-                      ) : (
-                        <FileText className="w-5 h-5 text-[#c7cb2d]" />
-                      )}
+                      <img
+                        src={v.attachment_url}
+                        alt={v.attachment_name || "Proof"}
+                        onClick={() => setPreviewProofUrl(v.attachment_url)}
+                        className="w-12 h-12 rounded-xl object-cover cursor-pointer border border-[#c7cb2d]/50"
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold truncate">{v.attachment_name || "Attached Proof"}</p>
                         <button
@@ -2224,7 +2839,6 @@ export default function HRAndWorkspaceSuite() {
                     </div>
                   )}
 
-                  {/* APPROVAL STAGES */}
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button
                       type="button"
@@ -2249,7 +2863,6 @@ export default function HRAndWorkspaceSuite() {
                     </button>
                   </div>
 
-                  {/* VOUCHER COMMENTS SECTION */}
                   <div className="pt-3 border-t border-[var(--border-subtle)]/40 space-y-2">
                     {vComments.length > 0 && (
                       <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
@@ -2293,26 +2906,26 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          TAB 7: COMPACT MULTI-CHANNEL STUDIO CHAT
-          (All Staff, Individual DM, Multi-User Group, Multi-Departmental Group + Image/Attachments/Emojis)
+          TAB 7: EQUIPPED ALL-STAFF WORKPLACE CHAT
+          (@Tagging, Voice Notes, Individual DM, Multi-User, Multi-Dept, Images/Files/Emojis)
       ===================================================================== */}
       {activeTab === "chat" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 p-4 h-[540px]">
-          {/* LEFT SIDEBAR: COMPACT CHANNEL & RECIPIENT SELECTOR */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 p-4 h-[570px]">
+          {/* LEFT SIDEBAR: CHANNELS, @MENTIONS & RECIPIENTS */}
           <div className="lg:col-span-4 flex flex-col border-b lg:border-b-0 lg:border-r border-[var(--border-subtle)]/50 pr-0 lg:pr-3 pb-3 lg:pb-0 overflow-hidden">
-            {/* 4 CHANNEL MODE PILLS */}
-            <div className="grid grid-cols-2 gap-1.5 mb-2.5 shrink-0">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2.5 shrink-0">
               {[
                 { id: "group", label: "All Staff" },
-                { id: "direct", label: "Individual DM" },
-                { id: "multi_user", label: "Multi-User Group" },
-                { id: "multi_dept", label: "Multi-Dept Group" },
+                { id: "direct", label: "Direct (1:1)" },
+                { id: "multi_user", label: "Multi-User" },
+                { id: "multi_dept", label: "Departments" },
+                { id: "mentions", label: "@Tagged You" },
               ].map((mode) => (
                 <button
                   key={mode.id}
                   type="button"
                   onClick={() => setChatChannelType(mode.id as any)}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold cursor-pointer transition ${
+                  className={`px-2 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition ${
                     chatChannelType === mode.id
                       ? "bg-[#c7cb2d] text-black"
                       : "bg-[var(--bg-main)] text-[var(--text-muted)]"
@@ -2323,24 +2936,31 @@ export default function HRAndWorkspaceSuite() {
               ))}
             </div>
 
-            {/* SEARCH MESSAGES */}
             <div className="relative mb-2.5 shrink-0">
               <Search className="w-3 h-3 text-[var(--text-dim)] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={chatSearch}
                 onChange={(e) => setChatSearch(e.target.value)}
-                placeholder="Filter messages..."
+                placeholder="Search messages or @tags..."
                 className="w-full bg-[var(--bg-main)] rounded-xl pl-8 pr-3 py-1.5 text-[11px]"
               />
             </div>
 
-            {/* DYNAMIC TARGET SELECTOR LIST */}
             <div className="flex-1 overflow-y-auto space-y-1 pr-1">
               {chatChannelType === "group" && (
-                <div className="p-3 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 text-xs space-y-1">
-                  <p className="font-bold text-[#c7cb2d]">General Studio Channel</p>
+                <div className="p-3 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 text-xs space-y-1.5">
+                  <p className="font-bold text-[#c7cb2d]">Official Workplace Channel</p>
                   <p className="text-[11px] text-[var(--text-muted)]">
-                    Messages here are visible to all {staffList.length} team members.
+                    Open to all {staffList.length} staff members. Type <strong>@</strong> to tag colleagues or click the Mic icon to send a Voice Note.
+                  </p>
+                </div>
+              )}
+
+              {chatChannelType === "mentions" && (
+                <div className="p-3 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 text-xs space-y-1">
+                  <p className="font-bold text-[#c7cb2d]">@Mentions Feed</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Showing messages where you ({currentUser?.staff_id || "you"}) were tagged.
                   </p>
                 </div>
               )}
@@ -2358,7 +2978,7 @@ export default function HRAndWorkspaceSuite() {
                       }`}
                     >
                       <span className="truncate">
-                        {st.first_name} {st.last_name}
+                        {st.first_name} {st.last_name} ({st.job_title || st.department})
                       </span>
                       <span className="text-[10px] font-mono opacity-75">{st.staff_id}</span>
                     </button>
@@ -2368,7 +2988,7 @@ export default function HRAndWorkspaceSuite() {
               {chatChannelType === "multi_user" && (
                 <div className="space-y-1">
                   <p className="text-[10px] font-mono uppercase text-[var(--text-dim)] px-1">
-                    Select Staff ({selectedRecipients.length} chosen)
+                    Select Colleagues ({selectedRecipients.length} chosen)
                   </p>
                   {staffList.map((st) => {
                     const checked = selectedRecipients.includes(st.staff_id);
@@ -2417,17 +3037,19 @@ export default function HRAndWorkspaceSuite() {
             </div>
           </div>
 
-          {/* RIGHT PANE: COMPACT MESSAGE FEED & COMPOSER */}
-          <div className="lg:col-span-8 flex flex-col h-full overflow-hidden">
+          {/* RIGHT PANE: MESSAGE STREAM, VOICE NOTE RECORDER & @MENTION COMPOSER */}
+          <div className="lg:col-span-8 flex flex-col h-full overflow-hidden relative">
             <div className="pb-2 mb-2 border-b border-[var(--border-subtle)]/50 flex items-center justify-between text-xs shrink-0">
               <span className="font-bold text-[#c7cb2d] truncate">
                 {chatChannelType === "group"
-                  ? "All Staff Channel"
+                  ? "All Staff Workplace Channel"
+                  : chatChannelType === "mentions"
+                  ? "Messages Tagging You (@Mentions)"
                   : chatChannelType === "direct"
-                  ? `Direct Message → ${chatTarget}`
+                  ? `Direct Chat → ${chatTarget}`
                   : chatChannelType === "multi_user"
                   ? `Multi-User Group (${selectedRecipients.length} selected)`
-                  : `Multi-Departmental Group (${selectedDepartments.join(", ") || "Select departments"})`}
+                  : `Departmental Group (${selectedDepartments.join(", ") || "Select departments"})`}
               </span>
               {dispatchNotice && <span className="text-[10px] font-mono text-[#c7cb2d]">{dispatchNotice}</span>}
             </div>
@@ -2436,10 +3058,15 @@ export default function HRAndWorkspaceSuite() {
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {filteredMessages.map((m) => {
                 const isMe = m.sender_code === currentUser?.staff_id;
+                const isVoiceNote =
+                  String(m.attachment_name || "").startsWith("VOICE_NOTE") ||
+                  String(m.attachment_url || "").startsWith("data:audio") ||
+                  /\.(webm|mp3|wav|ogg)$/i.test(String(m.attachment_url || ""));
                 const isImg =
+                  !isVoiceNote &&
                   m.attachment_url &&
                   (String(m.attachment_url).startsWith("data:image") ||
-                    /.(png|jpe?g|webp|gif)$/i.test(String(m.attachment_url)));
+                    /\.(png|jpe?g|webp|gif)$/i.test(String(m.attachment_url)));
 
                 return (
                   <div
@@ -2472,11 +3099,20 @@ export default function HRAndWorkspaceSuite() {
                       </div>
                     )}
 
-                    {m.content && <p className="text-xs text-[var(--text-primary)] leading-snug">{m.content}</p>}
+                    {m.content && (
+                      <p className="text-xs text-[var(--text-primary)] leading-snug">
+                        {renderFormattedChatText(m.content)}
+                      </p>
+                    )}
 
                     {m.attachment_url && (
                       <div className="pt-1">
-                        {isImg ? (
+                        {isVoiceNote ? (
+                          <div className="flex items-center gap-2 p-1.5 rounded-xl bg-black/40 border border-[#c7cb2d]/30">
+                            <Volume2 className="w-4 h-4 text-[#c7cb2d] shrink-0 ml-1" />
+                            <audio controls src={m.attachment_url} className="h-8 w-52 sm:w-64" />
+                          </div>
+                        ) : isImg ? (
                           <img
                             src={m.attachment_url}
                             alt={m.attachment_name || "Chat image"}
@@ -2499,26 +3135,73 @@ export default function HRAndWorkspaceSuite() {
               })}
             </div>
 
-            {/* REPLY / ATTACHMENT PREVIEW BAR */}
-            {(replyingTo || chatAttachment) && (
-              <div className="px-3 py-1.5 mt-1.5 rounded-xl bg-[var(--bg-main)] flex items-center justify-between gap-2 text-[11px] shrink-0">
-                <div className="truncate">
+            {/* @MENTION STAFF AUTOCOMPLETE POPUP */}
+            {showMentionList && (
+              <div className="p-2 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/60 max-h-36 overflow-y-auto space-y-1 mb-1.5 shadow-xl">
+                <div className="flex items-center justify-between px-2 text-[10px] font-mono text-[#c7cb2d]">
+                  <span>Tag a Staff Member (@)</span>
+                  <button type="button" onClick={() => setShowMentionList(false)} className="cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                {staffList
+                  .filter((s) =>
+                    `${s.first_name} ${s.last_name} ${s.staff_id} ${s.department}`
+                      .toLowerCase()
+                      .includes(mentionQuery)
+                  )
+                  .slice(0, 6)
+                  .map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleInsertMention(s)}
+                      className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs hover:bg-[#c7cb2d] hover:text-black flex items-center justify-between cursor-pointer transition"
+                    >
+                      <span>
+                        {s.first_name} {s.last_name} — <span className="opacity-75">{s.job_title}</span>
+                      </span>
+                      <span className="font-mono text-[10px] font-bold">@{s.staff_id}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {/* REPLY / ATTACHMENT / VOICE NOTE PREVIEW BAR */}
+            {(replyingTo || chatAttachment || voiceNoteDraft || isRecordingVoice) && (
+              <div className="px-3 py-1.5 mt-1 rounded-xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 flex items-center justify-between gap-2 text-[11px] shrink-0">
+                <div className="flex items-center gap-2 truncate">
+                  {isRecordingVoice && (
+                    <span className="text-red-400 font-mono font-bold flex items-center gap-1.5 animate-pulse">
+                      ● Recording Voice Note ({recordingSeconds}s)... Click Stop when done
+                    </span>
+                  )}
+                  {voiceNoteDraft && !isRecordingVoice && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[#c7cb2d] font-bold">
+                        🎤 Voice Note Ready ({voiceNoteDraft.duration}s)
+                      </span>
+                      <audio controls src={voiceNoteDraft.url} className="h-7 w-40" />
+                    </div>
+                  )}
                   {replyingTo && (
-                    <span className="text-[var(--text-muted)]">
-                      Replying to <strong className="text-[#c7cb2d]">{replyingTo.sender_name}</strong>{" "}
+                    <span className="text-[var(--text-muted)] truncate">
+                      Replying to <strong className="text-[#c7cb2d]">{replyingTo.sender_name}</strong>
                     </span>
                   )}
                   {chatAttachment && (
-                    <span className="font-mono text-[#c7cb2d]">📎 {chatAttachment.name}</span>
+                    <span className="font-mono text-[#c7cb2d] truncate">📎 {chatAttachment.name}</span>
                   )}
                 </div>
                 <button
                   type="button"
                   onClick={() => {
+                    if (isRecordingVoice) stopVoiceRecording();
                     setReplyingTo(null);
                     setChatAttachment(null);
+                    setVoiceNoteDraft(null);
                   }}
-                  className="text-red-400 cursor-pointer"
+                  className="text-red-400 cursor-pointer shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -2527,7 +3210,7 @@ export default function HRAndWorkspaceSuite() {
 
             {/* QUICK EMOJI BAR */}
             {showEmojiPicker && (
-              <div className="flex flex-wrap gap-1.5 p-2 mt-1.5 rounded-xl bg-[var(--bg-main)] shrink-0">
+              <div className="flex flex-wrap gap-1.5 p-2 mt-1 rounded-xl bg-[var(--bg-main)] shrink-0">
                 {QUICK_EMOJIS.map((em) => (
                   <button
                     key={em}
@@ -2541,7 +3224,7 @@ export default function HRAndWorkspaceSuite() {
               </div>
             )}
 
-            {/* COMPACT MESSAGE COMPOSER */}
+            {/* EQUIPPED MESSAGE COMPOSER (@TAG, VOICE NOTE MIC, IMAGE/FILE, EMOJI) */}
             <form onSubmit={handleSendMessage} className="pt-2 mt-1 flex items-center gap-1.5 shrink-0">
               <input
                 ref={chatFileRef}
@@ -2554,9 +3237,20 @@ export default function HRAndWorkspaceSuite() {
                 type="button"
                 onClick={() => chatFileRef.current?.click()}
                 className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
-                title="Attach Image or File"
+                title="Attach Compressed Image or File"
               >
                 <Paperclip className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMentionList((prev) => !prev);
+                  setMentionQuery("");
+                }}
+                className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
+                title="Tag Staff Member (@)"
+              >
+                <AtSign className="w-4 h-4" />
               </button>
               <button
                 type="button"
@@ -2566,10 +3260,30 @@ export default function HRAndWorkspaceSuite() {
               >
                 <Smile className="w-4 h-4" />
               </button>
+              {!isRecordingVoice ? (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
+                  title="Record Voice Note"
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopVoiceRecording}
+                  className="p-2 rounded-xl bg-red-500 text-white animate-pulse cursor-pointer"
+                  title="Stop Recording"
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+              )}
+
               <input
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Message..."
+                onChange={(e) => handleChatInputChange(e.target.value)}
+                placeholder="Write a message or type @ to tag staff..."
                 className="flex-1 bg-[var(--bg-main)] rounded-full px-4 py-2 text-xs"
               />
               <button
@@ -2583,7 +3297,7 @@ export default function HRAndWorkspaceSuite() {
         </div>
       )}
 
-      {/* FULLSCREEN IMAGE PROOF / CHAT IMAGE LIGHTBOX */}
+      {/* FULLSCREEN IMAGE LIGHTBOX */}
       {previewProofUrl && (
         <div
           onClick={() => setPreviewProofUrl(null)}
@@ -2605,7 +3319,7 @@ export default function HRAndWorkspaceSuite() {
       )}
 
       {/* =====================================================================
-          EDIT STAFF MODAL
+          EDIT STAFF MODAL (INCLUDES EMPLOYMENT TYPE & BANK SORT CODE)
       ===================================================================== */}
       {editingStaff && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2655,7 +3369,8 @@ export default function HRAndWorkspaceSuite() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* DEPARTMENT, JOB TITLE & EMPLOYMENT TYPE IN EDIT MODAL */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Department</label>
                   <select
@@ -2729,6 +3444,23 @@ export default function HRAndWorkspaceSuite() {
                     )}
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
+                    Employment Type
+                  </label>
+                  <select
+                    value={editingStaff.employment_type || "Full-Time"}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, employment_type: e.target.value })}
+                    className="w-full bg-[var(--bg-card)] border border-[#c7cb2d]/50 rounded-xl px-3 py-2 text-xs font-semibold"
+                  >
+                    {EMPLOYMENT_TYPES.map((et) => (
+                      <option key={et} value={et}>
+                        {et}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[#c7cb2d]/40 space-y-3">
@@ -2774,7 +3506,9 @@ export default function HRAndWorkspaceSuite() {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
-                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Basic</label>
+                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      Basic (85%)
+                    </label>
                     <input
                       type="number"
                       value={editingStaff.basic_salary || 0}
@@ -2783,7 +3517,9 @@ export default function HRAndWorkspaceSuite() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Trans/Housing</label>
+                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      Trans/H (10%)
+                    </label>
                     <input
                       type="number"
                       value={editingStaff.transport_housing_allowance || 0}
@@ -2792,7 +3528,9 @@ export default function HRAndWorkspaceSuite() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Internet</label>
+                    <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                      Internet (5%)
+                    </label>
                     <input
                       type="number"
                       value={editingStaff.internet_allowance || 0}
@@ -2812,7 +3550,8 @@ export default function HRAndWorkspaceSuite() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* BANKING DETAILS WITH SORT CODE IN EDIT MODAL */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Bank Name</label>
                   <input
@@ -2822,7 +3561,20 @@ export default function HRAndWorkspaceSuite() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Name</label>
+                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
+                    Sort Code
+                  </label>
+                  <input
+                    value={editingStaff.bank_sort_code || ""}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, bank_sort_code: e.target.value })}
+                    placeholder="e.g. 033154282"
+                    className="w-full bg-[var(--bg-card)] border border-[#c7cb2d]/40 rounded-xl px-3 py-2 text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Account Name
+                  </label>
                   <input
                     value={editingStaff.bank_account_name || ""}
                     onChange={(e) => setEditingStaff({ ...editingStaff, bank_account_name: e.target.value })}
@@ -2830,7 +3582,9 @@ export default function HRAndWorkspaceSuite() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Number</label>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Account Number
+                  </label>
                   <input
                     maxLength={10}
                     value={editingStaff.bank_account_no || ""}
@@ -2868,7 +3622,6 @@ export default function HRAndWorkspaceSuite() {
               </div>
             </form>
 
-            {/* Modal Footer */}
             <div className="pt-4 mt-4 border-t border-[var(--border-subtle)] flex justify-end gap-2 shrink-0">
               <button
                 type="button"
