@@ -6,6 +6,53 @@ import { Film, Upload, Check, Trash2, Play, Power } from "lucide-react";
 
 export default function HeroVideoMediaManager() {
   const supabase = createClient();
+  const [uploadProgressPct, setUploadProgressPct] = React.useState(0);
+  const [uploadEtaSec, setUploadEtaSec] = React.useState(0);
+  const [uploadBytesLabel, setUploadBytesLabel] = React.useState("");
+
+  const uploadWithProgress = async (bucketName: string, filePath: string, fileObj: File) => {
+    const startTime = Date.now();
+    setUploadProgressPct(4);
+    setUploadEtaSec(Math.max(2, Math.ceil(fileObj.size / (750 * 1024))));
+    setUploadBytesLabel(`0.0 / ${(fileObj.size / (1024 * 1024)).toFixed(1)} MB`);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+    return new Promise<{ error: any }>((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, true);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("x-upsert", "true");
+      xhr.setRequestHeader("Content-Type", fileObj.type || "video/mp4");
+
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const pct = Math.min(98, Math.max(5, Math.round((ev.loaded / ev.total) * 100)));
+          const elapsed = Math.max(0.5, (Date.now() - startTime) / 1000);
+          const speed = ev.loaded / elapsed;
+          const rem = Math.max(0, ev.total - ev.loaded);
+          const eta = speed > 0 ? Math.ceil(rem / speed) : 1;
+          setUploadProgressPct(pct);
+          setUploadEtaSec(eta);
+          setUploadBytesLabel(`${(ev.loaded / (1024 * 1024)).toFixed(1)} / ${(ev.total / (1024 * 1024)).toFixed(1)} MB`);
+        }
+      };
+
+      xhr.onload = () => {
+        setUploadProgressPct(100);
+        setUploadEtaSec(0);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ error: null });
+        } else {
+          resolve({ error: { message: `Storage upload failed (${xhr.status})` } });
+        }
+      };
+      xhr.onerror = () => resolve({ error: { message: "Network error during upload" } });
+      xhr.send(fileObj);
+    });
+  };
   const [videos, setVideos] = React.useState<any[]>([]);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [uploading, setUploading] = React.useState(false);
@@ -65,7 +112,7 @@ export default function HeroVideoMediaManager() {
       const path = `hero-${Date.now()}.${ext}`;
       const res = await fetch(form.video_data);
       const blob = await res.blob();
-      const { data: upData, error: upErr } = await supabase.storage.from("media").upload(path, blob, { upsert: true });
+      const { data: upData, error: upErr } = await uploadWithProgress("media", path, blob);
       if (!upErr && upData) {
         const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
         if (pub?.publicUrl) finalVideoUrl = pub.publicUrl;
@@ -170,7 +217,24 @@ export default function HeroVideoMediaManager() {
 
         {notice && <p className="text-xs font-bold text-[#c7cb2d]">{notice}</p>}
 
-        <button
+        {uploading && (
+              <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/60 space-y-2 mb-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[var(--text-primary)]">Uploading Hero Video...</span>
+                  <span className="font-mono font-bold text-[#c7cb2d]">
+                    {uploadProgressPct}% • {uploadEtaSec > 0 ? `~${uploadEtaSec}s remaining` : "Finalizing..."}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-[var(--bg-card)] overflow-hidden">
+                  <div
+                    className="h-full bg-[#c7cb2d] transition-all duration-300 rounded-full"
+                    style={{ width: `${uploadProgressPct}%` }}
+                  />
+                </div>
+                <p className="text-[10px] font-mono text-[var(--text-dim)]">{uploadBytesLabel}</p>
+              </div>
+            )}
+            <button
           type="submit"
           disabled={uploading || !form.video_data}
           className="w-full py-2.5 rounded-full bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer disabled:opacity-40"
