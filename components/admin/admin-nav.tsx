@@ -51,8 +51,6 @@ export default function AdminNav({ profile }: { profile: StaffProfile }) {
     { name: "Overview", href: "/admin", icon: LayoutDashboard, allowed: ["super_admin", "hr", "finance", "staff", "intern"] },
     { name: "Portfolio", href: "/admin/portfolio", icon: Briefcase, allowed: ["super_admin", "portfolio", "staff", "intern"] },
     { name: "Inquiries", href: "/admin/inquiries", icon: Mail, allowed: ["super_admin", "inquiries", "hr", "staff"] },
-    { name: "Feedbacks", href: "/admin/feedbacks", icon: MessageSquareQuote, allowed: ["super_admin", "portfolio", "hr", "staff"] },
-    { name: "Newsletter", href: "/admin/newsletter", icon: Send, allowed: ["super_admin", "chief_strategist", "head_of_operations", "portfolio", "inquiries", "staff"] },
     { name: "HR & Workspace", href: "/admin/hr", icon: Users, allowed: ["super_admin", "hr", "finance", "staff", "intern", "support_staff", "executive"] },
     { name: "Finance", href: "/admin/finance", icon: Landmark, allowed: ["super_admin", "finance"] },
     { name: "Profile", href: "/admin/settings", icon: Settings, allowed: ["super_admin", "hr", "finance", "staff", "intern"] },

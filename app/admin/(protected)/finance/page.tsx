@@ -1619,8 +1619,6 @@ export default function EnterpriseFinanceSuite() {
       {printDoc && (
         <OfficialDocumentModal type={printDoc.type} data={printDoc.data} onClose={() => setPrintDoc(null)} />
       )}
-      {/* STATUTORY NIGERIAN TAX & COMPLIANCE LEDGER */}
-      <TaxComplianceSuite execViewOnly={typeof execViewOnly !== "undefined" ? execViewOnly : false} />
     </div>
   );
 }

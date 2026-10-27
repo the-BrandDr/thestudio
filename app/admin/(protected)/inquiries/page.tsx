@@ -4,6 +4,8 @@ import OfficialDocumentModal from "@/components/admin/official-document-modal";
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
+import FeedbacksModule from "../feedbacks/page";
+import NewsletterModule from "../newsletter/page";
 import { Mail, Trash2, Edit3, X, Save, User, Flag, FileText, Plus, Printer, Activity } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
 
@@ -61,7 +63,7 @@ export default function AdminInquiriesPage() {
     link.click();
     document.body.removeChild(link);
   };
-  const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "activity">("inquiries");
+  const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "feedbacks" | "newsletter" | "activity">("inquiries");
   const [inquiries, setInquiries] = React.useState<any[]>([]);
   const [quotes, setQuotes] = React.useState<any[]>([]);
   const [activityLogs, setActivityLogs] = React.useState<any[]>([]);
@@ -232,6 +234,28 @@ export default function AdminInquiriesPage() {
           >
             Quotes ({quotes.length})
           </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("feedbacks" as any)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                (activeView as string) === "feedbacks"
+                  ? "bg-[#c7cb2d] text-black"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Feedbacks
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("newsletter" as any)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                (activeView as string) === "newsletter"
+                  ? "bg-[#c7cb2d] text-black"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Newsletter
+            </button>
           <button
             onClick={() => setActiveView("activity")}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1 ${
@@ -381,6 +405,20 @@ export default function AdminInquiriesPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* VIEW: FEEDBACKS TAB */}
+      {(activeView as string) === "feedbacks" && (
+        <div className="pt-2">
+          <FeedbacksModule />
+        </div>
+      )}
+
+      {/* VIEW: NEWSLETTER TAB */}
+      {(activeView as string) === "newsletter" && (
+        <div className="pt-2">
+          <NewsletterModule />
         </div>
       )}
 
@@ -554,50 +592,6 @@ export default function AdminInquiriesPage() {
           onClose={() => setPrintQuote(null)}
         />
       )}
-
-      {/* NEWSLETTER SUBSCRIBERS PANEL */}
-      <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4 mt-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] font-bold">
-              Audience & Dispatch
-            </span>
-            <h3 className="font-display text-lg font-bold">
-              Newsletter Subscribers ({subscribers.length})
-            </h3>
-            <p className="text-xs text-[var(--text-muted)]">
-              Accessible to Executives (Oversight), Chief Strategist, and staff with Newsletter & PR or Inquiries clearance.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={exportSubscribersCSV}
-            className="px-4 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold uppercase tracking-wider hover:opacity-90 transition cursor-pointer"
-          >
-            Export CSV ({subscribers.length})
-          </button>
-        </div>
-
-        {subscribers.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-[var(--bg-main)] text-center text-xs text-[var(--text-muted)]">
-            No newsletter subscribers recorded yet.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
-            {subscribers.map((sub, idx) => (
-              <div
-                key={sub.id || idx}
-                className="px-3.5 py-2.5 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex items-center justify-between gap-2"
-              >
-                <span className="text-xs font-mono truncate">{sub.email}</span>
-                <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-[#c7cb2d]/15 text-[#c7cb2d] shrink-0">
-                  {sub.status || "Subscribed"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
