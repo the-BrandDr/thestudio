@@ -1,4 +1,8 @@
-export const FOUNDER_EMAIL = “ayegboyin@studioslavie.com;
+export const FOUNDER_EMAIL = "ayegboyin@studioslavie.com";
+export const FOUNDER_EMAILS = [
+  "ayegboyin@studioslavie.com",
+  "hipheholluhayegboyin@gmail.com",
+];
 
 export const VOUCHER_CATEGORIES = [
   "Operational & Studio Upkeep",
@@ -35,7 +39,7 @@ export function resolveAuthenticatedStaff(authUser: any, staffList: any[]) {
     (staffList || []).find((s) => email && (s.email || "").trim().toLowerCase() === email);
 
   if (matched) {
-    const isFounder = email === FOUNDER_EMAIL || matched.staff_id === "LS-01";
+    const isFounder = FOUNDER_EMAILS.includes(email) || matched.staff_id === "LS-01";
     const rawPerms = Array.isArray(matched.permissions)
       ? matched.permissions
       : matched.role
@@ -50,7 +54,7 @@ export function resolveAuthenticatedStaff(authUser: any, staffList: any[]) {
   }
 
   // 2. If Founder email but row not yet linked
-  if (email === FOUNDER_EMAIL) {
+  if (FOUNDER_EMAILS.includes(email)) {
     const ls01 = (staffList || []).find((s) => s.staff_id === "LS-01");
     if (ls01) return ls01;
     return {
@@ -89,13 +93,13 @@ export function resolveAuthenticatedStaff(authUser: any, staffList: any[]) {
 
 export function checkModuleAccess(staff: any, moduleName: "hr" | "finance" | "portfolio" | "inquiries" | "workspace") {
   if (!staff) return false;
-  if (moduleName === "workspace") return true; // All authenticated staff can access open Workspace (Chat, Leave, Vouchers)
+  if (moduleName === "workspace") return true;
 
   const email = (staff.email || "").trim().toLowerCase();
   const role = String(staff.role || "").toLowerCase();
   const perms: string[] = Array.isArray(staff.permissions) ? staff.permissions.map((p: string) => p.toLowerCase()) : [role];
   const isExecDirector =
-    email === FOUNDER_EMAIL ||
+    FOUNDER_EMAILS.includes(email) ||
     staff.staff_id === "LS-01" ||
     role === "super_admin" ||
     role === "executive" ||
@@ -104,7 +108,7 @@ export function checkModuleAccess(staff: any, moduleName: "hr" | "finance" | "po
     perms.includes("chief_strategist") ||
     String(staff.hierarchy_level || "").startsWith("L7");
 
-  if (isExecDirector) return true; // Top Executive Directors can overview all modules
+  if (isExecDirector) return true;
 
   if (moduleName === "hr") {
     return role === "hr" || perms.includes("hr") || perms.includes("head_of_operations");
