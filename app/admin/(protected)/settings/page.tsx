@@ -2,20 +2,10 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
-import {
-  User,
-  Lock,
-  Building2,
-  Phone,
-  MapPin,
-  CheckCircle2,
-  AlertCircle,
-  Save,
-  ShieldCheck,
-  Briefcase,
-} from "lucide-react";
+import { CheckCircle2, AlertCircle, Save } from "lucide-react";
 import PassportCropper from "@/components/admin/passport-cropper";
 import StaffPayslipsPanel from "@/components/admin/staff-payslips-panel";
+import { resolveStaffCompensation, computeNigerianMonthlyPAYE } from "@/components/admin/tax-compliance-suite";
 
 export default function StaffProfileAndSettingsPage() {
   const supabase = createClient();
@@ -24,7 +14,6 @@ export default function StaffProfileAndSettingsPage() {
   const [profile, setProfile] = React.useState<any | null>(null);
   const [statusMsg, setStatusMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Self-Service Password Reset State
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [pwLoading, setPwLoading] = React.useState(false);
@@ -42,7 +31,7 @@ export default function StaffProfileAndSettingsPage() {
 
     if (staffRows && staffRows.length > 0) {
       const me =
-        staffRows.find((s) => s.email?.toLowerCase() === email) ||
+        staffRows.find((s) => email && s.email?.toLowerCase() === email) ||
         (email === "hipheholluhayegboyin@gmail.com" ? staffRows.find((s) => s.staff_id === "LS-01") : null) ||
         staffRows[0];
 
@@ -66,6 +55,8 @@ export default function StaffProfileAndSettingsPage() {
     setSaving(true);
     setStatusMsg(null);
 
+    const comp = resolveStaffCompensation(profile);
+
     const payload: Record<string, any> = {
       first_name: (profile.first_name || "").trim(),
       last_name: (profile.last_name || "").trim(),
@@ -76,11 +67,20 @@ export default function StaffProfileAndSettingsPage() {
       bank_sort_code: (profile.bank_sort_code || "").trim(),
       bank_account_name: (profile.bank_account_name || "").trim(),
       bank_account_no: (profile.bank_account_no || "").trim(),
+      // Also persist resolved salary if DB had 0
+      salary_amount: Number(profile.salary_amount) > 0 ? Number(profile.salary_amount) : comp.gross,
+      basic_salary: Number(profile.basic_salary) > 0 ? Number(profile.basic_salary) : comp.basic,
+      transport_housing_allowance:
+        Number(profile.transport_housing_allowance) > 0
+          ? Number(profile.transport_housing_allowance)
+          : comp.transportHousing,
+      internet_allowance:
+        Number(profile.internet_allowance) > 0 ? Number(profile.internet_allowance) : comp.internet,
     };
 
     let { error } = await supabase.from("staff_profiles").update(payload).eq("id", profile.id);
     if (error && error.message?.includes("column")) {
-      const { bank_sort_code, ...safePayload } = payload;
+      const { bank_sort_code, basic_salary, transport_housing_allowance, internet_allowance, ...safePayload } = payload;
       const retry = await supabase.from("staff_profiles").update(safePayload).eq("id", profile.id);
       error = retry.error;
     }
@@ -89,7 +89,7 @@ export default function StaffProfileAndSettingsPage() {
     if (error) {
       setStatusMsg({ type: "error", text: error.message });
     } else {
-      setStatusMsg({ type: "success", text: "Profile & banking details updated successfully!" });
+      setStatusMsg({ type: "success", text: "Profile saved!" });
       loadMyProfile();
     }
   };
@@ -113,26 +113,25 @@ export default function StaffProfileAndSettingsPage() {
     } else {
       setNewPassword("");
       setConfirmPassword("");
-      setPwMessage({ type: "success", text: "Your portal password has been updated!" });
+      setPwMessage({ type: "success", text: "Password updated!" });
     }
   };
 
   if (loading) {
     return (
       <div className="p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs text-[var(--text-muted)]">
-        Loading your staff profile...
+        Loading profile...
       </div>
     );
   }
 
-  const totalGross = Number(profile?.salary_amount || 0);
-  const basicSal = Number(profile?.basic_salary || Math.round(totalGross * 0.85));
-  const transSal = Number(profile?.transport_housing_allowance || Math.round(totalGross * 0.10));
-  const netSal = Number(profile?.internet_allowance || totalGross - basicSal - transSal);
+  const comp = resolveStaffCompensation(profile);
+  const paye = computeNigerianMonthlyPAYE(comp.gross);
+  const netTakeHome = Math.max(0, comp.gross - paye.monthlyPAYE);
 
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* PROFILE OVERVIEW & PERSONAL DETAILS FORM */}
+      {/* 1. PERSONAL PROFILE, SINGLE ACCURATE SALARY SUMMARY & BANK DETAILS */}
       <form
         onSubmit={handleSaveProfile}
         className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-6"
@@ -155,10 +154,10 @@ export default function StaffProfileAndSettingsPage() {
                 )}
               </div>
               <p className="text-xs font-semibold text-[var(--text-primary)] mt-0.5">
-                {profile?.job_title || "Team Member"} • {profile?.department || "Lavie Studios"}
+                {profile?.job_title || "Executive"} • {profile?.department || "Lavie Studios"}
               </p>
               <p className="text-[11px] font-mono text-[var(--text-muted)]">
-                {profile?.hierarchy_level || "L3"} (Step {profile?.step_level || 1}) • {profile?.employment_type || "Full-Time"}
+                {comp.levelLabel} (Step {comp.stepNum}) • {profile?.employment_type || "Full-Time"}
               </p>
             </div>
           </div>
@@ -190,27 +189,31 @@ export default function StaffProfileAndSettingsPage() {
           </div>
         )}
 
-        {/* COMPENSATION SUMMARY STRIP */}
-        <div className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 grid grid-cols-2 sm:grid-cols-4 gap-4 font-mono">
+        {/* SINGLE UNIFIED SALARY & NET PAY STRIP */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 font-mono">
           <div>
             <span className="block text-[9px] uppercase text-[var(--text-dim)]">Monthly Gross</span>
-            <span className="text-sm font-bold text-[#c7cb2d]">₦{totalGross.toLocaleString()}</span>
+            <span className="text-sm font-bold text-[var(--text-primary)]">₦{comp.gross.toLocaleString()}</span>
           </div>
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Basic Salary (85%)</span>
-            <span className="text-xs font-semibold">₦{basicSal.toLocaleString()}</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Basic (85%)</span>
+            <span className="text-xs font-semibold">₦{comp.basic.toLocaleString()}</span>
           </div>
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Trans / Housing (10%)</span>
-            <span className="text-xs font-semibold">₦{transSal.toLocaleString()}</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Trans/Hous (10%)</span>
+            <span className="text-xs font-semibold">₦{comp.transportHousing.toLocaleString()}</span>
           </div>
           <div>
             <span className="block text-[9px] uppercase text-[var(--text-dim)]">Internet (5%)</span>
-            <span className="text-xs font-semibold">₦{netSal.toLocaleString()}</span>
+            <span className="text-xs font-semibold">₦{comp.internet.toLocaleString()}</span>
+          </div>
+          <div>
+            <span className="block text-[9px] uppercase text-[#c7cb2d]">Net Pay (After PAYE)</span>
+            <span className="text-sm font-bold text-emerald-400">₦{netTakeHome.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* PERSONAL & CONTACT DETAILS */}
+        {/* PERSONAL CONTACT FIELDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">First Name</label>
@@ -233,7 +236,6 @@ export default function StaffProfileAndSettingsPage() {
             <input
               value={profile?.phone || ""}
               onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-              placeholder="+234..."
               className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             />
           </div>
@@ -242,16 +244,15 @@ export default function StaffProfileAndSettingsPage() {
             <input
               value={profile?.location || ""}
               onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-              placeholder="Ogbomoso, Oyo State"
               className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             />
           </div>
         </div>
 
-        {/* BANKING DETAILS INCLUDING SORT CODE */}
+        {/* BANK DETAILS */}
         <div className="pt-2 border-t border-[var(--border-subtle)]/40">
           <span className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-3">
-            Salary Disbursement Account Details
+            Salary Account Details
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
@@ -259,16 +260,15 @@ export default function StaffProfileAndSettingsPage() {
               <input
                 value={profile?.bank_name || ""}
                 onChange={(e) => setProfile({ ...profile, bank_name: e.target.value })}
-                placeholder="e.g. UBA / Polaris Bank"
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Bank Sort Code</label>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Sort Code</label>
               <input
                 value={profile?.bank_sort_code || ""}
                 onChange={(e) => setProfile({ ...profile, bank_sort_code: e.target.value })}
-                placeholder="e.g. 033154282"
+                placeholder="Optional"
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs font-mono"
               />
             </div>
@@ -277,17 +277,15 @@ export default function StaffProfileAndSettingsPage() {
               <input
                 value={profile?.bank_account_name || ""}
                 onChange={(e) => setProfile({ ...profile, bank_account_name: e.target.value })}
-                placeholder="Registered Account Name"
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Number (NUBAN)</label>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Account Number</label>
               <input
                 maxLength={10}
                 value={profile?.bank_account_no || ""}
                 onChange={(e) => setProfile({ ...profile, bank_account_no: e.target.value })}
-                placeholder="10-digit NUBAN"
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs font-mono"
               />
             </div>
@@ -295,20 +293,12 @@ export default function StaffProfileAndSettingsPage() {
         </div>
       </form>
 
-      {/* STAFF PAYSLIPS PANEL */}
+      {/* 2. MY MONTHLY PAYSLIPS */}
       <StaffPayslipsPanel staffProfile={profile} />
 
-      {/* PORTAL PASSWORD RESET SECTION */}
+      {/* 3. PASSWORD UPDATE */}
       <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
-        <div>
-          <span className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] font-bold">
-            Account Security
-          </span>
-          <h3 className="font-display text-base font-bold">Update Portal Password</h3>
-          <p className="text-xs text-[var(--text-muted)]">
-            Change your temporary onboarding password or update your personal sign-in credentials.
-          </p>
-        </div>
+        <h2 className="font-display text-base font-bold">Update Password</h2>
 
         {pwMessage && (
           <div
@@ -324,9 +314,7 @@ export default function StaffProfileAndSettingsPage() {
 
         <form onSubmit={handlePasswordReset} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
           <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-              New Password *
-            </label>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">New Password</label>
             <input
               type="password"
               required
@@ -338,23 +326,21 @@ export default function StaffProfileAndSettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-              Confirm New Password *
-            </label>
+            <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Confirm Password</label>
             <input
               type="password"
               required
               minLength={6}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter new password"
+              placeholder="Confirm new password"
               className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs"
             />
           </div>
           <button
             type="submit"
             disabled={pwLoading}
-            className="py-2.5 px-5 rounded-xl bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider hover:opacity-90 transition cursor-pointer disabled:opacity-50"
+            className="py-2.5 px-5 rounded-xl bg-[#c7cb2d] text-black font-bold text-xs uppercase tracking-wider hover:opacity-90 transition cursor-pointer"
           >
             {pwLoading ? "Updating..." : "Update Password"}
           </button>
