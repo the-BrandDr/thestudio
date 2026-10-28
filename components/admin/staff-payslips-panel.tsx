@@ -2,15 +2,33 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Printer, Calendar } from "lucide-react";
+import { Printer, Calendar, Filter } from "lucide-react";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 import { resolveStaffCompensation, computeNigerianMonthlyPAYE } from "@/components/admin/tax-compliance-suite";
+
+const MONTHS_LIST = [
+  { value: "all", label: "All Months" },
+  { value: "01", label: "January" },
+  { value: "02", label: "February" },
+  { value: "03", label: "March" },
+  { value: "04", label: "April" },
+  { value: "05", label: "May" },
+  { value: "06", label: "June" },
+  { value: "07", label: "July" },
+  { value: "08", label: "August" },
+  { value: "09", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
 
 export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: any }) {
   const supabase = createClient();
   const [payslips, setPayslips] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selectedPayslip, setSelectedPayslip] = React.useState<any | null>(null);
+  const [filterYear, setFilterYear] = React.useState<string>("all");
+  const [filterMonth, setFilterMonth] = React.useState<string>("all");
 
   const loadPayslips = React.useCallback(async () => {
     setLoading(true);
@@ -28,7 +46,6 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
       }
     }
 
-    // Query the exact payroll table detected from Finance first, plus any fallback payroll tables
     const tablesToCheck = Array.from(
       new Set(["payroll_runs", "payroll_records", "payroll_runs", "staff_payroll", "payslips"])
     );
@@ -38,6 +55,7 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
       const { data, error } = await supabase.from(t).select("*").order("created_at", { ascending: false });
       if (!error && Array.isArray(data) && data.length > 0) {
         allRows = [...allRows, ...data];
+        break;
       }
     }
 
@@ -49,6 +67,11 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
       const myLast = String(me.last_name || "").trim().toLowerCase();
 
       const mine = allRows.filter((row) => {
+        // ONLY show Approved / Paid / Disbursed payslips to staff!
+        const st = String(row.status || "").toLowerCase();
+        const isApproved = st === "approved" || st === "paid" || st === "disbursed" || st === "completed";
+        if (!isApproved) return false;
+
         const rId = String(row.staff_id || "").toLowerCase();
         const rCode = String(row.staff_code || row.employee_id || row.staff_id || "").trim().toUpperCase();
         const rEmail = String(row.staff_email || row.email || "").trim().toLowerCase();
@@ -74,29 +97,92 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
     loadPayslips();
   }, [loadPayslips]);
 
+  // Extract available years from approved payslips (+ current year)
+  const availableYears = React.useMemo(() => {
+    const yrs = new Set<string>([String(new Date().getFullYear()), "2026", "2025"]);
+    payslips.forEach((s) => {
+      const p = String(s.pay_period || s.period || s.month || s.created_at || "");
+      const m = p.match(/(20\d\d)/);
+      if (m) yrs.add(m[1]);
+    });
+    return Array.from(yrs).sort((a, b) => b.localeCompare(a));
+  }, [payslips]);
+
+  const filteredPayslips = React.useMemo(() => {
+    return payslips.filter((slip) => {
+      const rawPeriod = String(slip.pay_period || slip.period || slip.month || slip.created_at || "");
+      if (filterYear !== "all" && !rawPeriod.includes(filterYear)) return false;
+      if (filterMonth !== "all") {
+        // Match YYYY-MM or month name
+        const monthObj = MONTHS_LIST.find((m) => m.value === filterMonth);
+        const matchesNumeric = rawPeriod.includes(`-${filterMonth}`) || rawPeriod.endsWith(`/${filterMonth}`);
+        const matchesName = monthObj && rawPeriod.toLowerCase().includes(monthObj.label.toLowerCase());
+        if (!matchesNumeric && !matchesName) return false;
+      }
+      return true;
+    });
+  }, [payslips, filterYear, filterMonth]);
+
   const comp = resolveStaffCompensation(staffProfile);
   const paye = computeNigerianMonthlyPAYE(comp.gross);
   const defaultNet = Math.max(0, comp.gross - paye.monthlyPAYE);
 
   return (
     <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-base font-bold">My Monthly Payslips ({payslips.length})</h2>
-        <span className="text-[11px] font-mono text-[var(--text-dim)]">Click any record to view & print PDF</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-base font-bold">
+            My Approved Payslips ({filteredPayslips.length})
+          </h2>
+          <span className="text-[11px] font-mono text-[var(--text-dim)]">
+            Only approved & disbursed monthly payslips are displayed here
+          </span>
+        </div>
+
+        {/* YEAR & MONTH FILTER */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-[var(--bg-main)] px-3 py-1.5 rounded-xl border border-[var(--border-subtle)]">
+            <Filter className="w-3.5 h-3.5 text-[#c7cb2d]" />
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(e.target.value)}
+              className="bg-transparent text-xs font-mono focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Years</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="bg-[var(--bg-main)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5 text-xs font-mono cursor-pointer"
+          >
+            {MONTHS_LIST.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading ? (
-        <p className="text-xs text-[var(--text-muted)] py-6 text-center">Loading payslips...</p>
-      ) : payslips.length === 0 ? (
+        <p className="text-xs text-[var(--text-muted)] py-6 text-center">Loading approved payslips...</p>
+      ) : filteredPayslips.length === 0 ? (
         <div className="p-6 rounded-2xl bg-[var(--bg-main)] text-center text-xs text-[var(--text-muted)]">
-          No processed payslips found for {staffProfile?.first_name || "your account"} ({staffProfile?.staff_id || "LS"}) yet.
+          No approved payslips found for the selected period.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {payslips.map((slip, idx) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+          {filteredPayslips.map((slip, idx) => {
             const periodLabel = slip.pay_period || slip.period || slip.month || "Monthly Payroll";
             const grossAmt = Number(slip.gross_pay || slip.basic_salary || slip.gross_salary || comp.gross);
-            const taxAmt = Number(slip.tax_deducted || slip.paye_tax || slip.tax || paye.monthlyPAYE);
+            const taxAmt = Number(slip.tax_deducted || slip.paye_tax || slip.tax || 0);
             const netAmt = Number(slip.net_pay || slip.net_salary || slip.amount || Math.max(0, grossAmt - taxAmt) || defaultNet);
 
             return (
@@ -126,12 +212,12 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
                   <div className="flex items-center gap-2">
                     <Calendar className="w-3.5 h-3.5 text-[#c7cb2d]" />
                     <span className="font-display text-sm font-bold">{periodLabel}</span>
-                    <span className="px-2 py-0.5 rounded bg-[#c7cb2d]/15 text-[#c7cb2d] text-[9px] font-mono uppercase font-bold">
-                      {slip.status || "Paid"}
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-mono uppercase font-bold">
+                      {slip.status || "Approved"}
                     </span>
                   </div>
                   <p className="text-[11px] font-mono text-[var(--text-muted)]">
-                    Gross: ₦{grossAmt.toLocaleString()} • PAYE: ₦{taxAmt.toLocaleString()}
+                    Paid Gross: ₦{grossAmt.toLocaleString()} • PAYE: ₦{taxAmt.toLocaleString()}
                   </p>
                 </div>
 

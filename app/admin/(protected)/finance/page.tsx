@@ -786,6 +786,39 @@ export default function EnterpriseFinanceSuite() {
     loadFinanceData();
   };
 
+  
+  const handleApproveAllPayroll = async () => {
+    if (execViewOnly) {
+      alert("View-Only Mode: Approving payroll requires Finance or Chief Strategist clearance.");
+      return;
+    }
+    const pendingForPeriod = payrollList.filter(
+      (p) =>
+        (!payPeriod || String(p.pay_period || p.period || "").startsWith(payPeriod)) &&
+        String(p.status || "").toLowerCase() !== "approved" &&
+        String(p.status || "").toLowerCase() !== "paid"
+    );
+    const targets = pendingForPeriod.length > 0 ? pendingForPeriod : payrollList.filter((p) => String(p.status || "").toLowerCase() !== "approved" && String(p.status || "").toLowerCase() !== "paid");
+    if (targets.length === 0) {
+      alert("All payroll records for this period are already approved!");
+      return;
+    }
+    setSaving(true);
+    const ids = targets.map((t) => t.id);
+    await supabase
+      .from("payroll_runs")
+      .update({
+        status: "approved",
+        ops_status: "approved",
+        finance_status: "approved",
+        strategist_status: "approved",
+      })
+      .in("id", ids);
+    setSaving(false);
+    setNotice(`✅ Approved all ${ids.length} payroll record(s)!`);
+    if (typeof loadFinanceData === "function") loadFinanceData();
+  };
+
   return (
     <div className="space-y-5">
       <div className="bg-[var(--bg-card)] px-3 py-2 rounded-2xl border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-2 print:hidden">

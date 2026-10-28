@@ -11,38 +11,20 @@ import {
 } from "lucide-react";
 
 /**
- * Reads the exact salary submitted for the staff member during Onboarding / Edit Staff
- * (or from their latest processed payroll record if staff_profiles.salary_amount wasn't set).
- * Does NOT force or fallback to the Level/Step salary structure.
+ * Strictly reads the staff member's saved salary from their profile row in staff_profiles.
+ * Never falls back to or selects from the Salary Structure guide.
  */
-export function resolveStaffCompensation(staffRow: any, latestPayrollRow?: any) {
-  const sumParts =
-    Number(staffRow?.basic_salary || 0) +
-    Number(staffRow?.transport_housing_allowance || 0) +
-    Number(staffRow?.internet_allowance || 0);
+export function resolveStaffCompensation(staffRow: any) {
+  const savedGross = Number(staffRow?.salary_amount || 0);
+  const savedBasic = Number(staffRow?.basic_salary || 0);
+  const savedTrans = Number(staffRow?.transport_housing_allowance || 0);
+  const savedNet = Number(staffRow?.internet_allowance || 0);
+  const sumParts = savedBasic + savedTrans + savedNet;
 
-  const rawProfileGross = Number(staffRow?.salary_amount || staffRow?.gross_pay || 0);
-  const payrollGross = Number(
-    latestPayrollRow?.gross_pay ||
-      latestPayrollRow?.basic_salary ||
-      latestPayrollRow?.net_pay ||
-      0
-  );
-
-  const gross = rawProfileGross > 0 ? rawProfileGross : sumParts > 0 ? sumParts : payrollGross;
-
-  const basic =
-    Number(staffRow?.basic_salary) > 0
-      ? Number(staffRow.basic_salary)
-      : Math.round(gross * 0.85);
-  const transportHousing =
-    Number(staffRow?.transport_housing_allowance) > 0
-      ? Number(staffRow.transport_housing_allowance)
-      : Math.round(gross * 0.10);
-  const internet =
-    Number(staffRow?.internet_allowance) > 0
-      ? Number(staffRow.internet_allowance)
-      : Math.max(0, gross - basic - transportHousing);
+  const gross = savedGross > 0 ? savedGross : sumParts;
+  const basic = savedBasic > 0 ? savedBasic : Math.round(gross * 0.85);
+  const transportHousing = savedTrans > 0 ? savedTrans : Math.round(gross * 0.10);
+  const internet = savedNet > 0 ? savedNet : Math.max(0, gross - basic - transportHousing);
 
   return {
     gross,
@@ -54,8 +36,21 @@ export function resolveStaffCompensation(staffRow: any, latestPayrollRow?: any) 
   };
 }
 
-export function computeNigerianMonthlyPAYE(monthlyGross: number, monthlyRelief = 0) {
-  const gross = Math.max(0, Number(monthlyGross || 0));
+export function computeNigerianMonthlyPAYE(paidMonthlyGross: number, monthlyRelief = 0) {
+  const gross = Math.max(0, Number(paidMonthlyGross || 0));
+  if (gross <= 0) {
+    return {
+      monthlyGross: 0,
+      annualGross: 0,
+      annualCRA: 0,
+      annualTaxableIncome: 0,
+      annualTax: 0,
+      monthlyPAYE: 0,
+      effectiveRatePct: 0,
+      isExempt: true,
+    };
+  }
+
   const annualGross = gross * 12;
   const annualApprovedRelief = Math.max(0, Number(monthlyRelief || 0)) * 12;
 
@@ -122,9 +117,9 @@ export function computeNigerianMonthlyPAYE(monthlyGross: number, monthlyRelief =
 export default function TaxComplianceSuite({ execViewOnly = false }: { execViewOnly?: boolean }) {
   const supabase = createClient();
   const [selectedPeriod, setSelectedPeriod] = React.useState(() => new Date().toISOString().slice(0, 7));
-  const [staffList, setStaffList] = React.useState<any[]>([]);
   const [payrollRows, setPayrollRows] = React.useState<any[]>([]);
   const [invoices, setInvoices] = React.useState<any[]>([]);
+  const [receipts, setReceipts] = React.useState<any[]>([]);
   const [vouchers, setVouchers] = React.useState<any[]>([]);
   const [records, setRecords] = React.useState<any[]>([]);
   const [smallCompanyExempt, setSmallCompanyExempt] = React.useState(true);
@@ -145,16 +140,16 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
   } | null>(null);
 
   const loadData = React.useCallback(async () => {
-    const [{ data: s }, { data: pay }, { data: inv }, { data: vch }, { data: rec }] = await Promise.all([
-      supabase.from("staff_profiles").select("*").eq("status", "active").order("staff_id", { ascending: true }),
+    const [{ data: pay }, { data: inv }, { data: rct }, { data: vch }, { data: rec }] = await Promise.all([
       supabase.from("payroll_runs").select("*").order("created_at", { ascending: false }),
       supabase.from("client_invoices").select("*"),
+      supabase.from("payment_receipts").select("*"),
       supabase.from("expense_vouchers").select("*").eq("status", "approved"),
       supabase.from("tax_compliance_records").select("*").order("created_at", { ascending: false }),
     ]);
-    if (s) setStaffList(s);
     if (pay) setPayrollRows(pay);
     if (inv) setInvoices(inv);
+    if (rct) setReceipts(rct);
     if (vch) setVouchers(vch);
     if (rec) setRecords(rec);
   }, [supabase]);
@@ -163,52 +158,81 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
     loadData();
   }, [loadData]);
 
-  // 1. Staff PAYE Computation using exact onboarded / saved salary
+  // 1. STRICT DISBURSED PAYROLL PAYE:
+  //    Only includes payroll rows for selectedPeriod whose status is approved / paid / disbursed!
+  const disbursedPeriodPayrolls = React.useMemo(() => {
+    return payrollRows.filter((row) => {
+      const pPeriod = String(row.pay_period || row.period || row.month || row.created_at || "").slice(0, 7);
+      const st = String(row.status || "").toLowerCase();
+      const isDisbursed = st === "approved" || st === "paid" || st === "disbursed" || st === "completed";
+      return pPeriod === selectedPeriod && isDisbursed;
+    });
+  }, [payrollRows, selectedPeriod]);
+
   const payeRows = React.useMemo(() => {
-    return staffList.map((st) => {
-      const myLatestPay = payrollRows.find(
-        (p) =>
-          (st.id && p.staff_id === st.id) ||
-          (st.staff_id && String(p.staff_code || p.staff_id || "").toUpperCase() === String(st.staff_id).toUpperCase())
-      );
-      const comp = resolveStaffCompensation(st, myLatestPay);
-      const calc = computeNigerianMonthlyPAYE(comp.gross);
+    return disbursedPeriodPayrolls.map((row) => {
+      const paidGross = Number(row.gross_pay || row.basic_salary || row.net_pay || row.amount || 0);
+      const calc = computeNigerianMonthlyPAYE(paidGross);
+      const recordedTax =
+        row.tax_deducted !== undefined && row.tax_deducted !== null
+          ? Number(row.tax_deducted)
+          : calc.monthlyPAYE;
+      const netDisbursed = Number(row.net_pay || Math.max(0, paidGross - recordedTax));
+
       return {
-        staff_id: st.staff_id,
-        name: `${st.first_name || ""} ${st.last_name || ""}`.trim(),
-        role: st.job_title || st.department,
-        gross: comp.gross,
-        monthlyPAYE: calc.monthlyPAYE,
-        netPay: comp.gross - calc.monthlyPAYE,
-        isExempt: calc.isExempt,
+        id: row.id,
+        staff_code: row.staff_code || row.staff_id || "STAFF",
+        name: row.staff_name || row.full_name || "Staff Member",
+        role: row.job_title || row.department || "Staff",
+        paidGross,
+        monthlyPAYE: recordedTax,
+        netPay: netDisbursed,
+        isExempt: recordedTax <= 0,
       };
     });
-  }, [staffList, payrollRows]);
+  }, [disbursedPeriodPayrolls]);
 
-  const totalPayrollGross = payeRows.reduce((a, r) => a + r.gross, 0);
+  const totalDisbursedPayroll = payeRows.reduce((a, r) => a + r.paidGross, 0);
   const totalMonthlyPAYE = payeRows.reduce((a, r) => a + r.monthlyPAYE, 0);
 
-  // 2. Monthly VAT (7.5%)
-  const monthInvoices = invoices.filter((i) =>
-    String(i.created_at || i.issue_date || "").startsWith(selectedPeriod)
+  // 2. STRICT PAID VAT (7.5%): Only calculates VAT on PAID invoices (or issued receipts) in selectedPeriod
+  const paidMonthInvoices = invoices.filter((i) => {
+    const p = String(i.paid_at || i.created_at || i.issue_date || "").slice(0, 7);
+    const st = String(i.status || "").toLowerCase();
+    return p === selectedPeriod && (st === "paid" || st === "completed" || Number(i.amount_paid || 0) > 0);
+  });
+
+  const paidRevenueBase = paidMonthInvoices.reduce(
+    (a, i) => a + Number(i.subtotal || i.amount_paid || i.total_amount || 0),
+    0
   );
-  const monthRevenueBase = monthInvoices.reduce((a, i) => a + Number(i.subtotal || i.total_amount || 0), 0);
-  const monthlyVAT = monthInvoices.reduce(
+  const monthlyPaidVAT = paidMonthInvoices.reduce(
     (a, i) => a + Number(i.vat_amount || Math.round(Number(i.subtotal || 0) * 0.075)),
     0
   );
 
-  // 3. Annual CIT
+  // 3. ANNUAL CIT (Strictly on Paid Revenue minus Disbursed Payroll & Approved Vouchers)
   const yearStr = selectedPeriod.slice(0, 4);
-  const annualRevenue = invoices
-    .filter((i) => String(i.created_at || "").startsWith(yearStr))
-    .reduce((a, i) => a + Number(i.total_amount || 0), 0);
-  const annualExpenses =
-    vouchers
-      .filter((v) => String(v.created_at || "").startsWith(yearStr))
-      .reduce((a, v) => a + Number(v.amount || 0), 0) +
-    totalPayrollGross * 12;
-  const assessableProfit = Math.max(0, annualRevenue - annualExpenses);
+  const annualPaidRevenue = invoices
+    .filter((i) => {
+      const st = String(i.status || "").toLowerCase();
+      return String(i.created_at || "").startsWith(yearStr) && (st === "paid" || Number(i.amount_paid || 0) > 0);
+    })
+    .reduce((a, i) => a + Number(i.amount_paid || i.total_amount || 0), 0);
+
+  const annualDisbursedSalaries = payrollRows
+    .filter((r) => {
+      const st = String(r.status || "").toLowerCase();
+      const yr = String(r.pay_period || r.created_at || "").slice(0, 4);
+      return yr === yearStr && (st === "approved" || st === "paid" || st === "disbursed");
+    })
+    .reduce((a, r) => a + Number(r.gross_pay || r.net_pay || 0), 0);
+
+  const annualApprovedVouchers = vouchers
+    .filter((v) => String(v.created_at || "").startsWith(yearStr))
+    .reduce((a, v) => a + Number(v.amount || 0), 0);
+
+  const assessableProfit = Math.max(0, annualPaidRevenue - annualDisbursedSalaries - annualApprovedVouchers);
   const estimatedCIT = smallCompanyExempt ? 0 : Math.round(assessableProfit * 0.2);
 
   const getNextMonthDue = (period: string, day: number) => {
@@ -223,26 +247,26 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
     if (type === "PAYE") {
       setFilingModal({
         tax_period: selectedPeriod,
-        tax_type: "Monthly PAYE",
+        tax_type: "Monthly PAYE (Disbursed Payroll)",
         authority: "OYSIRS (Oyo State)",
-        taxable_base: totalPayrollGross,
+        taxable_base: totalDisbursedPayroll,
         tax_payable: totalMonthlyPAYE,
         due_date: getNextMonthDue(selectedPeriod, 10),
         filing_status: totalMonthlyPAYE === 0 ? "exempt" : "remitted",
         remittance_ref: "",
-        notes: `Staff count: ${payeRows.length}`,
+        notes: `Disbursed staff count: ${payeRows.length}`,
       });
     } else if (type === "VAT") {
       setFilingModal({
         tax_period: selectedPeriod,
-        tax_type: "Monthly VAT (7.5%)",
+        tax_type: "Monthly VAT 7.5% (Paid Invoices)",
         authority: "FIRS / NRS",
-        taxable_base: monthRevenueBase,
-        tax_payable: monthlyVAT,
+        taxable_base: paidRevenueBase,
+        tax_payable: monthlyPaidVAT,
         due_date: getNextMonthDue(selectedPeriod, 21),
-        filing_status: monthlyVAT === 0 ? "computed" : "remitted",
+        filing_status: monthlyPaidVAT === 0 ? "computed" : "remitted",
         remittance_ref: "",
-        notes: `Invoices in period: ${monthInvoices.length}`,
+        notes: `Paid invoices in period: ${paidMonthInvoices.length}`,
       });
     } else {
       setFilingModal({
@@ -299,12 +323,12 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
 
   const exportTaxCSV = () => {
     const rows = [
-      ["Staff ID", "Full Name", "Role", "Monthly Gross (NGN)", "Monthly PAYE (NGN)", "Net Take-Home (NGN)", "Status"],
+      ["Staff Code", "Full Name", "Role", "Disbursed Gross (NGN)", "PAYE Tax (NGN)", "Net Disbursed (NGN)", "Status"],
       ...payeRows.map((r) => [
-        r.staff_id,
+        r.staff_code,
         `"${r.name}"`,
         `"${r.role}"`,
-        r.gross,
+        r.paidGross,
         r.monthlyPAYE,
         r.netPay,
         r.isExempt ? "Exempt" : "Taxable",
@@ -313,7 +337,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
     const csv = "data:text/csv;charset=utf-8," + rows.map((r) => r.join(",")).join("\n");
     const a = document.createElement("a");
     a.href = encodeURI(csv);
-    a.download = `Lavie-Tax-Schedule-${selectedPeriod}.csv`;
+    a.download = `Lavie-Disbursed-PAYE-${selectedPeriod}.csv`;
     a.click();
   };
 
@@ -322,7 +346,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
       {/* HEADER BAR */}
       <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="font-display text-base font-bold">Tax & Filing Records</h2>
+          <h2 className="font-display text-base font-bold">Tax & Filing Records (Paid & Disbursed Only)</h2>
           <input
             type="month"
             value={selectedPeriod}
@@ -345,16 +369,16 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
         </button>
       </div>
 
-      {/* 3 STATUTORY TAX SUMMARY CARDS */}
+      {/* 3 STATUTORY TAX SUMMARY CARDS (STRICTLY ON PAID / DISBURSED TRANSACTIONS) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-col justify-between space-y-4">
           <div className="space-y-1">
             <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-              Monthly Staff PAYE (OYSIRS • Due 10th)
+              Disbursed Staff PAYE (OYSIRS • Due 10th)
             </span>
             <p className="font-mono text-2xl font-bold text-[#c7cb2d]">₦{totalMonthlyPAYE.toLocaleString()}</p>
             <p className="text-xs text-[var(--text-muted)]">
-              Payroll Base: ₦{totalPayrollGross.toLocaleString()} ({payeRows.length} staff)
+              Disbursed Salaries: ₦{totalDisbursedPayroll.toLocaleString()} ({payeRows.length} paid in {selectedPeriod})
             </p>
           </div>
           {!execViewOnly && (
@@ -371,11 +395,11 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
         <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-col justify-between space-y-4">
           <div className="space-y-1">
             <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-              Monthly VAT 7.5% (FIRS • Due 21st)
+              Paid VAT 7.5% (FIRS • Due 21st)
             </span>
-            <p className="font-mono text-2xl font-bold text-[#c7cb2d]">₦{monthlyVAT.toLocaleString()}</p>
+            <p className="font-mono text-2xl font-bold text-[#c7cb2d]">₦{monthlyPaidVAT.toLocaleString()}</p>
             <p className="text-xs text-[var(--text-muted)]">
-              Invoiced Base: ₦{monthRevenueBase.toLocaleString()} ({monthInvoices.length} invoices)
+              Paid Revenue Base: ₦{paidRevenueBase.toLocaleString()} ({paidMonthInvoices.length} paid invoices)
             </p>
           </div>
           {!execViewOnly && (
@@ -424,117 +448,134 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
         </div>
       </div>
 
-      {/* STAFF PAYE SCHEDULE (READS SUBMITTED ONBOARDING / SAVED SALARY) */}
-      <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3 overflow-x-auto">
-        <h3 className="font-display text-sm font-bold">Staff PAYE Schedule</h3>
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
-              <th className="py-2 pr-3">Staff</th>
-              <th className="py-2 px-2">Role</th>
-              <th className="py-2 px-2">Monthly Gross</th>
-              <th className="py-2 px-2">Monthly PAYE</th>
-              <th className="py-2 px-2">Net Take-Home</th>
-              <th className="py-2 pl-2">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border-subtle)]/40 font-mono">
-            {payeRows.map((r) => (
-              <tr key={r.staff_id}>
-                <td className="py-2.5 pr-3 font-sans font-bold">
-                  {r.name} <span className="text-[10px] font-mono text-[#c7cb2d]">({r.staff_id})</span>
-                </td>
-                <td className="py-2.5 px-2 font-sans text-[var(--text-muted)]">{r.role}</td>
-                <td className="py-2.5 px-2 font-bold">₦{r.gross.toLocaleString()}</td>
-                <td className="py-2.5 px-2 font-bold text-[#c7cb2d]">₦{r.monthlyPAYE.toLocaleString()}</td>
-                <td className="py-2.5 px-2 font-bold text-emerald-400">₦{r.netPay.toLocaleString()}</td>
-                <td className="py-2.5 pl-2 font-sans">
-                  <span className="px-2 py-0.5 rounded-full bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)]">
-                    {r.isExempt ? "0% Exempt (≤ ₦70k / CRA)" : "Taxable (PITA)"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* DISBURSED PAYROLL PAYE SCHEDULE */}
+      <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-sm font-bold">
+            Disbursed Salaries & PAYE Schedule ({selectedPeriod})
+          </h3>
+          <span className="text-[11px] font-mono text-[var(--text-dim)]">
+            Computed strictly from approved/disbursed payroll runs
+          </span>
+        </div>
 
-      {/* FILED TAX RETURNS & REMITTANCE RECORDS */}
-      <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3 overflow-x-auto">
-        <h3 className="font-display text-sm font-bold">Filed Returns & Remittance Log ({records.length})</h3>
-        {records.length === 0 ? (
-          <p className="text-xs text-[var(--text-muted)] py-4 text-center">
-            No filed tax returns recorded yet. Click "+ Log Return" on any card above to record a filing.
-          </p>
+        {payeRows.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-[var(--bg-main)] text-center text-xs text-[var(--text-muted)]">
+            No salaries have been disbursed/approved for <strong>{selectedPeriod}</strong> yet. PAYE is ₦0 until payroll is approved and disbursed.
+          </div>
         ) : (
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                <th className="py-2 pr-3">Period</th>
-                <th className="py-2 px-2">Tax Type</th>
-                <th className="py-2 px-2">Authority</th>
-                <th className="py-2 px-2">Taxable Base</th>
-                <th className="py-2 px-2">Tax Payable</th>
-                <th className="py-2 px-2">Receipt / RRR Ref</th>
-                <th className="py-2 px-2">Status</th>
-                {!execViewOnly && <th className="py-2 pl-2 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border-subtle)]/40 font-mono">
-              {records.map((rec) => (
-                <tr key={rec.id}>
-                  <td className="py-2.5 pr-3 font-bold text-[#c7cb2d]">{rec.tax_period}</td>
-                  <td className="py-2.5 px-2 font-sans font-bold">{rec.tax_type}</td>
-                  <td className="py-2.5 px-2 font-sans text-[var(--text-muted)]">{rec.authority}</td>
-                  <td className="py-2.5 px-2">₦{Number(rec.taxable_base || 0).toLocaleString()}</td>
-                  <td className="py-2.5 px-2 font-bold text-[#c7cb2d]">
-                    ₦{Number(rec.tax_payable || 0).toLocaleString()}
-                  </td>
-                  <td className="py-2.5 px-2 text-emerald-400">{rec.remittance_ref || "—"}</td>
-                  <td className="py-2.5 px-2 font-sans">
-                    <span className="px-2 py-0.5 rounded-full bg-[var(--bg-main)] text-[10px] font-mono uppercase text-[#c7cb2d]">
-                      {rec.filing_status}
-                    </span>
-                  </td>
-                  {!execViewOnly && (
-                    <td className="py-2.5 pl-2 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setFilingModal({
-                            id: rec.id,
-                            tax_period: rec.tax_period || selectedPeriod,
-                            tax_type: rec.tax_type || "",
-                            authority: rec.authority || "",
-                            taxable_base: Number(rec.taxable_base || 0),
-                            tax_payable: Number(rec.tax_payable || 0),
-                            due_date: rec.due_date || "",
-                            filing_status: rec.filing_status || "remitted",
-                            remittance_ref: rec.remittance_ref || "",
-                            notes: rec.notes || "",
-                          })
-                        }
-                        className="p-1.5 rounded-lg bg-[var(--bg-main)] hover:text-[#c7cb2d] mr-1 cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRecord(rec.id)}
-                        className="p-1.5 rounded-lg bg-[var(--bg-main)] hover:text-red-400 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  )}
+          <div className="max-h-80 overflow-y-auto overflow-x-auto pr-1">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                  <th className="py-2 pr-3">Staff</th>
+                  <th className="py-2 px-2">Role</th>
+                  <th className="py-2 px-2">Disbursed Gross</th>
+                  <th className="py-2 px-2">PAYE Deducted</th>
+                  <th className="py-2 px-2">Net Paid</th>
+                  <th className="py-2 pl-2">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]/40 font-mono">
+                {payeRows.map((r, i) => (
+                  <tr key={r.id || i}>
+                    <td className="py-2.5 pr-3 font-sans font-bold">
+                      {r.name} <span className="text-[10px] font-mono text-[#c7cb2d]">({r.staff_code})</span>
+                    </td>
+                    <td className="py-2.5 px-2 font-sans text-[var(--text-muted)]">{r.role}</td>
+                    <td className="py-2.5 px-2 font-bold">₦{r.paidGross.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 font-bold text-[#c7cb2d]">₦{r.monthlyPAYE.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 font-bold text-emerald-400">₦{r.netPay.toLocaleString()}</td>
+                    <td className="py-2.5 pl-2 font-sans">
+                      <span className="px-2 py-0.5 rounded-full bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)]">
+                        {r.isExempt ? "0% Exempt" : "Taxed on Paid Salary"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* FILING MODAL */}
+      {/* FILED TAX RETURNS & REMITTANCE RECORDS (SCROLLABLE CONTAINER) */}
+      <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
+        <h3 className="font-display text-sm font-bold">Filed Returns & Remittance Log ({records.length})</h3>
+        {records.length === 0 ? (
+          <p className="text-xs text-[var(--text-muted)] py-4 text-center">
+            No filed tax returns recorded yet.
+          </p>
+        ) : (
+          <div className="max-h-80 overflow-y-auto overflow-x-auto pr-1">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                  <th className="py-2 pr-3">Period</th>
+                  <th className="py-2 px-2">Tax Type</th>
+                  <th className="py-2 px-2">Authority</th>
+                  <th className="py-2 px-2">Paid Base</th>
+                  <th className="py-2 px-2">Tax Payable</th>
+                  <th className="py-2 px-2">Receipt / RRR Ref</th>
+                  <th className="py-2 px-2">Status</th>
+                  {!execViewOnly && <th className="py-2 pl-2 text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]/40 font-mono">
+                {records.map((rec) => (
+                  <tr key={rec.id}>
+                    <td className="py-2.5 pr-3 font-bold text-[#c7cb2d]">{rec.tax_period}</td>
+                    <td className="py-2.5 px-2 font-sans font-bold">{rec.tax_type}</td>
+                    <td className="py-2.5 px-2 font-sans text-[var(--text-muted)]">{rec.authority}</td>
+                    <td className="py-2.5 px-2">₦{Number(rec.taxable_base || 0).toLocaleString()}</td>
+                    <td className="py-2.5 px-2 font-bold text-[#c7cb2d]">
+                      ₦{Number(rec.tax_payable || 0).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 px-2 text-emerald-400">{rec.remittance_ref || "—"}</td>
+                    <td className="py-2.5 px-2 font-sans">
+                      <span className="px-2 py-0.5 rounded-full bg-[var(--bg-main)] text-[10px] font-mono uppercase text-[#c7cb2d]">
+                        {rec.filing_status}
+                      </span>
+                    </td>
+                    {!execViewOnly && (
+                      <td className="py-2.5 pl-2 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFilingModal({
+                              id: rec.id,
+                              tax_period: rec.tax_period || selectedPeriod,
+                              tax_type: rec.tax_type || "",
+                              authority: rec.authority || "",
+                              taxable_base: Number(rec.taxable_base || 0),
+                              tax_payable: Number(rec.tax_payable || 0),
+                              due_date: rec.due_date || "",
+                              filing_status: rec.filing_status || "remitted",
+                              remittance_ref: rec.remittance_ref || "",
+                              notes: rec.notes || "",
+                            })
+                          }
+                          className="p-1.5 rounded-lg bg-[var(--bg-main)] hover:text-[#c7cb2d] mr-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRecord(rec.id)}
+                          className="p-1.5 rounded-lg bg-[var(--bg-main)] hover:text-red-400 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {filingModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <form
@@ -578,7 +619,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Taxable Base (₦)
+                  Paid Base (₦)
                 </label>
                 <input
                   type="number"

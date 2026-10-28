@@ -5,14 +5,13 @@ import { createClient } from "@/utils/supabase/client";
 import { CheckCircle2, AlertCircle, Save } from "lucide-react";
 import PassportCropper from "@/components/admin/passport-cropper";
 import StaffPayslipsPanel from "@/components/admin/staff-payslips-panel";
-import { resolveStaffCompensation, computeNigerianMonthlyPAYE } from "@/components/admin/tax-compliance-suite";
+import { resolveStaffCompensation } from "@/components/admin/tax-compliance-suite";
 
 export default function StaffProfileAndSettingsPage() {
   const supabase = createClient();
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [profile, setProfile] = React.useState<any | null>(null);
-  const [latestPayRow, setLatestPayRow] = React.useState<any | null>(null);
   const [statusMsg, setStatusMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [newPassword, setNewPassword] = React.useState("");
@@ -25,10 +24,10 @@ export default function StaffProfileAndSettingsPage() {
     const { data: authData } = await supabase.auth.getUser();
     const email = authData?.user?.email?.toLowerCase();
 
-    const [{ data: staffRows }, { data: payRows }] = await Promise.all([
-      supabase.from("staff_profiles").select("*").order("staff_id", { ascending: true }),
-      supabase.from("payroll_runs").select("*").order("created_at", { ascending: false }),
-    ]);
+    const { data: staffRows } = await supabase
+      .from("staff_profiles")
+      .select("*")
+      .order("staff_id", { ascending: true });
 
     if (staffRows && staffRows.length > 0) {
       const me =
@@ -40,19 +39,10 @@ export default function StaffProfileAndSettingsPage() {
         setProfile({
           ...me,
           bank_sort_code: me.bank_sort_code || "",
+          emergency_contact_name: me.emergency_contact_name || "",
+          emergency_contact_phone: me.emergency_contact_phone || "",
+          emergency_contact_relationship: me.emergency_contact_relationship || "",
         });
-
-        if (Array.isArray(payRows) && payRows.length > 0) {
-          const myCode = String(me.staff_id || "").trim().toUpperCase();
-          const myFirst = String(me.first_name || "").trim().toLowerCase();
-          const matchedPay = payRows.find(
-            (r) =>
-              (me.id && r.staff_id === me.id) ||
-              (myCode && String(r.staff_code || r.staff_id || "").trim().toUpperCase() === myCode) ||
-              (myFirst && String(r.staff_name || "").toLowerCase().includes(myFirst))
-          );
-          if (matchedPay) setLatestPayRow(matchedPay);
-        }
       }
     }
     setLoading(false);
@@ -78,11 +68,20 @@ export default function StaffProfileAndSettingsPage() {
       bank_sort_code: (profile.bank_sort_code || "").trim(),
       bank_account_name: (profile.bank_account_name || "").trim(),
       bank_account_no: (profile.bank_account_no || "").trim(),
+      emergency_contact_name: (profile.emergency_contact_name || "").trim(),
+      emergency_contact_phone: (profile.emergency_contact_phone || "").trim(),
+      emergency_contact_relationship: (profile.emergency_contact_relationship || "").trim(),
     };
 
     let { error } = await supabase.from("staff_profiles").update(payload).eq("id", profile.id);
     if (error && error.message?.includes("column")) {
-      const { bank_sort_code, ...safePayload } = payload;
+      const {
+        bank_sort_code,
+        emergency_contact_name,
+        emergency_contact_phone,
+        emergency_contact_relationship,
+        ...safePayload
+      } = payload;
       const retry = await supabase.from("staff_profiles").update(safePayload).eq("id", profile.id);
       error = retry.error;
     }
@@ -91,7 +90,7 @@ export default function StaffProfileAndSettingsPage() {
     if (error) {
       setStatusMsg({ type: "error", text: error.message });
     } else {
-      setStatusMsg({ type: "success", text: "Profile saved!" });
+      setStatusMsg({ type: "success", text: "Profile & emergency contact saved!" });
       loadMyProfile();
     }
   };
@@ -127,13 +126,11 @@ export default function StaffProfileAndSettingsPage() {
     );
   }
 
-  const comp = resolveStaffCompensation(profile, latestPayRow);
-  const paye = computeNigerianMonthlyPAYE(comp.gross);
-  const netTakeHome = Math.max(0, comp.gross - paye.monthlyPAYE);
+  // Strictly reads the saved salary from the staff member's profile record
+  const comp = resolveStaffCompensation(profile);
 
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* 1. PERSONAL PROFILE, SUBMITTED SALARY SUMMARY & BANK DETAILS */}
       <form
         onSubmit={handleSaveProfile}
         className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-6"
@@ -156,7 +153,7 @@ export default function StaffProfileAndSettingsPage() {
                 )}
               </div>
               <p className="text-xs font-semibold text-[var(--text-primary)] mt-0.5">
-                {profile?.job_title || "Executive"} • {profile?.department || "Lavie Studios"}
+                {profile?.job_title || "Staff"} • {profile?.department || "Lavie Studios"}
               </p>
               <p className="text-[11px] font-mono text-[var(--text-muted)]">
                 {comp.levelLabel} (Step {comp.stepNum}) • {profile?.employment_type || "Full-Time"}
@@ -191,31 +188,27 @@ export default function StaffProfileAndSettingsPage() {
           </div>
         )}
 
-        {/* SINGLE UNIFIED SALARY STRIP (USES EXACT SALARY SAVED ON STAFF RECORD) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 font-mono">
+        {/* SAVED SALARY PACKAGE ON PROFILE (NOT PULLED FROM SALARY STRUCTURE) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 font-mono">
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Monthly Gross</span>
-            <span className="text-sm font-bold text-[var(--text-primary)]">₦{comp.gross.toLocaleString()}</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Saved Monthly Gross</span>
+            <span className="text-sm font-bold text-[#c7cb2d]">₦{comp.gross.toLocaleString()}</span>
           </div>
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Basic (85%)</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Basic Salary</span>
             <span className="text-xs font-semibold">₦{comp.basic.toLocaleString()}</span>
           </div>
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Trans/Hous (10%)</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Transport / Housing</span>
             <span className="text-xs font-semibold">₦{comp.transportHousing.toLocaleString()}</span>
           </div>
           <div>
-            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Internet (5%)</span>
+            <span className="block text-[9px] uppercase text-[var(--text-dim)]">Internet Allowance</span>
             <span className="text-xs font-semibold">₦{comp.internet.toLocaleString()}</span>
-          </div>
-          <div>
-            <span className="block text-[9px] uppercase text-[#c7cb2d]">Net Pay (After PAYE)</span>
-            <span className="text-sm font-bold text-emerald-400">₦{netTakeHome.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* PERSONAL CONTACT FIELDS */}
+        {/* PERSONAL CONTACT */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">First Name</label>
@@ -248,6 +241,48 @@ export default function StaffProfileAndSettingsPage() {
               onChange={(e) => setProfile({ ...profile, location: e.target.value })}
               className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
             />
+          </div>
+        </div>
+
+        {/* EMERGENCY CONTACT DETAILS */}
+        <div className="pt-2 border-t border-[var(--border-subtle)]/40">
+          <span className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-3">
+            Emergency Contact Details
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Emergency Contact Name
+              </label>
+              <input
+                value={profile?.emergency_contact_name || ""}
+                onChange={(e) => setProfile({ ...profile, emergency_contact_name: e.target.value })}
+                placeholder="Full Name of Next of Kin / Emergency Contact"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Relationship
+              </label>
+              <input
+                value={profile?.emergency_contact_relationship || ""}
+                onChange={(e) => setProfile({ ...profile, emergency_contact_relationship: e.target.value })}
+                placeholder="e.g. Parent, Spouse, Sibling"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Emergency Phone Number
+              </label>
+              <input
+                value={profile?.emergency_contact_phone || ""}
+                onChange={(e) => setProfile({ ...profile, emergency_contact_phone: e.target.value })}
+                placeholder="+234..."
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs font-mono"
+              />
+            </div>
           </div>
         </div>
 
@@ -295,7 +330,7 @@ export default function StaffProfileAndSettingsPage() {
         </div>
       </form>
 
-      {/* 2. MY MONTHLY PAYSLIPS */}
+      {/* 2. MY APPROVED PAYSLIPS (WITH YEAR & MONTH FILTER) */}
       <StaffPayslipsPanel staffProfile={profile} />
 
       {/* 3. PASSWORD UPDATE */}

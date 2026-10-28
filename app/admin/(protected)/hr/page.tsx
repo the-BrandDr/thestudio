@@ -322,6 +322,9 @@ export default function HRAndWorkspaceSuite() {
     bank_sort_code: "",
     bank_account_name: "",
     bank_account_no: "",
+    emergency_contact_name: "",
+    emergency_contact_phone: "",
+    emergency_contact_relationship: "",
   });
   const [onboardStatus, setOnboardStatus] = React.useState("");
 
@@ -654,6 +657,9 @@ export default function HRAndWorkspaceSuite() {
       bank_sort_code: editingStaff.bank_sort_code || "",
       bank_account_name: editingStaff.bank_account_name,
       bank_account_no: editingStaff.bank_account_no,
+      emergency_contact_name: editingStaff.emergency_contact_name || "",
+      emergency_contact_phone: editingStaff.emergency_contact_phone || "",
+      emergency_contact_relationship: editingStaff.emergency_contact_relationship || "",
       status: editingStaff.status || "active",
     };
 
@@ -735,6 +741,9 @@ export default function HRAndWorkspaceSuite() {
       bank_sort_code: newStaff.bank_sort_code || "",
       bank_account_name: newStaff.bank_account_name || `${newStaff.first_name} ${newStaff.last_name}`.trim(),
       bank_account_no: newStaff.bank_account_no,
+      emergency_contact_name: newStaff.emergency_contact_name || "",
+      emergency_contact_phone: newStaff.emergency_contact_phone || "",
+      emergency_contact_relationship: newStaff.emergency_contact_relationship || "",
       access_mode: newStaff.access_mode,
       status: "active",
     };
@@ -1134,16 +1143,25 @@ export default function HRAndWorkspaceSuite() {
 
   // 5C. Direct HR Promotion (Includes Employment Type)
   const handlePromoLevelOrStepChange = (nextLevel: string, nextStep: number) => {
-    const bd = computeSalaryBreakdown(nextLevel, nextStep);
     setPromoForm((prev) => ({
       ...prev,
       new_level: nextLevel,
       new_step: nextStep,
-      basic_salary: String(bd.basic),
-      internet_allowance: String(bd.internet),
-      transport_housing_allowance: String(bd.transportHousing),
-      new_salary: String(bd.totalGross),
     }));
+  };
+
+  const handlePromoComponentChange = (
+    field: "basic_salary" | "internet_allowance" | "transport_housing_allowance",
+    val: string
+  ) => {
+    setPromoForm((prev) => {
+      const next = { ...prev, [field]: val };
+      const total =
+        Number(next.basic_salary || 0) +
+        Number(next.internet_allowance || 0) +
+        Number(next.transport_housing_allowance || 0);
+      return { ...next, new_salary: String(total) };
+    });
   };
 
   const handlePromoteStaff = async (e: React.FormEvent) => {
@@ -2018,6 +2036,43 @@ export default function HRAndWorkspaceSuite() {
             </div>
           </div>
 
+          {/* EMERGENCY CONTACT DETAILS */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
+                Emergency Contact Name
+              </label>
+              <input
+                value={newStaff.emergency_contact_name || ""}
+                onChange={(e) => setNewStaff({ ...newStaff, emergency_contact_name: e.target.value })}
+                placeholder="Full Name of Next of Kin"
+                className="w-full bg-[var(--bg-card)] rounded-xl px-3.5 py-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Relationship
+              </label>
+              <input
+                value={newStaff.emergency_contact_relationship || ""}
+                onChange={(e) => setNewStaff({ ...newStaff, emergency_contact_relationship: e.target.value })}
+                placeholder="e.g. Parent / Spouse / Sibling"
+                className="w-full bg-[var(--bg-card)] rounded-xl px-3.5 py-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                Emergency Contact Phone
+              </label>
+              <input
+                value={newStaff.emergency_contact_phone || ""}
+                onChange={(e) => setNewStaff({ ...newStaff, emergency_contact_phone: e.target.value })}
+                placeholder="+234..."
+                className="w-full bg-[var(--bg-card)] rounded-xl px-3.5 py-2 text-xs font-mono"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-2">Clearances</label>
             <div className="flex flex-wrap gap-2">
@@ -2300,7 +2355,10 @@ export default function HRAndWorkspaceSuite() {
                       const found = staffList.find((s) => s.id === e.target.value);
                       if (found) {
                         const nextStep = Math.min(7, Number(found.step_level || 1) + 1);
-                        const bd = computeSalaryBreakdown(found.hierarchy_level || "L3 - Mid-Level Specialist", nextStep);
+                        const savedGross = Number(found.salary_amount || 0);
+                        const savedBasic = Number(found.basic_salary || Math.round(savedGross * 0.85));
+                        const savedTrans = Number(found.transport_housing_allowance || Math.round(savedGross * 0.10));
+                        const savedNet = Number(found.internet_allowance || Math.max(0, savedGross - savedBasic - savedTrans));
                         setPromoForm({
                           ...promoForm,
                           target_staff_id: found.id,
@@ -2310,10 +2368,10 @@ export default function HRAndWorkspaceSuite() {
                           new_title: found.job_title || "",
                           new_employment_type: found.employment_type || "Full-Time",
                           new_role: found.role || "staff",
-                          basic_salary: String(bd.basic),
-                          internet_allowance: String(bd.internet),
-                          transport_housing_allowance: String(bd.transportHousing),
-                          new_salary: String(bd.totalGross),
+                          basic_salary: String(savedBasic),
+                          internet_allowance: String(savedNet),
+                          transport_housing_allowance: String(savedTrans),
+                          new_salary: String(savedGross),
                         });
                       }
                     }}
@@ -2391,31 +2449,78 @@ export default function HRAndWorkspaceSuite() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-[var(--bg-main)] text-[11px] font-mono">
-                  <div>
-                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Basic (85%)</span>
-                    ₦{Number(promoForm.basic_salary).toLocaleString()}
+                <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
+                      Custom Promotion Salary Input
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bd = computeSalaryBreakdown(promoForm.new_level, promoForm.new_step);
+                        setPromoForm((prev) => ({
+                          ...prev,
+                          basic_salary: String(bd.basic),
+                          transport_housing_allowance: String(bd.transportHousing),
+                          internet_allowance: String(bd.internet),
+                          new_salary: String(bd.totalGross),
+                        }));
+                      }}
+                      className="text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d] underline cursor-pointer"
+                    >
+                      Optional: Fill from Structure Guide
+                    </button>
                   </div>
-                  <div>
-                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Trans/H (10%)</span>
-                    ₦{Number(promoForm.transport_housing_allowance).toLocaleString()}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Basic (85%) ₦</label>
+                      <input
+                        type="number"
+                        value={promoForm.basic_salary}
+                        onChange={(e) => handlePromoComponentChange("basic_salary", e.target.value)}
+                        className="w-full bg-[var(--bg-card)] rounded-xl px-2.5 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Trans/H (10%) ₦</label>
+                      <input
+                        type="number"
+                        value={promoForm.transport_housing_allowance}
+                        onChange={(e) => handlePromoComponentChange("transport_housing_allowance", e.target.value)}
+                        className="w-full bg-[var(--bg-card)] rounded-xl px-2.5 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-mono uppercase text-[var(--text-dim)] mb-1">Internet (5%) ₦</label>
+                      <input
+                        type="number"
+                        value={promoForm.internet_allowance}
+                        onChange={(e) => handlePromoComponentChange("internet_allowance", e.target.value)}
+                        className="w-full bg-[var(--bg-card)] rounded-xl px-2.5 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">New Gross ₦</label>
+                      <input
+                        type="number"
+                        value={promoForm.new_salary}
+                        onChange={(e) => {
+                          const g = Number(e.target.value || 0);
+                          const b = Math.round(g * 0.85);
+                          const th = Math.round(g * 0.10);
+                          const net = Math.max(0, g - b - th);
+                          setPromoForm({
+                            ...promoForm,
+                            new_salary: e.target.value,
+                            basic_salary: String(b),
+                            transport_housing_allowance: String(th),
+                            internet_allowance: String(net),
+                          });
+                        }}
+                        className="w-full bg-[var(--bg-card)] border border-[#c7cb2d]/50 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-[#c7cb2d]"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <span className="block text-[9px] text-[var(--text-dim)] uppercase">Internet (5%)</span>
-                    ₦{Number(promoForm.internet_allowance).toLocaleString()}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
-                    New Monthly Gross (₦)
-                  </label>
-                  <input
-                    type="number"
-                    value={promoForm.new_salary}
-                    onChange={(e) => setPromoForm({ ...promoForm, new_salary: e.target.value })}
-                    className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2 text-xs font-mono font-bold"
-                  />
                 </div>
 
                 <textarea
@@ -2624,7 +2729,7 @@ export default function HRAndWorkspaceSuite() {
             </button>
           </form>
 
-          <div className="lg:col-span-7 space-y-3">
+          <div className="lg:col-span-7 space-y-3 max-h-[600px] overflow-y-auto pr-1">
             {leaveList.map((lv) => (
               <div key={lv.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
                 <div className="flex items-center justify-between">
@@ -2824,7 +2929,7 @@ export default function HRAndWorkspaceSuite() {
             </div>
           </form>
 
-          <div className="lg:col-span-7 space-y-3">
+          <div className="lg:col-span-7 space-y-3 max-h-[600px] overflow-y-auto pr-1">
             {voucherList.map((v) => {
               const vComments: Array<{ author: string; text: string; at: string }> = Array.isArray(v.comments)
                 ? v.comments
@@ -3633,6 +3738,43 @@ export default function HRAndWorkspaceSuite() {
                     value={editingStaff.bank_account_no || ""}
                     onChange={(e) => setEditingStaff({ ...editingStaff, bank_account_no: e.target.value })}
                     className="w-full bg-[var(--bg-card)] rounded-xl px-3 py-2 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* EMERGENCY CONTACT IN EDIT MODAL */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/50">
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">
+                    Emergency Contact Name
+                  </label>
+                  <input
+                    value={editingStaff.emergency_contact_name || ""}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, emergency_contact_name: e.target.value })}
+                    placeholder="Next of Kin Name"
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Relationship
+                  </label>
+                  <input
+                    value={editingStaff.emergency_contact_relationship || ""}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, emergency_contact_relationship: e.target.value })}
+                    placeholder="e.g. Spouse / Parent"
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                    Emergency Phone
+                  </label>
+                  <input
+                    value={editingStaff.emergency_contact_phone || ""}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, emergency_contact_phone: e.target.value })}
+                    placeholder="+234..."
+                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono"
                   />
                 </div>
               </div>

@@ -158,6 +158,22 @@ export default function AdminInquiriesPage() {
     loadData();
   };
 
+  const openStandaloneQuoteBuilder = () => {
+    setQuoteModal({
+      id: null,
+      isStandalone: true,
+      name: "",
+      company: "",
+      email: "",
+      phone: "",
+      subject: "",
+    });
+    setQuoteItems([{ description: "Corporate Branding & Production", qty: 1, unitPrice: 0 }]);
+    setQuoteDiscountPct(0);
+    setQuoteVatRate(7.5);
+    setQuoteNotes("Valid for 14 days. 70% mobilization deposit required to commence production.");
+  };
+
   const openQuoteGenerator = (msg: any) => {
     setQuoteModal(msg);
     setQuoteItems([{ description: msg.subject || "Event Branding & Production", qty: 1, unitPrice: 0 }]);
@@ -203,7 +219,9 @@ export default function AdminInquiriesPage() {
       responded_by: actor,
       responded_at: new Date().toISOString(),
     }).select().maybeSingle();
-    await supabase.from("contact_inquiries").update({ status: "quoted" }).eq("id", quoteModal.id);
+    if (quoteModal?.id) {
+      await supabase.from("contact_inquiries").update({ status: "quoted" }).eq("id", quoteModal.id);
+    }
 
     await recordStaffAction("Generated Client Quote", `${qNo} for ${quoteModal.name}`);
     setSaving(false);
@@ -424,7 +442,23 @@ export default function AdminInquiriesPage() {
 
       {/* VIEW 2: GENERATED QUOTES */}
       {activeView === "quotes" && (
-        <div className="bg-[var(--bg-card)] p-5 rounded-3xl space-y-3 print:hidden">
+        <div className="space-y-4">
+          <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-base font-bold">Client Commercial Quotes ({quotes.length})</h2>
+              <p className="text-xs text-[var(--text-muted)]">
+                Create official quotes for walk-in/direct corporate clients or from website inquiries.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openStandaloneQuoteBuilder}
+              className="px-4 py-2 rounded-2xl bg-[#c7cb2d] text-black text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 transition"
+            >
+              + Generate Client Quote
+            </button>
+          </div>
+          <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
           {quotes.map((qt) => (
             <div key={qt.id} className="p-4 rounded-2xl bg-[var(--bg-main)] flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -449,6 +483,7 @@ export default function AdminInquiriesPage() {
             </div>
           ))}
           {quotes.length === 0 && <p className="text-xs text-[var(--text-muted)] py-8 text-center">No quotes generated yet.</p>}
+          </div>
         </div>
       )}
 
@@ -481,9 +516,41 @@ export default function AdminInquiriesPage() {
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
               <div>
                 <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">Quote Builder</span>
-                <h3 className="font-display text-base font-bold">Prepare Quote for {quoteModal.name}</h3>
+                <h3 className="font-display text-base font-bold">
+                  {quoteModal.name ? `Prepare Quote for ${quoteModal.name}` : "Generate New Client Quote"}
+                </h3>
               </div>
-              <button type="button" onClick={() => setQuoteModal(null)}><X className="w-4 h-4" /></button>
+              <button type="button" onClick={() => setQuoteModal(null)} className="cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <input
+                required
+                value={quoteModal.name || ""}
+                onChange={(e) => setQuoteModal({ ...quoteModal, name: e.target.value })}
+                placeholder="Client / Company Name *"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              />
+              <input
+                required
+                value={quoteModal.subject || ""}
+                onChange={(e) => setQuoteModal({ ...quoteModal, subject: e.target.value })}
+                placeholder="Project Title (e.g. OCH 5.0 Branding) *"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              />
+              <input
+                type="email"
+                value={quoteModal.email || ""}
+                onChange={(e) => setQuoteModal({ ...quoteModal, email: e.target.value })}
+                placeholder="Client Email (Optional)"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              />
+              <input
+                value={quoteModal.phone || ""}
+                onChange={(e) => setQuoteModal({ ...quoteModal, phone: e.target.value })}
+                placeholder="Client Phone (Optional)"
+                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+              />
             </div>
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">

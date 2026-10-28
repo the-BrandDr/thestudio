@@ -1,30 +1,54 @@
-'use client';
+"use client";
 
 import * as React from "react";
 
-interface FormattedDateProps {
-  dateString: string | null | undefined;
-}
-
-export default function FormattedDate({ dateString }: FormattedDateProps) {
+export default function FormattedDate({
+  date,
+  iso,
+  value,
+  timestamp,
+  className = "",
+  includeTime = false,
+}: {
+  date?: string | Date | number | null;
+  iso?: string | Date | number | null;
+  value?: string | Date | number | null;
+  timestamp?: string | Date | number | null;
+  className?: string;
+  includeTime?: boolean;
+}) {
+  const raw = date ?? iso ?? value ?? timestamp;
   const [formatted, setFormatted] = React.useState<string>("");
 
   React.useEffect(() => {
-    if (!dateString) {
-      setFormatted("N/A");
+    if (!raw) {
+      setFormatted("Just now");
+      return;
+    }
+    const parsed = new Date(raw);
+    if (isNaN(parsed.getTime())) {
+      setFormatted(String(raw));
       return;
     }
     try {
-      const d = new Date(dateString);
-      setFormatted(d.toLocaleDateString(undefined, {
-        year: "numeric",
+      const datePart = parsed.toLocaleDateString("en-NG", {
+        day: "numeric",
         month: "short",
-        day: "numeric"
-      }));
-    } catch {
-      setFormatted(dateString);
+        year: "numeric",
+      });
+      if (includeTime) {
+        const timePart = parsed.toLocaleTimeString("en-NG", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        setFormatted(`${datePart}, ${timePart}`);
+      } else {
+        setFormatted(datePart);
+      }
+    } catch (_) {
+      setFormatted(parsed.toISOString().slice(0, 10));
     }
-  }, [dateString]);
+  }, [raw, includeTime]);
 
-  return <span>{formatted || "Loading..."}</span>;
+  return <span className={className}>{formatted || "—"}</span>;
 }
