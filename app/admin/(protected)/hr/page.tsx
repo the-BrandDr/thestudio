@@ -1507,10 +1507,9 @@ export default function HRAndWorkspaceSuite() {
                   : "Promotions",
               icon: Award,
             },
-            { id: "leave", label: `Leave (${leaveList.length})`, icon: Calendar },
-            { id: "vouchers", label: `Vouchers (${voucherList.length})`, icon: Receipt },
-            { id: "chat", label: "Studio Chat", icon: MessageSquare },
-          ].map((t) => {
+            { id: "leave", label: `Leave Approvals (${leaveList.length})`, icon: Calendar },
+            { id: "vouchers", label: `Voucher Approvals (${voucherList.length})`, icon: Receipt },
+            ].map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;
             return (
@@ -2223,115 +2222,7 @@ export default function HRAndWorkspaceSuite() {
       {activeTab === "promotions" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-5 space-y-6">
-            {/* STAFF SELF-SERVICE PROMOTION REQUEST FORM (Available to all staff) */}
-            <form
-              onSubmit={handleSubmitPromotionRequest}
-              className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
-            >
-              <div>
-                <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
-                  Staff Self-Service
-                </span>
-                <h2 className="font-display text-lg font-bold">Request Promotion / Step Upgrade</h2>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                    Requested Level
-                  </label>
-                  <select
-                    value={staffPromoRequestForm.desired_level}
-                    onChange={(e) =>
-                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_level: e.target.value })
-                    }
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    {HIERARCHY_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>
-                        {lvl}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                    Requested Step (1 – 7)
-                  </label>
-                  <select
-                    value={staffPromoRequestForm.desired_step}
-                    onChange={(e) =>
-                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_step: Number(e.target.value) })
-                    }
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#c7cb2d]"
-                  >
-                    {SALARY_STEPS.map((st) => (
-                      <option key={st} value={st}>
-                        Step {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                    Proposed Job Title
-                  </label>
-                  <input
-                    value={staffPromoRequestForm.desired_title}
-                    onChange={(e) =>
-                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_title: e.target.value })
-                    }
-                    placeholder="e.g. Senior Brand Designer"
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                    Employment Type
-                  </label>
-                  <select
-                    value={staffPromoRequestForm.desired_employment_type}
-                    onChange={(e) =>
-                      setStaffPromoRequestForm({ ...staffPromoRequestForm, desired_employment_type: e.target.value })
-                    }
-                    className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  >
-                    {EMPLOYMENT_TYPES.map((et) => (
-                      <option key={et} value={et}>
-                        {et}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Key Achievements & Justification *
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={staffPromoRequestForm.reason}
-                  onChange={(e) => setStaffPromoRequestForm({ ...staffPromoRequestForm, reason: e.target.value })}
-                  placeholder="Highlight completed projects, tenure, or new responsibilities..."
-                  className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-                />
-              </div>
-
-              {promoReqNotice && <p className="text-xs font-mono text-[#c7cb2d]">{promoReqNotice}</p>}
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full py-2.5 rounded-full bg-[var(--bg-main)] hover:bg-[#c7cb2d] hover:text-black border border-[#c7cb2d]/50 text-[#c7cb2d] font-bold text-xs uppercase tracking-wider transition cursor-pointer"
-              >
-                Submit Promotion Request to HR
-              </button>
-            </form>
+            
 
             {/* DIRECT HR PROMOTION PANEL (With Employment Type Selection) */}
             {canEditHR && (
@@ -2658,78 +2549,14 @@ export default function HRAndWorkspaceSuite() {
       ===================================================================== */}
       {activeTab === "leave" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <form
-            onSubmit={handleApplyLeave}
-            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
-          >
-            <h2 className="font-display text-lg font-bold">Apply for Leave ({remainingAnnualAllowance} Days Left)</h2>
-            <select
-              value={leaveForm.leave_type}
-              onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
-            >
-              <option value="Annual Leave">Annual Leave</option>
-              <option value="Sick Leave">Sick Leave</option>
-              <option value="Casual / Emergency Leave">Casual / Emergency Leave</option>
-              <option value="Maternity / Paternity Leave">Maternity / Paternity Leave</option>
-            </select>
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="date"
-                required
-                value={leaveForm.start_date}
-                onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-              <input
-                type="date"
-                required
-                value={leaveForm.end_date}
-                onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                Relief / Handover Officer *
-              </label>
-              <select
-                required
-                value={leaveForm.handover_staff}
-                onChange={(e) => setLeaveForm({ ...leaveForm, handover_staff: e.target.value })}
-                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
-              >
-                <option value="">-- Select Available Relief Officer --</option>
-                {staffList
-                  .filter((st) => st.id !== currentUser?.id && (st.status || "active") === "active")
-                  .map((st) => (
-                    <option
-                      key={st.id}
-                      value={`${st.first_name} ${st.last_name} (${st.staff_id} — ${st.job_title || st.department})`}
-                    >
-                      {st.first_name} {st.last_name} ({st.staff_id}) — {st.job_title || st.department}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <textarea
-              required
-              rows={2}
-              value={leaveForm.reason}
-              onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
-              placeholder="Reason..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-3 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase cursor-pointer"
-            >
-              Submit ({requestedDays} Working Days)
-            </button>
-          </form>
+          <div className="lg:col-span-4 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-2">
+            <h2 className="font-display text-base font-bold">HR Leave Approval Queue</h2>
+            <p className="text-xs text-[var(--text-muted)]">
+              Staff submit leave requests from their Open Overview space. Review and approve applications here.
+            </p>
+          </div>
 
-          <div className="lg:col-span-7 space-y-3 max-h-[600px] overflow-y-auto pr-1">
+          <div className="lg:col-span-8 space-y-3 max-h-[600px] overflow-y-auto pr-1">
             {leaveList.map((lv) => (
               <div key={lv.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
                 <div className="flex items-center justify-between">
@@ -2785,151 +2612,14 @@ export default function HRAndWorkspaceSuite() {
       ===================================================================== */}
       {activeTab === "vouchers" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <form
-            onSubmit={handleCreateVoucher}
-            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
-          >
-            <h2 className="font-display text-lg font-bold">Raise Expense Voucher</h2>
-            <input
-              required
-              value={voucherForm.title}
-              onChange={(e) => setVoucherForm({ ...voucherForm, title: e.target.value })}
-              placeholder="Voucher Title *"
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
-            />
-            <div className="grid grid-cols-2 gap-2.5">
-              <input
-                value={voucherForm.project_ref}
-                onChange={(e) => setVoucherForm({ ...voucherForm, project_ref: e.target.value })}
-                placeholder="Project Ref (Optional)"
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-              <select
-                value={voucherForm.category}
-                onChange={(e) => setVoucherForm({ ...voucherForm, category: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              >
-                <option value="Operational Expense">Operational Expense</option>
-                <option value="Project Production">Project Production</option>
-                <option value="Logistics & Transport">Logistics & Transport</option>
-                <option value="Facility & Power">Facility & Power</option>
-              </select>
-            </div>
+          <div className="lg:col-span-4 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-2">
+            <h2 className="font-display text-base font-bold">Voucher Approval Queue</h2>
+            <p className="text-xs text-[var(--text-muted)]">
+              Staff raise expense vouchers from their Open Overview space. Inspect proofs, comment, and approve disbursements here.
+            </p>
+          </div>
 
-            <div className="space-y-2">
-              {voucherItems.map((row, idx) => (
-                <div key={idx} className="grid grid-cols-6 gap-2">
-                  <input
-                    placeholder="Item description"
-                    value={row.item}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].item = e.target.value;
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-3 bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Qty"
-                    value={row.qty}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].qty = Number(e.target.value);
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-1 bg-[var(--bg-main)] rounded-xl px-2 py-2 text-xs font-mono"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Unit ₦"
-                    value={row.unitPrice}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].unitPrice = Number(e.target.value);
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-2 bg-[var(--bg-main)] rounded-xl px-2 py-2 text-xs font-mono"
-                  />
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setVoucherItems([...voucherItems, { item: "", qty: 1, unitPrice: 0 }])}
-                className="text-[11px] font-mono text-[#c7cb2d] flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3 h-3" /> Add Item
-              </button>
-            </div>
-
-            <textarea
-              rows={2}
-              value={voucherForm.description}
-              onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })}
-              placeholder="Notes or payment breakdown..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
-
-            <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                  Image / Receipt Proof (Optional — Auto-Compressed)
-                </span>
-                <label className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:border-[#c7cb2d]">
-                  <ImageIcon className="w-3.5 h-3.5 text-[#c7cb2d]" /> Attach Image
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={handleVoucherAttachment}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-              {voucherForm.attachment_data && (
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={voucherForm.attachment_data}
-                      alt="Proof preview"
-                      className="w-10 h-10 rounded-lg object-cover border border-[#c7cb2d]/50"
-                    />
-                    <span className="text-xs font-mono text-[#c7cb2d] truncate max-w-[180px]">
-                      {voucherForm.attachment_name || "Attached proof"}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setVoucherForm({ ...voucherForm, attachment_data: "", attachment_name: "" })}
-                    className="text-xs text-red-400 cursor-pointer"
-                  >
-                    Remove
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <input
-              value={voucherForm.initial_comment}
-              onChange={(e) => setVoucherForm({ ...voucherForm, initial_comment: e.target.value })}
-              placeholder="Add an initial comment on this voucher (Optional)..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
-
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-xs font-mono font-bold text-[#c7cb2d]">
-                Total: ₦{computedVoucherTotal.toLocaleString()}
-              </span>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-6 py-2.5 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase cursor-pointer"
-              >
-                Submit Voucher
-              </button>
-            </div>
-          </form>
-
-          <div className="lg:col-span-7 space-y-3 max-h-[600px] overflow-y-auto pr-1">
+          <div className="lg:col-span-8 space-y-3 max-h-[600px] overflow-y-auto pr-1">
             {voucherList.map((v) => {
               const vComments: Array<{ author: string; text: string; at: string }> = Array.isArray(v.comments)
                 ? v.comments
