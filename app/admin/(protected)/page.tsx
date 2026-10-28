@@ -1,239 +1,278 @@
+"use client";
+
 import * as React from "react";
-import { cookies } from "next/headers";
-import { connection } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { redirect } from "next/navigation";
-import { Briefcase, MailOpen, Users, ShieldCheck, ArrowUpRight, Plus } from "lucide-react";
 import Link from "next/link";
-import FormattedDate from "@/components/admin/formatted-date";
+import { createClient } from "@/utils/supabase/client";
+import {
+  Briefcase,
+  Mail,
+  Users,
+  ShieldCheck,
+  MessageSquare,
+  Calendar,
+  Receipt,
+  Plus,
+  Landmark,
+  UserCheck,
+} from "lucide-react";
+import { resolveAuthenticatedStaff, checkModuleAccess } from "@/utils/resolve-current-staff";
 
-export default async function AdminOverviewPage() {
-  await connection();
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-      },
+export default function AdminOverviewPage() {
+  const supabase = createClient();
+  const [me, setMe] = React.useState<any | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [counts, setCounts] = React.useState({
+    caseStudies: 0,
+    inquiries: 0,
+    staffTotal: 0,
+    myLeaves: 0,
+    myVouchers: 0,
+    chatMessages: 0,
+  });
+
+  React.useEffect(() => {
+    let mounted = true;
+    async function loadDashboard() {
+      setLoading(true);
+      const { data: authData } = await supabase.auth.getUser();
+      const [
+        { data: staffRows },
+        { count: csCount },
+        { count: inqCount },
+        { data: leaveRows },
+        { data: voucherRows },
+        { count: msgCount },
+      ] = await Promise.all([
+        supabase.from("staff_profiles").select("*").order("staff_id", { ascending: true }),
+        supabase.from("case_studies").select("*", { count: "exact", head: true }),
+        supabase.from("contact_inquiries").select("*", { count: "exact", head: true }),
+        supabase.from("leave_requests").select("*"),
+        supabase.from("expense_vouchers").select("*"),
+        supabase.from("studio_messages").select("*", { count: "exact", head: true }),
+      ]);
+
+      const resolved = resolveAuthenticatedStaff(authData?.user, staffRows || []);
+      if (!mounted) return;
+      setMe(resolved);
+
+      const myCode = String(resolved?.staff_id || "").toUpperCase();
+      const myId = resolved?.id;
+
+      const myLeaveCount = (leaveRows || []).filter(
+        (l) => (myId && l.staff_id === myId) || (myCode && String(l.staff_code || "").toUpperCase() === myCode)
+      ).length;
+      const myVoucherCount = (voucherRows || []).filter(
+        (v) => (myId && v.staff_id === myId) || (myCode && String(v.staff_code || "").toUpperCase() === myCode)
+      ).length;
+
+      setCounts({
+        caseStudies: csCount || 0,
+        inquiries: inqCount || 0,
+        staffTotal: (staffRows || []).length,
+        myLeaves: myLeaveCount,
+        myVouchers: myVoucherCount,
+        chatMessages: msgCount || 0,
+      });
+      setLoading(false);
     }
-  );
+    loadDashboard();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/admin/login");
+  const canPortfolio = checkModuleAccess(me, "portfolio");
+  const canInquiries = checkModuleAccess(me, "inquiries");
+  const canHR = checkModuleAccess(me, "hr");
+  const canFinance = checkModuleAccess(me, "finance");
 
-  const [
-    { data: profile },
-    { count: staffCount },
-    { count: projectCount },
-    { count: inquiryCount },
-    { data: recentInquiries },
-    { data: recentProjects },
-    { data: staffDirectory }
-  ] = await Promise.all([
-    supabase.from("staff_profiles").select("*").eq("id", user.id).maybeSingle(),
-    supabase.from("staff_profiles").select("*", { count: "exact", head: true }),
-    supabase.from("case_studies").select("*", { count: "exact", head: true }),
-    supabase.from("contact_messages").select("*", { count: "exact", head: true }),
-    supabase.from("contact_messages").select("id, name, email, subject, created_at").order("created_at", { ascending: false }).limit(5),
-    supabase.from("case_studies").select("id, title, client, category, created_at").order("created_at", { ascending: false }).limit(5),
-    supabase.from("staff_profiles").select("id, first_name, last_name, staff_id, role, job_title, status").order("staff_id", { ascending: true }).limit(5)
-  ]);
+  const roleBadgeLabel = React.useMemo(() => {
+    if (!me) return "STAFF";
+    const job = me.job_title || me.role || "Team Member";
+    const dept = me.department || "Studio";
+    return `${job} • ${dept}`;
+  }, [me]);
 
-  const activeProfile = profile || (staffDirectory && staffDirectory[0]);
-  if (!activeProfile) redirect("/admin/login?error=unverified_staff_profile");
-
-  const roleLabel = activeProfile.role.replace("_", " ");
+  if (loading) {
+    return (
+      <div className="p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs text-[var(--text-muted)]">
+        Loading workspace...
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
-      
-      {/* Top Identity & Quick Actions Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--bg-card)] p-6 rounded-3xl">
-        <div>
-          <div className="flex items-center gap-2.5 mb-1.5">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold">
-              {activeProfile.staff_id}
+    <div className="space-y-6">
+      {/* PERSONALIZED WELCOME HERO */}
+      <div className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#c7cb2d]/20 text-[#c7cb2d] text-[10px] font-mono font-bold uppercase">
+              {me?.staff_id || "STAFF"}
             </span>
-            <span className="text-xs font-mono uppercase tracking-wider text-[var(--text-dim)]">
-              {roleLabel} • {activeProfile.department || "Executive"}
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-dim)]">
+              {roleBadgeLabel}
             </span>
           </div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight text-[var(--text-primary)]">
-            Welcome back, {activeProfile.first_name}
+          <h1 className="font-display text-2xl sm:text-3xl font-bold">
+            Welcome back, {me?.first_name || "Team Member"}
           </h1>
+          <p className="text-xs text-[var(--text-muted)]">
+            {me?.hierarchy_level || "Staff"} (Step {me?.step_level || 1}) • {me?.employment_type || "Full-Time"}
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Link 
-            href="/admin/portfolio" 
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold hover:opacity-90 transition"
+        {/* ROLE-FILTERED QUICK ACTION BUTTONS */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/workspace"
+            className="px-4 py-2.5 rounded-full bg-[#c7cb2d] text-black text-xs font-bold flex items-center gap-1.5 hover:opacity-90 transition"
           >
-            <Plus className="w-3.5 h-3.5" /> New Case Study
+            <MessageSquare className="w-3.5 h-3.5" /> Open Workspace & Chat
           </Link>
-          <Link 
-            href="/admin/hr" 
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[var(--bg-main)] text-[var(--text-primary)] text-xs font-bold hover:opacity-80 transition"
-          >
-            <Users className="w-3.5 h-3.5" /> HR Desk
-          </Link>
+
+          {canPortfolio && (
+            <Link
+              href="/admin/portfolio"
+              className="px-4 py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold flex items-center gap-1.5 hover:opacity-90 transition"
+            >
+              <Plus className="w-3.5 h-3.5" /> New Case Study
+            </Link>
+          )}
+
+          {canHR && (
+            <Link
+              href="/admin/hr"
+              className="px-4 py-2.5 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 hover:border-[#c7cb2d] transition"
+            >
+              <Users className="w-3.5 h-3.5 text-[#c7cb2d]" /> HR Desk
+            </Link>
+          )}
+
+          {canFinance && (
+            <Link
+              href="/admin/finance"
+              className="px-4 py-2.5 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 hover:border-[#c7cb2d] transition"
+            >
+              <Landmark className="w-3.5 h-3.5 text-[#c7cb2d]" /> Finance Desk
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Live Database Metrics */}
+      {/* OPEN STAFF WORKSPACE METRICS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link href="/admin/portfolio" className="p-6 rounded-3xl bg-[var(--bg-card)] flex flex-col justify-between h-36 group hover:ring-1 hover:ring-[var(--border-strong)] transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--text-muted)]">Case Studies</span>
-            <Briefcase className="w-4 h-4 text-[#c7cb2d]" />
+        <Link
+          href="/admin/workspace"
+          className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+        >
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>Studio Chat & Channels</span>
+            <MessageSquare className="w-4 h-4 text-[#c7cb2d]" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-display font-bold">{projectCount ?? 0}</span>
-            <span className="text-[11px] text-[var(--text-dim)] flex items-center gap-0.5 group-hover:text-[var(--text-primary)]">
-              Manage <ArrowUpRight className="w-3 h-3" />
-            </span>
-          </div>
+          <p className="font-mono text-2xl font-bold">{counts.chatMessages}</p>
+          <p className="text-[11px] text-[var(--text-dim)]">Team messages, @mentions & voice notes</p>
         </Link>
 
-        <Link href="/admin/inquiries" className="p-6 rounded-3xl bg-[var(--bg-card)] flex flex-col justify-between h-36 group hover:ring-1 hover:ring-[var(--border-strong)] transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--text-muted)]">Client Inquiries</span>
-            <MailOpen className="w-4 h-4 text-[var(--text-muted)]" />
+        <Link
+          href="/admin/workspace?tab=leave"
+          className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+        >
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>My Leave Applications</span>
+            <Calendar className="w-4 h-4 text-[#c7cb2d]" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-display font-bold">{inquiryCount ?? 0}</span>
-            <span className="text-[11px] text-[var(--text-dim)] flex items-center gap-0.5 group-hover:text-[var(--text-primary)]">
-              Review <ArrowUpRight className="w-3 h-3" />
-            </span>
-          </div>
+          <p className="font-mono text-2xl font-bold">{counts.myLeaves}</p>
+          <p className="text-[11px] text-[var(--text-dim)]">Apply for leave & track approvals</p>
         </Link>
 
-        <Link href="/admin/hr" className="p-6 rounded-3xl bg-[var(--bg-card)] flex flex-col justify-between h-36 group hover:ring-1 hover:ring-[var(--border-strong)] transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--text-muted)]">Staff Roster</span>
-            <Users className="w-4 h-4 text-purple-400" />
+        <Link
+          href="/admin/workspace?tab=vouchers"
+          className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+        >
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>My Expense Vouchers</span>
+            <Receipt className="w-4 h-4 text-[#c7cb2d]" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-display font-bold">{staffCount ?? 1}</span>
-            <span className="text-[11px] text-[var(--text-dim)] flex items-center gap-0.5 group-hover:text-[var(--text-primary)]">
-              Directory <ArrowUpRight className="w-3 h-3" />
-            </span>
-          </div>
+          <p className="font-mono text-2xl font-bold">{counts.myVouchers}</p>
+          <p className="text-[11px] text-[var(--text-dim)]">Submit expense claims & receipt proofs</p>
         </Link>
 
-        <Link href="/admin/settings" className="p-6 rounded-3xl bg-[var(--bg-card)] flex flex-col justify-between h-36 group hover:ring-1 hover:ring-[var(--border-strong)] transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--text-muted)]">Clearance Level</span>
-            <ShieldCheck className="w-4 h-4 text-[#c7cb2d]" />
+        <Link
+          href="/admin/settings"
+          className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+        >
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>My Profile & Payslips</span>
+            <UserCheck className="w-4 h-4 text-[#c7cb2d]" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-lg font-display font-bold uppercase">{roleLabel}</span>
-            <span className="text-[11px] font-mono text-[var(--text-dim)]">{activeProfile.staff_id}</span>
-          </div>
+          <p className="font-mono text-base font-bold text-[#c7cb2d] truncate">
+            {me?.job_title || "Staff Profile"}
+          </p>
+          <p className="text-[11px] text-[var(--text-dim)]">View approved payslips & bank details</p>
         </Link>
       </div>
 
-      {/* Operational Data Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <div className="bg-[var(--bg-card)] rounded-3xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="font-display text-base font-bold">Recent Inquiries</h2>
-              <Link href="/admin/inquiries" className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                View all
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {recentInquiries && recentInquiries.length > 0 ? (
-                recentInquiries.map((inq) => (
-                  <div key={inq.id} className="p-3.5 rounded-2xl bg-[var(--bg-main)] flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-[var(--text-primary)] truncate">{inq.name}</p>
-                      <p className="text-[11px] text-[var(--text-muted)] truncate">{inq.subject || inq.email}</p>
-                    </div>
-                    <span className="text-[10px] font-mono text-[var(--text-dim)] shrink-0">
-                      <FormattedDate dateString={inq.created_at} />
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)]">
-                  No client inquiries recorded yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* ROLE-CLEARED MANAGEMENT CARDS */}
+      {(canPortfolio || canInquiries || canHR || canFinance) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {canPortfolio && (
+            <Link
+              href="/admin/portfolio"
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span>Case Studies</span>
+                <Briefcase className="w-4 h-4 text-[#c7cb2d]" />
+              </div>
+              <p className="font-mono text-2xl font-bold">{counts.caseStudies}</p>
+              <p className="text-[11px] text-[var(--text-dim)]">Portfolio & Hero Showreel CMS</p>
+            </Link>
+          )}
 
-        <div className="bg-[var(--bg-card)] rounded-3xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="font-display text-base font-bold">Portfolio Works</h2>
-              <Link href="/admin/portfolio" className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                Manage
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {recentProjects && recentProjects.length > 0 ? (
-                recentProjects.map((proj) => (
-                  <div key={proj.id} className="p-3.5 rounded-2xl bg-[var(--bg-main)] flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-[var(--text-primary)] truncate">{proj.title}</p>
-                      <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] truncate">
-                        {proj.client || proj.category}
-                      </p>
-                    </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--bg-card)] text-[var(--text-muted)] shrink-0">
-                      {proj.category}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)]">
-                  No case studies published yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+          {canInquiries && (
+            <Link
+              href="/admin/inquiries"
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span>Client Inquiries & Quotes</span>
+                <Mail className="w-4 h-4 text-[#c7cb2d]" />
+              </div>
+              <p className="font-mono text-2xl font-bold">{counts.inquiries}</p>
+              <p className="text-[11px] text-[var(--text-dim)]">Inquiries, Quotes, Feedbacks & Newsletter</p>
+            </Link>
+          )}
 
-        <div className="bg-[var(--bg-card)] rounded-3xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="font-display text-base font-bold">Staff Directory</h2>
-              <Link href="/admin/hr" className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                HR Desk
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {staffDirectory && staffDirectory.length > 0 ? (
-                staffDirectory.map((member) => (
-                  <div key={member.id} className="p-3.5 rounded-2xl bg-[var(--bg-main)] flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-[var(--text-primary)] truncate">
-                        {member.first_name} {member.last_name}
-                      </p>
-                      <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] truncate">
-                        {member.staff_id} • {member.job_title || member.role?.replace("_", " ")}
-                      </p>
-                    </div>
-                    <span className="w-2 h-2 rounded-full bg-[#c7cb2d] shrink-0" title={member.status} />
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)]">
-                  No staff profiles found.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+          {canHR && (
+            <Link
+              href="/admin/hr"
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span>Confidential HR Roster</span>
+                <Users className="w-4 h-4 text-[#c7cb2d]" />
+              </div>
+              <p className="font-mono text-2xl font-bold">{counts.staffTotal}</p>
+              <p className="text-[11px] text-[var(--text-dim)]">Onboarding, Grading & Approvals</p>
+            </Link>
+          )}
 
-      </div>
+          {canFinance && (
+            <Link
+              href="/admin/finance"
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 hover:border-[#c7cb2d]/50 transition space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span>Finance & Payroll Desk</span>
+                <ShieldCheck className="w-4 h-4 text-[#c7cb2d]" />
+              </div>
+              <p className="font-mono text-base font-bold text-[#c7cb2d]">Executive / Finance</p>
+              <p className="text-[11px] text-[var(--text-dim)]">Billing, Receipts, Payroll & Tax</p>
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }

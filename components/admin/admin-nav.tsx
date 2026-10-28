@@ -24,6 +24,7 @@ export default function AdminNav() {
   const supabase = createClient();
   const [me, setMe] = React.useState<any | null>(null);
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [imgError, setImgError] = React.useState(false);
 
   React.useEffect(() => {
     let mounted = true;
@@ -48,29 +49,64 @@ export default function AdminNav() {
 
   const navItems = React.useMemo(() => {
     const items = [
-      { name: "Overview", href: "/admin/overview", icon: LayoutGrid, show: true },
-      { name: "Workspace", href: "/admin/workspace", icon: MessageSquare, show: true },
-      { name: "Portfolio", href: "/admin/portfolio", icon: FolderKanban, show: checkModuleAccess(me, "portfolio") },
-      { name: "Inquiries", href: "/admin/inquiries", icon: Mail, show: checkModuleAccess(me, "inquiries") },
-      { name: "HR Desk", href: "/admin/hr", icon: Users, show: checkModuleAccess(me, "hr") },
-      { name: "Finance", href: "/admin/finance", icon: Landmark, show: checkModuleAccess(me, "finance") },
-      { name: "Profile", href: "/admin/settings", icon: UserCheck, show: true },
+      { name: "Overview", href: "/admin", matchPaths: ["/admin", "/admin/overview"], icon: LayoutGrid, show: true },
+      { name: "Workspace", href: "/admin/workspace", matchPaths: ["/admin/workspace"], icon: MessageSquare, show: true },
+      { name: "Portfolio", href: "/admin/portfolio", matchPaths: ["/admin/portfolio"], icon: FolderKanban, show: checkModuleAccess(me, "portfolio") },
+      { name: "Inquiries", href: "/admin/inquiries", matchPaths: ["/admin/inquiries"], icon: Mail, show: checkModuleAccess(me, "inquiries") },
+      { name: "HR Desk", href: "/admin/hr", matchPaths: ["/admin/hr"], icon: Users, show: checkModuleAccess(me, "hr") },
+      { name: "Finance", href: "/admin/finance", matchPaths: ["/admin/finance"], icon: Landmark, show: checkModuleAccess(me, "finance") },
+      { name: "Profile", href: "/admin/settings", matchPaths: ["/admin/settings"], icon: UserCheck, show: true },
     ];
     return items.filter((item) => item.show);
   }, [me]);
 
+  const detectedLogo = "/logo-dark.svg";
+
   return (
     <header className="sticky top-0 z-40 bg-[var(--bg-main)]/90 backdrop-blur-md border-b border-[var(--border-subtle)]/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <Link href="/admin/overview" className="flex items-center gap-2.5 shrink-0">
-          <img src="/logo.png" alt="Lavie Studios" className="h-7 w-auto object-contain" />
+        {/* LAVIE STUDIOS HEADER BRAND LOGO (WITH AUTOMATIC VECTOR LOCKUP) */}
+        <Link href="/admin" className="flex items-center gap-2.5 shrink-0 group">
+          {detectedLogo && !imgError ? (
+            <img
+              src={detectedLogo}
+              alt="Lavie Studios"
+              onError={() => setImgError(true)}
+              className="h-7 w-auto object-contain"
+            />
+          ) : (
+            <div className="flex items-center gap-2">
+              <svg width="88" height="24" viewBox="0 0 88 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-6 w-auto">
+                {/* L */}
+                <path d="M0 2H7V16H16V22H0V2Z" fill="#F29F05" />
+                {/* A */}
+                <path d="M18 22L28 2L38 22H18Z" fill="#F29F05" />
+                {/* V */}
+                <path d="M36 2H56L46 22L36 2Z" fill="#C7CB2D" />
+                {/* E */}
+                <rect x="58" y="2" width="26" height="5" fill="#EA4335" />
+                <rect x="58" y="9.5" width="20" height="5" fill="#EA4335" />
+                <rect x="58" y="17" width="26" height="5" fill="#EA4335" />
+              </svg>
+              <div className="flex flex-col leading-none">
+                <span className="font-display text-[11px] font-bold tracking-tight text-[var(--text-primary)]">
+                  Lavie
+                </span>
+                <span className="font-display text-[11px] font-bold tracking-tight text-[var(--text-primary)]">
+                  Studios.
+                </span>
+              </div>
+            </div>
+          )}
         </Link>
 
-        {/* DESKTOP NAV LINKS (FILTERED STRICTLY BY ROLE & ACCESS) */}
+        {/* DESKTOP NAV LINKS */}
         <nav className="hidden lg:flex items-center gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            const active =
+              item.matchPaths.includes(pathname) ||
+              (item.href !== "/admin" && pathname.startsWith(item.href + "/"));
             return (
               <Link
                 key={item.href}
@@ -107,7 +143,7 @@ export default function AdminNav() {
                   {me.first_name || "Staff"}
                 </span>
                 <span className="block text-[9px] font-mono text-[var(--text-dim)] uppercase mt-0.5">
-                  {me.staff_id || "STAFF"} • {me.job_title || me.role || "Team"}
+                  {me.staff_id || "STAFF"}
                 </span>
               </div>
             </Link>
@@ -137,7 +173,7 @@ export default function AdminNav() {
         <div className="lg:hidden px-4 pb-4 pt-2 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex flex-col gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href;
+            const active = item.matchPaths.includes(pathname);
             return (
               <Link
                 key={item.href}
