@@ -2232,7 +2232,7 @@ export default function HRAndWorkspaceSuite() {
               >
                 <div>
                   <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">HR Executive Action</span>
-                  <h2 className="font-display text-lg font-bold">Direct Staff Promotion</h2>
+                  <h2 className="font-display text-lg font-bold">Staff Promotion</h2>
                 </div>
 
                 <div>
@@ -2343,7 +2343,7 @@ export default function HRAndWorkspaceSuite() {
                 <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
-                      Custom Promotion Salary Input
+                      Salary Breakdown
                     </span>
                     <button
                       type="button"

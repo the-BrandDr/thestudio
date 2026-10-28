@@ -59,7 +59,7 @@ export default function AdminNav() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push("/admin/login");
     router.refresh();
   };
 

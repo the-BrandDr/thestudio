@@ -628,11 +628,11 @@ export default function AdminOverviewAndOpenSpacePage() {
               {me?.staff_id || "STAFF"}
             </span>
             <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-dim)]">
-              {me?.job_title || "Team Member"} • {me?.department || "Lavie Studios"}
+              {me?.job_title || "Team Member"}
             </span>
           </div>
           <h1 className="font-display text-2xl font-bold">
-            Welcome back, {me?.first_name || "Team Member"}
+            Welcome Back, {me?.first_name || "Team Member"}
           </h1>
         </div>
 

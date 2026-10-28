@@ -132,10 +132,10 @@ export default function StaffPayslipsPanel({ staffProfile }: { staffProfile?: an
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-display text-base font-bold">
-            My Approved Payslips ({filteredPayslips.length})
+            My Payslips ({filteredPayslips.length})
           </h2>
           <span className="text-[11px] font-mono text-[var(--text-dim)]">
-            Only approved & disbursed monthly payslips are displayed here
+            Monthly payslips are displayed here
           </span>
         </div>
 

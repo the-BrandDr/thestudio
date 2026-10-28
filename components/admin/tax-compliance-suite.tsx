@@ -346,7 +346,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
       {/* HEADER BAR */}
       <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="font-display text-base font-bold">Tax & Filing Records (Paid & Disbursed Only)</h2>
+          <h2 className="font-display text-base font-bold">Tax & Filing Records</h2>
           <input
             type="month"
             value={selectedPeriod}

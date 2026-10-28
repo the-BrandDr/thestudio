@@ -153,7 +153,7 @@ export default function StaffProfileAndSettingsPage() {
                 )}
               </div>
               <p className="text-xs font-semibold text-[var(--text-primary)] mt-0.5">
-                {profile?.job_title || "Staff"} • {profile?.department || "Lavie Studios"}
+                {profile?.job_title || "Staff"} 
               </p>
               <p className="text-[11px] font-mono text-[var(--text-muted)]">
                 {comp.levelLabel} (Step {comp.stepNum}) • {profile?.employment_type || "Full-Time"}
