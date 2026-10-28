@@ -1947,8 +1947,21 @@ export default function HRAndWorkspaceSuite() {
                 </label>
                 <input
                   type="number"
-                  readOnly
                   value={newStaff.salary_amount}
+                  onChange={(e) => {
+                    const customGross = Number(e.target.value || 0);
+                    const b = Math.round(customGross * 0.85);
+                    const th = Math.round(customGross * 0.10);
+                    const net = Math.max(0, customGross - b - th);
+                    setNewStaff({
+                      ...newStaff,
+                      salary_amount: e.target.value,
+                      basic_salary: String(b),
+                      transport_housing_allowance: String(th),
+                      internet_allowance: String(net),
+                    });
+                  }}
+                  placeholder="Enter custom gross..."
                   className="w-full bg-[var(--bg-card)] border border-[#c7cb2d]/50 rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#c7cb2d]"
                 />
               </div>
@@ -3559,8 +3572,21 @@ export default function HRAndWorkspaceSuite() {
                     <label className="block text-[9px] font-mono uppercase text-[#c7cb2d] font-bold mb-1">Gross</label>
                     <input
                       type="number"
-                      readOnly
-                      value={editingStaff.salary_amount || 0}
+                      value={editingStaff.salary_amount ?? ""}
+                      onChange={(e) => {
+                        const customGross = Number(e.target.value || 0);
+                        const b = Math.round(customGross * 0.85);
+                        const th = Math.round(customGross * 0.10);
+                        const net = Math.max(0, customGross - b - th);
+                        setEditingStaff({
+                          ...editingStaff,
+                          salary_amount: customGross,
+                          basic_salary: b,
+                          transport_housing_allowance: th,
+                          internet_allowance: net,
+                        });
+                      }}
+                      placeholder="Custom gross..."
                       className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/40 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-[#c7cb2d]"
                     />
                   </div>

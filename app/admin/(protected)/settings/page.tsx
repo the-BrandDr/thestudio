@@ -12,6 +12,7 @@ export default function StaffProfileAndSettingsPage() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [profile, setProfile] = React.useState<any | null>(null);
+  const [latestPayRow, setLatestPayRow] = React.useState<any | null>(null);
   const [statusMsg, setStatusMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [newPassword, setNewPassword] = React.useState("");
@@ -24,10 +25,10 @@ export default function StaffProfileAndSettingsPage() {
     const { data: authData } = await supabase.auth.getUser();
     const email = authData?.user?.email?.toLowerCase();
 
-    const { data: staffRows } = await supabase
-      .from("staff_profiles")
-      .select("*")
-      .order("staff_id", { ascending: true });
+    const [{ data: staffRows }, { data: payRows }] = await Promise.all([
+      supabase.from("staff_profiles").select("*").order("staff_id", { ascending: true }),
+      supabase.from("payroll_runs").select("*").order("created_at", { ascending: false }),
+    ]);
 
     if (staffRows && staffRows.length > 0) {
       const me =
@@ -40,6 +41,18 @@ export default function StaffProfileAndSettingsPage() {
           ...me,
           bank_sort_code: me.bank_sort_code || "",
         });
+
+        if (Array.isArray(payRows) && payRows.length > 0) {
+          const myCode = String(me.staff_id || "").trim().toUpperCase();
+          const myFirst = String(me.first_name || "").trim().toLowerCase();
+          const matchedPay = payRows.find(
+            (r) =>
+              (me.id && r.staff_id === me.id) ||
+              (myCode && String(r.staff_code || r.staff_id || "").trim().toUpperCase() === myCode) ||
+              (myFirst && String(r.staff_name || "").toLowerCase().includes(myFirst))
+          );
+          if (matchedPay) setLatestPayRow(matchedPay);
+        }
       }
     }
     setLoading(false);
@@ -55,8 +68,6 @@ export default function StaffProfileAndSettingsPage() {
     setSaving(true);
     setStatusMsg(null);
 
-    const comp = resolveStaffCompensation(profile);
-
     const payload: Record<string, any> = {
       first_name: (profile.first_name || "").trim(),
       last_name: (profile.last_name || "").trim(),
@@ -67,20 +78,11 @@ export default function StaffProfileAndSettingsPage() {
       bank_sort_code: (profile.bank_sort_code || "").trim(),
       bank_account_name: (profile.bank_account_name || "").trim(),
       bank_account_no: (profile.bank_account_no || "").trim(),
-      // Also persist resolved salary if DB had 0
-      salary_amount: Number(profile.salary_amount) > 0 ? Number(profile.salary_amount) : comp.gross,
-      basic_salary: Number(profile.basic_salary) > 0 ? Number(profile.basic_salary) : comp.basic,
-      transport_housing_allowance:
-        Number(profile.transport_housing_allowance) > 0
-          ? Number(profile.transport_housing_allowance)
-          : comp.transportHousing,
-      internet_allowance:
-        Number(profile.internet_allowance) > 0 ? Number(profile.internet_allowance) : comp.internet,
     };
 
     let { error } = await supabase.from("staff_profiles").update(payload).eq("id", profile.id);
     if (error && error.message?.includes("column")) {
-      const { bank_sort_code, basic_salary, transport_housing_allowance, internet_allowance, ...safePayload } = payload;
+      const { bank_sort_code, ...safePayload } = payload;
       const retry = await supabase.from("staff_profiles").update(safePayload).eq("id", profile.id);
       error = retry.error;
     }
@@ -125,13 +127,13 @@ export default function StaffProfileAndSettingsPage() {
     );
   }
 
-  const comp = resolveStaffCompensation(profile);
+  const comp = resolveStaffCompensation(profile, latestPayRow);
   const paye = computeNigerianMonthlyPAYE(comp.gross);
   const netTakeHome = Math.max(0, comp.gross - paye.monthlyPAYE);
 
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* 1. PERSONAL PROFILE, SINGLE ACCURATE SALARY SUMMARY & BANK DETAILS */}
+      {/* 1. PERSONAL PROFILE, SUBMITTED SALARY SUMMARY & BANK DETAILS */}
       <form
         onSubmit={handleSaveProfile}
         className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-6"
@@ -189,7 +191,7 @@ export default function StaffProfileAndSettingsPage() {
           </div>
         )}
 
-        {/* SINGLE UNIFIED SALARY & NET PAY STRIP */}
+        {/* SINGLE UNIFIED SALARY STRIP (USES EXACT SALARY SAVED ON STAFF RECORD) */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 font-mono">
           <div>
             <span className="block text-[9px] uppercase text-[var(--text-dim)]">Monthly Gross</span>

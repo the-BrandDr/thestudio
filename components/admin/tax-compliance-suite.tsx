@@ -10,49 +10,31 @@ import {
   X,
 } from "lucide-react";
 
-export const DEFAULT_LEVEL_STEP_CONFIG: Record<string, { step1Gross: number; stepIncrement: number }> = {
-  "L0 - Auxiliary & Facility Support": { step1Gross: 15000, stepIncrement: 1500 },
-  "L1 - Intern / Graduate Trainee": { step1Gross: 20000, stepIncrement: 2000 },
-  "L2 - Junior Associate": { step1Gross: 35000, stepIncrement: 3500 },
-  "L3 - Mid-Level Specialist": { step1Gross: 50000, stepIncrement: 5000 },
-  "L4 - Senior Specialist": { step1Gross: 75000, stepIncrement: 7500 },
-  "L5 - Lead / Principal": { step1Gross: 110000, stepIncrement: 10000 },
-  "L6 - Department Head": { step1Gross: 150000, stepIncrement: 15000 },
-  "L7 - Executive / Director": { step1Gross: 200000, stepIncrement: 20000 },
-};
-
 /**
- * Resolves a staff member's accurate Monthly Gross, Basic (85%), Transport/Housing (10%), and Internet (5%).
- * If salary_amount in the DB is 0, it computes the exact amount from their Hierarchy Level & Step.
+ * Reads the exact salary submitted for the staff member during Onboarding / Edit Staff
+ * (or from their latest processed payroll record if staff_profiles.salary_amount wasn't set).
+ * Does NOT force or fallback to the Level/Step salary structure.
  */
-export function resolveStaffCompensation(staffRow: any) {
-  let cfgMap = DEFAULT_LEVEL_STEP_CONFIG;
-  if (typeof window !== "undefined") {
-    try {
-      const saved = localStorage.getItem("lavie_salary_structure_v1");
-      if (saved) cfgMap = { ...DEFAULT_LEVEL_STEP_CONFIG, ...JSON.parse(saved) };
-    } catch (_) {}
-  }
+export function resolveStaffCompensation(staffRow: any, latestPayrollRow?: any) {
+  const sumParts =
+    Number(staffRow?.basic_salary || 0) +
+    Number(staffRow?.transport_housing_allowance || 0) +
+    Number(staffRow?.internet_allowance || 0);
 
-  const rawGross = Number(staffRow?.salary_amount || staffRow?.gross_pay || 0);
-  const levelStr =
-    staffRow?.hierarchy_level ||
-    (String(staffRow?.job_title || "").toLowerCase().includes("director") ||
-    String(staffRow?.job_title || "").toLowerCase().includes("ceo")
-      ? "L7 - Executive / Director"
-      : "L3 - Mid-Level Specialist");
-  const stepNum = Math.min(7, Math.max(1, Number(staffRow?.step_level || 1)));
+  const rawProfileGross = Number(staffRow?.salary_amount || staffRow?.gross_pay || 0);
+  const payrollGross = Number(
+    latestPayrollRow?.gross_pay ||
+      latestPayrollRow?.basic_salary ||
+      latestPayrollRow?.net_pay ||
+      0
+  );
 
-  let gross = rawGross;
-  if (gross <= 0) {
-    const matchedKey =
-      Object.keys(cfgMap).find((k) => k.startsWith(String(levelStr).slice(0, 2))) ||
-      "L3 - Mid-Level Specialist";
-    const cfg = cfgMap[matchedKey] || DEFAULT_LEVEL_STEP_CONFIG["L3 - Mid-Level Specialist"];
-    gross = Number(cfg.step1Gross || 20000) + (stepNum - 1) * Number(cfg.stepIncrement || 2000);
-  }
+  const gross = rawProfileGross > 0 ? rawProfileGross : sumParts > 0 ? sumParts : payrollGross;
 
-  const basic = Number(staffRow?.basic_salary) > 0 ? Number(staffRow.basic_salary) : Math.round(gross * 0.85);
+  const basic =
+    Number(staffRow?.basic_salary) > 0
+      ? Number(staffRow.basic_salary)
+      : Math.round(gross * 0.85);
   const transportHousing =
     Number(staffRow?.transport_housing_allowance) > 0
       ? Number(staffRow.transport_housing_allowance)
@@ -67,8 +49,8 @@ export function resolveStaffCompensation(staffRow: any) {
     basic,
     transportHousing,
     internet,
-    levelLabel: levelStr,
-    stepNum,
+    levelLabel: staffRow?.hierarchy_level || "L3 - Mid-Level Specialist",
+    stepNum: Number(staffRow?.step_level || 1),
   };
 }
 
@@ -141,6 +123,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
   const supabase = createClient();
   const [selectedPeriod, setSelectedPeriod] = React.useState(() => new Date().toISOString().slice(0, 7));
   const [staffList, setStaffList] = React.useState<any[]>([]);
+  const [payrollRows, setPayrollRows] = React.useState<any[]>([]);
   const [invoices, setInvoices] = React.useState<any[]>([]);
   const [vouchers, setVouchers] = React.useState<any[]>([]);
   const [records, setRecords] = React.useState<any[]>([]);
@@ -162,13 +145,15 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
   } | null>(null);
 
   const loadData = React.useCallback(async () => {
-    const [{ data: s }, { data: inv }, { data: vch }, { data: rec }] = await Promise.all([
+    const [{ data: s }, { data: pay }, { data: inv }, { data: vch }, { data: rec }] = await Promise.all([
       supabase.from("staff_profiles").select("*").eq("status", "active").order("staff_id", { ascending: true }),
+      supabase.from("payroll_runs").select("*").order("created_at", { ascending: false }),
       supabase.from("client_invoices").select("*"),
       supabase.from("expense_vouchers").select("*").eq("status", "approved"),
       supabase.from("tax_compliance_records").select("*").order("created_at", { ascending: false }),
     ]);
     if (s) setStaffList(s);
+    if (pay) setPayrollRows(pay);
     if (inv) setInvoices(inv);
     if (vch) setVouchers(vch);
     if (rec) setRecords(rec);
@@ -178,23 +163,27 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
     loadData();
   }, [loadData]);
 
-  // 1. Accurate Staff PAYE Computation (Never shows ₦0 if Level/Step is assigned)
+  // 1. Staff PAYE Computation using exact onboarded / saved salary
   const payeRows = React.useMemo(() => {
     return staffList.map((st) => {
-      const comp = resolveStaffCompensation(st);
+      const myLatestPay = payrollRows.find(
+        (p) =>
+          (st.id && p.staff_id === st.id) ||
+          (st.staff_id && String(p.staff_code || p.staff_id || "").toUpperCase() === String(st.staff_id).toUpperCase())
+      );
+      const comp = resolveStaffCompensation(st, myLatestPay);
       const calc = computeNigerianMonthlyPAYE(comp.gross);
       return {
         staff_id: st.staff_id,
         name: `${st.first_name || ""} ${st.last_name || ""}`.trim(),
         role: st.job_title || st.department,
-        level: `${String(comp.levelLabel).split(" - ")[0]} • S${comp.stepNum}`,
         gross: comp.gross,
         monthlyPAYE: calc.monthlyPAYE,
         netPay: comp.gross - calc.monthlyPAYE,
         isExempt: calc.isExempt,
       };
     });
-  }, [staffList]);
+  }, [staffList, payrollRows]);
 
   const totalPayrollGross = payeRows.reduce((a, r) => a + r.gross, 0);
   const totalMonthlyPAYE = payeRows.reduce((a, r) => a + r.monthlyPAYE, 0);
@@ -310,12 +299,11 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
 
   const exportTaxCSV = () => {
     const rows = [
-      ["Staff ID", "Full Name", "Role", "Grade", "Monthly Gross (NGN)", "Monthly PAYE (NGN)", "Net Take-Home (NGN)", "Status"],
+      ["Staff ID", "Full Name", "Role", "Monthly Gross (NGN)", "Monthly PAYE (NGN)", "Net Take-Home (NGN)", "Status"],
       ...payeRows.map((r) => [
         r.staff_id,
         `"${r.name}"`,
         `"${r.role}"`,
-        `"${r.level}"`,
         r.gross,
         r.monthlyPAYE,
         r.netPay,
@@ -436,7 +424,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
         </div>
       </div>
 
-      {/* STAFF PAYE SCHEDULE (WITH ACCURATE LEVEL/STEP SALARIES) */}
+      {/* STAFF PAYE SCHEDULE (READS SUBMITTED ONBOARDING / SAVED SALARY) */}
       <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3 overflow-x-auto">
         <h3 className="font-display text-sm font-bold">Staff PAYE Schedule</h3>
         <table className="w-full text-left border-collapse text-xs">
@@ -444,7 +432,6 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
             <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
               <th className="py-2 pr-3">Staff</th>
               <th className="py-2 px-2">Role</th>
-              <th className="py-2 px-2">Grade & Step</th>
               <th className="py-2 px-2">Monthly Gross</th>
               <th className="py-2 px-2">Monthly PAYE</th>
               <th className="py-2 px-2">Net Take-Home</th>
@@ -458,7 +445,6 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
                   {r.name} <span className="text-[10px] font-mono text-[#c7cb2d]">({r.staff_id})</span>
                 </td>
                 <td className="py-2.5 px-2 font-sans text-[var(--text-muted)]">{r.role}</td>
-                <td className="py-2.5 px-2 text-[11px] text-[#c7cb2d]">{r.level}</td>
                 <td className="py-2.5 px-2 font-bold">₦{r.gross.toLocaleString()}</td>
                 <td className="py-2.5 px-2 font-bold text-[#c7cb2d]">₦{r.monthlyPAYE.toLocaleString()}</td>
                 <td className="py-2.5 px-2 font-bold text-emerald-400">₦{r.netPay.toLocaleString()}</td>
