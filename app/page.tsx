@@ -92,12 +92,12 @@ export default function Home() {
           ]);
         }
 
-        // 2. Fetch Latest 3 Case Studies ordered by most recent
+        // 2. Fetch Latest 6 Case Studies ordered by most recent
         const { data: projectData } = await supabase
           .from('case_studies')
           .select('*')
           .order('created_at', { ascending: false })
-          .limit(3);
+          .limit(6);
 
         if (projectData) {
           const mappedProjects = projectData.map((p: any) => ({
