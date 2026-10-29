@@ -131,7 +131,7 @@ export default function ClientFeedbackSection({ limit = 3, showAllLink = true }:
   };
 
   return (
-    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
+    <section id="feedback" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
       {/* Centered Header matching Homepage Standard */}
       <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
         <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-[#84871d] dark:text-[#c7cb2d] font-semibold">
