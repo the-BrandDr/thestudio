@@ -9,11 +9,13 @@ const SERVICE_CATEGORIES = [
   "Brand Strategy & Positioning",
   "Corporate & Visual Identity",
   "Event Branding & Experiential",
+  "Event Media & Production",
   "Out-of-Home (OOH) & Advertising",
   "UI/UX & Digital Products",
   "Web & Software Development",
   "Motion Graphics & Video Production",
   "Print Media & Packaging",
+  "Creative Direction & Campaigns",
 ];
 
 export default function ClientFeedbackSection({ limit = 3, showAllLink = true }: { limit?: number; showAllLink?: boolean }) {
