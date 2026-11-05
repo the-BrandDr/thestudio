@@ -1,4 +1,5 @@
 // app/layout.tsx
+import { Analytics } from "@vercel/analytics/next";
 import { Space_Grotesk } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import { CookieConsent } from '@/components/cookie-consent';
