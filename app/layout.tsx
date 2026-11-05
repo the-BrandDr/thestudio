@@ -4,6 +4,7 @@ import { ThemeProvider } from 'next-themes';
 import { CookieConsent } from '@/components/cookie-consent';
 import "./globals.css";
 import { PublicPushInitializer } from "@/components/notifications/studio-notification-hub";
+import { Analytics } from '@vercel/analytics/next';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -39,6 +40,7 @@ export default function RootLayout({
           <CookieConsent />
         </ThemeProvider>
         <PublicPushInitializer />
+        <Analytics />
       </body>
     </html>
   );
