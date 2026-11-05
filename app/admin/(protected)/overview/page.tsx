@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
 import { resolveAuthenticatedStaff, VOUCHER_CATEGORIES } from "@/utils/resolve-current-staff";
+import { triggerPushNotification } from "@/utils/push-notifications";
 
 const STUDIO_DEPARTMENTS = [
   "Executive & Board Governance",
@@ -284,6 +285,13 @@ export default function AdminOverviewAndOpenSpacePage() {
       ops_status: "pending",
       strategist_status: "pending",
     });
+    triggerPushNotification({
+      title: "📅 New Staff Leave Application",
+      message: `${me.first_name} (${me.staff_id}) requested ${requestedDays} working days (${leaveForm.leave_type}).`,
+      url: "https://studioslavie.com/admin/hr",
+      targetType: "clearance",
+      clearance: "hr",
+    });
     setLeaveForm({ leave_type: "Annual Leave", start_date: "", end_date: "", handover_staff: "", reason: "" });
     setSaving(false);
     loadOpenSpace();
@@ -368,6 +376,13 @@ export default function AdminOverviewAndOpenSpacePage() {
       attachment_name: "",
       initial_comment: "",
     }));
+    triggerPushNotification({
+      title: "🧾 New Expense Voucher Submitted",
+      message: `${authorName} raised "${voucherForm.title}" (₦${computedVoucherTotal.toLocaleString()}).`,
+      url: "https://studioslavie.com/admin/hr",
+      targetType: "clearance",
+      clearance: "finance",
+    });
     setVoucherItems([{ item: "", qty: 1, unitPrice: 0 }]);
     setSaving(false);
     loadOpenSpace();
@@ -409,6 +424,13 @@ export default function AdminOverviewAndOpenSpacePage() {
 
     setSaving(false);
     setPromoReqForm((prev) => ({ ...prev, reason: "" }));
+    triggerPushNotification({
+      title: "🏆 New Promotion Request",
+      message: `${me.first_name} (${me.staff_id}) requested promotion to ${promoReqForm.desired_level} (Step ${promoReqForm.desired_step}).`,
+      url: "https://studioslavie.com/admin/hr",
+      targetType: "clearance",
+      clearance: "hr",
+    });
     setPromoNotice("✅ Promotion request submitted to HR!");
     loadOpenSpace();
   };
@@ -555,6 +577,50 @@ export default function AdminOverviewAndOpenSpacePage() {
       });
     }
 
+    // Dispatch targeted push notification for chat
+    const mentionMatches = Array.from((chatInput || "").matchAll(/\((LS-[0-9A-Za-z]+)\)/g)).map((m) => m[1]);
+    if (chatChannelType === "multi_user" && selectedRecipients.length > 0) {
+      triggerPushNotification({
+        title: `💬 Message from ${senderName}`,
+        message: chatInput.trim() || "Sent a voice note / attachment",
+        url: "https://studioslavie.com/admin",
+        targetType: "staff_codes",
+        staffCodes: selectedRecipients,
+      });
+    } else if (chatChannelType === "direct" && chatTarget) {
+      triggerPushNotification({
+        title: `💬 Direct Message from ${senderName}`,
+        message: chatInput.trim() || "Sent a voice note / attachment",
+        url: "https://studioslavie.com/admin",
+        targetType: "staff_codes",
+        staffCodes: [chatTarget],
+      });
+    } else if (mentionMatches.length > 0) {
+      triggerPushNotification({
+        title: `📣 ${senderName} mentioned you in Studio Chat`,
+        message: chatInput.trim(),
+        url: "https://studioslavie.com/admin",
+        targetType: "staff_codes",
+        staffCodes: mentionMatches,
+      });
+    } else if (chatChannelType === "multi_dept" && selectedDepartments.length > 0) {
+      selectedDepartments.forEach((dept) =>
+        triggerPushNotification({
+          title: `📢 [${dept}] ${senderName}`,
+          message: chatInput.trim() || "Sent an attachment",
+          url: "https://studioslavie.com/admin",
+          targetType: "department",
+          department: dept,
+        })
+      );
+    } else {
+      triggerPushNotification({
+        title: `💬 Studio Chat — ${senderName}`,
+        message: chatInput.trim() || "Sent a voice note / attachment",
+        url: "https://studioslavie.com/admin",
+        targetType: "all_staff",
+      });
+    }
     setChatInput("");
     setReplyingTo(null);
     setChatAttachment(null);

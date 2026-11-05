@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
+import { triggerPushNotification } from "@/utils/push-notifications";
 import {
   Users,
   UserPlus,
@@ -670,6 +671,15 @@ export default function HRAndWorkspaceSuite() {
     }
 
     setSaving(false);
+    if (editingStaff?.staff_id) {
+      triggerPushNotification({
+        title: "👤 Your Staff Profile Was Updated",
+        message: "HR updated your staff profile records. Visit your profile to review.",
+        url: "https://studioslavie.com/admin/settings",
+        targetType: "staff_codes",
+        staffCodes: [editingStaff.staff_id],
+      });
+    }
     setEditingStaff(null);
     loadWorkspaceData();
   };

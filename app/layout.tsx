@@ -2,7 +2,8 @@
 import { Space_Grotesk } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import { CookieConsent } from '@/components/cookie-consent';
-import './globals.css';
+import "./globals.css";
+import { PublicPushInitializer } from "@/components/notifications/studio-notification-hub";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -37,6 +38,7 @@ export default function RootLayout({
           {/* Injected Cookie Consent Banner */}
           <CookieConsent />
         </ThemeProvider>
+        <PublicPushInitializer />
       </body>
     </html>
   );

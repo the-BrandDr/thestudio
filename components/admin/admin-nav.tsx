@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { resolveAuthenticatedStaff, checkModuleAccess } from "@/utils/resolve-current-staff";
+import { StaffNotificationBell } from "@/components/notifications/studio-notification-hub";
 
 export default function AdminNav() {
   const pathname = usePathname();
@@ -111,8 +112,9 @@ export default function AdminNav() {
           })}
         </nav>
 
-        {/* STAFF IDENTITY PILL & SIGN OUT */}
+        {/* STAFF IDENTITY PILL, NOTIFICATION BELL & SIGN OUT */}
         <div className="flex items-center gap-2">
+          {me && <StaffNotificationBell staff={me} />}
           {me && (
             <Link
               href="/admin/settings"

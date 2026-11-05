@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
+import { triggerPushNotification } from "@/utils/push-notifications";
 import {
   Plus,
   Trash2,
@@ -20,6 +21,7 @@ const PORTFOLIO_CATEGORIES = [
   "Brand Strategy & Positioning",
   "Corporate & Visual Identity",
   "Event Branding & Experiential",
+  "Event Media & Production",
   "Out-of-Home (OOH) & Advertising",
   "UI/UX & Digital Products",
   "Web & Software Development",
@@ -349,6 +351,12 @@ export default function AdminPortfolioPage() {
         const res = editingId
           ? await supabase.from("case_studies").update(payloadToSend).eq("id", editingId).select()
           : await supabase.from("case_studies").insert([payloadToSend]).select();
+      triggerPushNotification({
+        title: "✨ New Project Added — Lavie Studios",
+        message: "Explore our latest branding & production case study live on studioslavie.com!",
+        url: "https://studioslavie.com/portfolio",
+        targetType: "public",
+      });
 
         if (!res.error) {
           lastError = null;

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
+import { triggerPushNotification } from "@/utils/push-notifications";
 import TaxComplianceSuite from "@/components/admin/tax-compliance-suite";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 import { 
@@ -816,6 +817,16 @@ export default function EnterpriseFinanceSuite() {
       .in("id", ids);
     setSaving(false);
     setNotice(`✅ Approved all ${ids.length} payroll record(s)!`);
+    const approvedStaffCodes = targets.map((t: any) => t.staff_code || t.staff_id).filter(Boolean);
+    if (approvedStaffCodes.length > 0) {
+      triggerPushNotification({
+        title: "💳 Monthly Payslip Approved & Disbursed",
+        message: `Your payslip for ${payPeriod} is now available to view and print in your profile.`,
+        url: "https://studioslavie.com/admin/settings",
+        targetType: "staff_codes",
+        staffCodes: approvedStaffCodes,
+      });
+    }
     if (typeof loadFinanceData === "function") loadFinanceData();
   };
 
