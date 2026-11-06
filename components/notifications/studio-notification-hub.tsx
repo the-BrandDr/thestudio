@@ -3,14 +3,21 @@
 import * as React from "react";
 import Script from "next/script";
 import { createClient } from "@/utils/supabase/client";
-import { Bell, BellRing, Check, X } from "lucide-react";
+import { Bell, BellRing, X } from "lucide-react";
 import { checkModuleAccess } from "@/utils/resolve-current-staff";
 
 declare global {
   interface Window {
     OneSignalDeferred?: any[];
     OneSignal?: any;
+    __lavieOneSignalInitialized?: boolean;
   }
+}
+
+function isProductionOneSignalAllowed(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "studioslavie.com" || host === "www.studioslavie.com";
 }
 
 export function PublicPushInitializer() {
@@ -18,21 +25,33 @@ export function PublicPushInitializer() {
 
   React.useEffect(() => {
     if (typeof window === "undefined" || !appId) return;
+    if (!isProductionOneSignalAllowed()) return;
+    if (window.__lavieOneSignalInitialized) return;
+
+    window.__lavieOneSignalInitialized = true;
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function (OneSignal: any) {
-      await OneSignal.init({
-        appId,
-        allowLocalhostAsSecureOrigin: true,
-        notifyButton: { enable: true },
-      });
       try {
+        await OneSignal.init({
+          appId,
+          allowLocalhostAsSecureOrigin: true,
+          notifyButton: { enable: true },
+        });
         await OneSignal.User.addTag("user_type", "public");
-      } catch (_) {}
+      } catch (_) {
+        // Ignore domain mismatch or duplicate init in dev
+      }
     });
   }, [appId]);
 
   if (!appId) return null;
-  return <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" strategy="afterInteractive" />;
+  return (
+    <Script
+      id="onesignal-sdk"
+      src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+      strategy="afterInteractive"
+    />
+  );
 }
 
 export function StaffNotificationBell({ staff }: { staff: any }) {
@@ -40,7 +59,9 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
   const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
   const [open, setOpen] = React.useState(false);
   const [permission, setPermission] = React.useState<NotificationPermission>("default");
-  const [feed, setFeed] = React.useState<Array<{ id: string; title: string; body: string; href: string; time: string; unread: boolean }>>([]);
+  const [feed, setFeed] = React.useState<
+    Array<{ id: string; title: string; body: string; href: string; time: string; unread: boolean }>
+  >([]);
   const [liveToast, setLiveToast] = React.useState<{ title: string; body: string; href: string } | null>(null);
 
   React.useEffect(() => {
@@ -49,16 +70,21 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
     }
   }, []);
 
-  // Sync Staff Identity & Role Clearance Tags with OneSignal
+  // Sync Staff Identity & Role Clearance Tags with OneSignal (without re-calling OneSignal.init!)
   React.useEffect(() => {
     if (typeof window === "undefined" || !staff?.staff_id || !appId) return;
+    if (!isProductionOneSignalAllowed()) return;
+
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function (OneSignal: any) {
       try {
-        await OneSignal.init({
-          appId,
-          allowLocalhostAsSecureOrigin: true,
-        });
+        if (!window.__lavieOneSignalInitialized) {
+          window.__lavieOneSignalInitialized = true;
+          await OneSignal.init({
+            appId,
+            allowLocalhostAsSecureOrigin: true,
+          });
+        }
         await OneSignal.login(String(staff.staff_id).toUpperCase());
         await OneSignal.User.addTags({
           user_type: "staff",
@@ -76,7 +102,9 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
               ? "true"
               : "false",
         });
-      } catch (_) {}
+      } catch (_) {
+        // Safely ignore if domain isn't studioslavie.com or already initialized
+      }
     });
   }, [staff, appId]);
 
@@ -86,7 +114,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
       const res = await Notification.requestPermission();
       setPermission(res);
     }
-    if (window.OneSignal?.Slidedown) {
+    if (isProductionOneSignalAllowed() && window.OneSignal?.Slidedown) {
       try {
         await window.OneSignal.Slidedown.promptPush();
       } catch (_) {}
@@ -120,7 +148,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
     }
   }, []);
 
-  // Supabase Realtime Listeners (Scoped strictly to this staff member's identity & clearances)
+  // Supabase Realtime Listeners (Works on both localhost and production!)
   React.useEffect(() => {
     if (!staff?.staff_id) return;
     const myCode = String(staff.staff_id).toUpperCase();
@@ -132,7 +160,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
 
     const channel = supabase
       .channel(`lavie-live-notifications-${myCode}`)
-      // 1. STUDIO CHAT MESSAGES (1:1, @Mentions, Dept, or All Staff)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "studio_messages" },
@@ -164,7 +191,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           }
         }
       )
-      // 2. WEBSITE INQUIRIES (Only notify staff with Inquiries / Executive access)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "contact_inquiries" },
@@ -178,7 +204,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           );
         }
       )
-      // 3. PERSONAL STAFF UPDATES: LEAVE APPROVALS & NEW LEAVE REQUESTS
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "leave_requests" },
@@ -200,7 +225,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           }
         }
       )
-      // 4. PERSONAL STAFF UPDATES: EXPENSE VOUCHERS
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "expense_vouchers" },
@@ -222,7 +246,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           }
         }
       )
-      // 5. PERSONAL STAFF UPDATES: PROMOTIONS
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "staff_promotions" },
@@ -244,7 +267,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           }
         }
       )
-      // 6. PORTFOLIO / CASE STUDY ADDED
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "case_studies" },
@@ -268,10 +290,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
 
   return (
     <div className="relative">
-      {appId && (
-        <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" strategy="afterInteractive" />
-      )}
-
       <button
         type="button"
         onClick={() => {
@@ -293,7 +311,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         )}
       </button>
 
-      {/* DROPDOWN FEED */}
       {open && (
         <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-2xl p-4 z-50 space-y-3">
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)]/50 pb-2.5">
@@ -348,7 +365,6 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         </div>
       )}
 
-      {/* FLOATING TOAST ALERT */}
       {liveToast && (
         <a
           href={liveToast.href}

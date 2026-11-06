@@ -116,7 +116,7 @@ export async function getFeaturedProjects(): Promise<FeaturedProject[]> {
       .select('id, title, slug, category, sub_category, location, cover_image, gallery_images, description')
       .eq('is_featured_home', true)
       .order('sort_order', { ascending: true })
-      .limit(3);
+      .limit(6);
 
     if (error || !data || data.length === 0) return fallbacks;
 
