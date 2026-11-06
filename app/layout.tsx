@@ -1,3 +1,4 @@
+import { StudioStructuredData } from "@/components/seo/structured-data";
 // app/layout.tsx
 import { Analytics } from "@vercel/analytics/next";
 import { Space_Grotesk } from 'next/font/google';
@@ -34,6 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={spaceGrotesk.variable}>
       <body className={`${spaceGrotesk.className} antialiased bg-[var(--bg-main)] text-[var(--text-primary)]`}>
+        <StudioStructuredData />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}
           {/* Injected Cookie Consent Banner */}
