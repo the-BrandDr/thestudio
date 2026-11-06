@@ -429,7 +429,7 @@ export default function Home() {
         </section>
 
         {/* COMPACT CENTERED CLIENT FEEDBACKS (LIMITED TO TOP 3 BY QUALITY) */}
-        <ClientFeedbackSection limit={3} showAllLink={true} />
+        <ClientFeedbackSection limit={6} showAllLink={true} />
 
         {/* INQUIRY & BOOKING SECTION */}
         <section className="bg-[var(--bg-card)]/40 py-16 sm:py-24 transition-colors">
