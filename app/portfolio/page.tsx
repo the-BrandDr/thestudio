@@ -27,165 +27,252 @@ interface CaseStudy {
   [key: string]: any;
 }
 
-const ITEMS_PER_PAGE = 9;
+const ITEMS_PER_PAGE = 6;
 
-const STREAMLINED_FILTERS = [
-  {
-    label: "All",
-    keywords: [],
-  },
-  {
-    label: "Events",
-    keywords: [
-      "event",
-      "stage",
-      "scenography",
-      "spatial",
-      "venue",
-      "booth",
-      "exhibition",
-      "tunnel",
-      "backdrop",
-      "experiential",
-      "summit",
-      "conference",
-      "activation",
-      "set build",
-      "fabrication",
-      "lighting",
-    ],
-  },
-  {
-    label: "Event Media",
-    keywords: [
-      "media",
-      "video",
-      "photo",
-      "motion",
-      "coverage",
-      "documentary",
-      "reel",
-      "showreel",
-      "livestream",
-      "content",
-      "animation",
-      "screen",
-      "led",
-      "projection",
-    ],
-  },
-  {
-    label: "Corporate Brand",
-    keywords: [
-      "corporate",
-      "brand",
-      "identity",
-      "logo",
-      "guideline",
-      "strategy",
-      "positioning",
-      "rebrand",
-      "naming",
-      "visual identity",
-      "stationary",
-      "stationery",
-      "communications",
-    ],
-  },
-  {
-    label: "Souvenirs",
-    keywords: [
-      "souvenir",
-      "merch",
-      "merchandise",
-      "gift",
-      "collateral",
-      "lanyard",
-      "tote",
-      "shirt",
-      "apparel",
-      "wristband",
-      "badge",
-      "swag",
-      "packaging",
-      "box",
-      "hamper",
-      "diary",
-      "notebook",
-      "pen",
-    ],
-  },
-  {
-    label: "Design",
-    keywords: [
-      "design",
-      "print",
-      "graphic",
-      "publication",
-      "editorial",
-      "brochure",
-      "report",
-      "flyer",
-      "poster",
-      "signage",
-      "wayfinding",
-      "billboard",
-      "ooh",
-      "out-of-home",
-      "environmental",
-      "banner",
-      "roll-up",
-    ],
-  },
-];
+const FILTER_CATEGORIES = [
+  "All",
+  "Event Branding",
+  "Corporate Branding",
+  "Event Media",
+  "Photography",
+  "Souvenirs",
+  "Design & Print Production",
+  "OOH",
+] as const;
+
+type FilterCategory = (typeof FILTER_CATEGORIES)[number];
 
 /**
- * Combines all deliverable tags, categories, and descriptions on a project
- * into a single searchable text string for smart group matching.
+ * Extracts normalized deliverable tags & service items from a project row.
  */
-function buildProjectSearchCorpus(project: CaseStudy): string {
-  const parts: string[] = [
-    project.category || "",
-    project.sub_category || "",
-    project.title || "",
-    project.summary || "",
+function getDeliverableTokens(project: CaseStudy): string[] {
+  const rawSources = [
+    project.deliverables,
+    project.tags,
+    project.services,
+    project.scope,
+    project.sub_category,
   ];
 
-  const rawLists = [project.deliverables, project.tags, project.services, project.scope];
-  for (const src of rawLists) {
+  const list: string[] = [];
+  for (const src of rawSources) {
     if (!src) continue;
     if (Array.isArray(src)) {
       src.forEach((item) => {
-        if (typeof item === "string") parts.push(item);
+        if (typeof item === "string" && item.trim()) list.push(item.trim().toLowerCase());
         else if (item && typeof item === "object") {
-          parts.push(String(item.name || item.title || item.label || ""));
+          const val = item.name || item.title || item.label || "";
+          if (val) list.push(String(val).trim().toLowerCase());
         }
       });
     } else if (typeof src === "string") {
-      parts.push(src);
+      const trimmed = src.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((p) => {
+              if (p) list.push(String(p).trim().toLowerCase());
+            });
+            continue;
+          }
+        } catch (_) {}
+      }
+      trimmed
+        .split(/[,•|\n]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean)
+        .forEach((s) => list.push(s));
     }
   }
-
-  return parts.join(" ").toLowerCase();
+  return list;
 }
 
 /**
- * Returns the primary streamlined group label for display on the card subtitle
+ * Intelligently determines which of the 7 core studio categories a project belongs to
+ * based on its deliverable tags and primary category without false-positive overlaps.
  */
-function resolvePrimaryGroupLabel(project: CaseStudy): string {
-  const corpus = buildProjectSearchCorpus(project);
-  for (const group of STREAMLINED_FILTERS) {
-    if (group.label === "All") continue;
-    if (group.keywords.some((kw) => corpus.includes(kw))) {
-      return group.label;
-    }
+function classifyProjectCategories(project: CaseStudy): FilterCategory[] {
+  const matched = new Set<FilterCategory>();
+  const deliverables = getDeliverableTokens(project);
+  const deliverablesText = deliverables.join(" | ");
+  const catText = `${project.category || ""} | ${project.sub_category || ""}`.toLowerCase();
+  const fullContext = `${deliverablesText} | ${catText}`;
+
+  const hasAny = (text: string, terms: RegExp[]) => terms.some((rx) => rx.test(text));
+
+  // 1. Event Branding (stage, scenography, spatial build, venue branding, backdrop, booth, summit, activation)
+  if (
+    hasAny(fullContext, [
+      /\bevent\s*branding\b/i,
+      /\bvenue\s*branding\b/i,
+      /\bstage\b/i,
+      /\bscenograph/i,
+      /\bspatial\b/i,
+      /\bbooth\b/i,
+      /\bexhibition\b/i,
+      /\btunnel\b/i,
+      /\bbackdrop\b/i,
+      /\bexperiential\b/i,
+      /\bactivation\b/i,
+      /\bset\s*build\b/i,
+      /\barrival\s*set/i,
+      /\benvironmental\s*branding\b/i,
+      /\bconference\s*branding\b/i,
+      /\bsummit\b/i,
+    ])
+  ) {
+    matched.add("Event Branding");
   }
-  return project.category || "Brand Experience";
+
+  // 2. Corporate Branding (strictly corporate identity, logo, brand strategy, brand guidelines, rebranding — NEVER triggered by "Event Branding")
+  const textWithoutEventBranding = fullContext
+    .replace(/event\s*branding/gi, "")
+    .replace(/venue\s*branding/gi, "")
+    .replace(/environmental\s*branding/gi, "")
+    .replace(/stage\s*branding/gi, "");
+
+  if (
+    hasAny(textWithoutEventBranding, [
+      /\bcorporate\s*(brand|branding|identity)\b/i,
+      /\bbrand\s*(identity|strategy|guideline|positioning|architecture|book|manual|system)\b/i,
+      /\bvisual\s*identity\b/i,
+      /\blogo\s*(design|system|mark|identity)?\b/i,
+      /\brebrand/i,
+      /\bnaming\b/i,
+      /\bstationery\s*design\b/i,
+    ])
+  ) {
+    matched.add("Corporate Branding");
+  }
+
+  // 3. Event Media (video production, motion graphics, aftermovie, livestream, documentary, LED screen content, showreel)
+  if (
+    hasAny(fullContext, [
+      /\bevent\s*media\b/i,
+      /\bvideo\b/i,
+      /\bmotion\b/i,
+      /\bdocumentary\b/i,
+      /\baftermovie\b/i,
+      /\bshowreel\b/i,
+      /\breel\b/i,
+      /\blivestream/i,
+      /\blive\s*stream/i,
+      /\banimation\b/i,
+      /\bled\s*(screen|content|visual)\b/i,
+      /\bmedia\s*(coverage|production)\b/i,
+      /\bhighlight\s*video\b/i,
+    ])
+  ) {
+    matched.add("Event Media");
+  }
+
+  // 4. Photography (event photography, portrait, headshots, photo coverage, photo booth, documentary photography)
+  if (
+    hasAny(fullContext, [
+      /\bphotograph/i,
+      /\bphoto\s*(coverage|shoot|booth|story|journalism|gallery|documentation)\b/i,
+      /\bportrait/i,
+      /\bheadshot/i,
+      /\bstill\s*coverage\b/i,
+    ])
+  ) {
+    matched.add("Photography");
+  }
+
+  // 5. Souvenirs (merchandise, gift box, tote bag, lanyard, t-shirt, apparel, wristband, lapel pin, notebook, jotter, mug, award plaque)
+  if (
+    hasAny(fullContext, [
+      /\bsouvenir/i,
+      /\bmerch/i,
+      /\bgift\s*(box|bag|pack|item|set)?\b/i,
+      /\blanyard/i,
+      /\btote\b/i,
+      /\bt-?shirt/i,
+      /\bhoodie/i,
+      /\bapparel/i,
+      /\bwristband/i,
+      /\bswag/i,
+      /\bhamper/i,
+      /\bjotter/i,
+      /\bnotebook/i,
+      /\bdiary\b/i,
+      /\blapel\b/i,
+      /\bplaque/i,
+      /\btrophy/i,
+      /\bmedal\b/i,
+      /\bmug\b/i,
+      /\bwater\s*bottle/i,
+      /\bpen\b/i,
+      /\bcollateral/i,
+    ])
+  ) {
+    matched.add("Souvenirs");
+  }
+
+  // 6. Design & Print Production (graphic design, print production, brochure, programme booklet, magazine, roll-up banner, flyer, poster, Tag/badge design)
+  if (
+    hasAny(fullContext, [
+      /\bdesign\s*&\s*print/i,
+      /\bprint\s*(production|collateral|media|material|design)?\b/i,
+      /\bgraphic\s*design\b/i,
+      /\bpublication/i,
+      /\beditorial/i,
+      /\bbrochure/i,
+      /\bbooklet/i,
+      /\bmagazine/i,
+      /\bprogramme\b/i,
+      /\bannual\s*report/i,
+      /\bflyer/i,
+      /\bposter\b/i,
+      /\broll-?up\b/i,
+      /\bfeather\s*banner/i,
+      /\binvitation\s*card/i,
+      /\baccreditation\s*(pass|tag|badge)/i,
+      /\bdelegate\s*(pass|tag|badge|folder)/i,
+      /\bpackaging\s*design/i,
+      /\bkey\s*visual/i,
+    ])
+  ) {
+    matched.add("Design & Print Production");
+  }
+
+  // 7. OOH (Out-of-Home, billboard, lamp post, gantry, bus branding, street banner, directional signage, wayfinding, fascia)
+  if (
+    hasAny(fullContext, [
+      /\booh\b/i,
+      /\bout-?of-?home\b/i,
+      /\bbillboard/i,
+      /\blamp\s*post/i,
+      /\bstreet\s*pole/i,
+      /\bgantry\b/i,
+      /\bunipole\b/i,
+      /\bled\s*billboard/i,
+      /\btransit\s*branding/i,
+      /\bbus\s*branding/i,
+      /\bvehicle\s*branding/i,
+      /\bwayfinding/i,
+      /\bdirectional\s*sign/i,
+      /\boutdoor\s*(advertising|signage|media|banner)/i,
+      /\bfascia\b/i,
+      /\bhoarding\b/i,
+    ])
+  ) {
+    matched.add("OOH");
+  }
+
+  // Fallback if a project had no matching deliverable keywords yet
+  if (matched.size === 0) {
+    matched.add("Event Branding");
+  }
+
+  return Array.from(matched);
 }
 
 export default function PortfolioPage() {
   const [projects, setProjects] = React.useState<CaseStudy[]>([]);
-  const [activeFilter, setActiveFilter] = React.useState("All");
+  const [activeFilter, setActiveFilter] = React.useState<FilterCategory>("All");
   const [currentPage, setCurrentPage] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const gridTopRef = React.useRef<HTMLDivElement>(null);
@@ -212,19 +299,15 @@ export default function PortfolioPage() {
     fetchProjects();
   }, []);
 
-  // Reset to page 1 when switching filter groups
   React.useEffect(() => {
     setCurrentPage(1);
   }, [activeFilter]);
 
   const filteredProjects = React.useMemo(() => {
     if (activeFilter === "All") return projects;
-    const group = STREAMLINED_FILTERS.find((g) => g.label === activeFilter);
-    if (!group) return projects;
-
     return projects.filter((project) => {
-      const corpus = buildProjectSearchCorpus(project);
-      return group.keywords.some((kw) => corpus.includes(kw));
+      const categories = classifyProjectCategories(project);
+      return categories.includes(activeFilter);
     });
   }, [projects, activeFilter]);
 
@@ -255,27 +338,27 @@ export default function PortfolioPage() {
             A look at what we&apos;ve been building.
           </h1>
           <p className="text-sm sm:text-base text-[var(--text-muted)] max-w-xl mx-auto leading-relaxed">
-            Curated event environments, corporate brand systems, media production, and custom collateral deployed by Lavie Studios.
+            We prefer to let the work speak for itself. Here is a curated look at some of the physical spaces, stage setups, and brand identities we&apos;ve deployed recently.
           </p>
         </section>
 
-        {/* STREAMLINED 6-PILLAR FILTER BAR */}
+        {/* 7 SERVICE FILTER PILLS */}
         <section ref={gridTopRef} className="max-w-6xl mx-auto px-5 sm:px-8 pb-10 flex justify-center scroll-mt-24">
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {STREAMLINED_FILTERS.map((group) => {
-              const isActive = activeFilter === group.label;
+            {FILTER_CATEGORIES.map((label) => {
+              const isActive = activeFilter === label;
               return (
                 <button
-                  key={group.label}
+                  key={label}
                   type="button"
-                  onClick={() => setActiveFilter(group.label)}
+                  onClick={() => setActiveFilter(label)}
                   className={`px-4 py-2 rounded-full text-xs font-semibold tracking-wide transition-all cursor-pointer ${
                     isActive
                       ? "bg-[#c7cb2d] text-black font-bold shadow-sm"
                       : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]/50"
                   }`}
                 >
-                  {group.label}
+                  {label}
                 </button>
               );
             })}
@@ -294,14 +377,19 @@ export default function PortfolioPage() {
           ) : filteredProjects.length === 0 ? (
             <div className="py-20 text-center">
               <p className="text-sm text-[var(--text-muted)]">
-                No case studies matched <strong>{activeFilter}</strong> yet.
+                No case studies tagged under <strong>{activeFilter}</strong> yet.
               </p>
             </div>
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {paginatedProjects.map((project) => {
-                  const groupTag = resolvePrimaryGroupLabel(project);
+                  const matchedCats = classifyProjectCategories(project);
+                  const displayBadge =
+                    activeFilter !== "All" && matchedCats.includes(activeFilter)
+                      ? activeFilter
+                      : matchedCats[0];
+
                   return (
                     <Link
                       key={project.id}
@@ -318,17 +406,16 @@ export default function PortfolioPage() {
                           className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                         />
 
-                        {/* Subtle corner action icon on hover only */}
                         <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all duration-300">
                           <ArrowUpRight className="w-4 h-4 text-[#c7cb2d]" />
                         </div>
                       </div>
 
-                      {/* COMPACT FOOTER BELOW IMAGE (NO TEXT CLOUDING THE PHOTO) */}
+                      {/* COMPACT FOOTER BELOW IMAGE */}
                       <div className="p-4 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-0.5">
-                            <span className="text-[#c7cb2d] font-semibold">{groupTag}</span>
+                            <span className="text-[#c7cb2d] font-semibold shrink-0">{displayBadge}</span>
                             {project.client && (
                               <>
                                 <span>•</span>
@@ -336,7 +423,7 @@ export default function PortfolioPage() {
                               </>
                             )}
                             <span>•</span>
-                            <span>{project.year || "2026"}</span>
+                            <span className="shrink-0">{project.year || "2026"}</span>
                           </div>
                           <h2 className="font-display text-sm sm:text-base font-bold text-[var(--text-primary)] group-hover:text-[#c7cb2d] transition-colors truncate">
                             {project.title}
@@ -350,60 +437,59 @@ export default function PortfolioPage() {
                 })}
               </div>
 
-              {/* PAGINATION CONTROLS */}
-              {totalPages > 1 && (
-                <div className="mt-10 pt-6 border-t border-[var(--border-subtle)]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <p className="text-xs font-mono text-[var(--text-muted)]">
-                    Showing <span className="text-[var(--text-primary)] font-bold">{startIndex + 1}</span>–
-                    <span className="text-[var(--text-primary)] font-bold">
-                      {Math.min(startIndex + ITEMS_PER_PAGE, filteredProjects.length)}
-                    </span>{" "}
-                    of <span className="text-[var(--text-primary)] font-bold">{filteredProjects.length}</span> projects
-                  </p>
+              {/* PAGINATION BAR (ALWAYS VISIBLE WHEN PROJECTS EXIST) */}
+              <div className="mt-10 pt-6 border-t border-[var(--border-subtle)]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-xs font-mono text-[var(--text-muted)]">
+                  Showing <span className="text-[var(--text-primary)] font-bold">{startIndex + 1}</span>–
+                  <span className="text-[var(--text-primary)] font-bold">
+                    {Math.min(startIndex + ITEMS_PER_PAGE, filteredProjects.length)}
+                  </span>{" "}
+                  of <span className="text-[var(--text-primary)] font-bold">{filteredProjects.length}</span> projects
+                  {totalPages > 1 ? ` (Page ${currentPage} of ${totalPages})` : ""}
+                </p>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage === 1}
-                      className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      Prev
-                    </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Previous
+                  </button>
 
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((pageNum) => {
-                        const active = pageNum === currentPage;
-                        return (
-                          <button
-                            key={pageNum}
-                            type="button"
-                            onClick={() => handlePageChange(pageNum)}
-                            className={`w-7 h-7 rounded-full text-xs font-mono font-bold transition cursor-pointer ${
-                              active
-                                ? "bg-[#c7cb2d] text-black"
-                                : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                            }`}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                      className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
-                    >
-                      Next
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((pageNum) => {
+                      const active = pageNum === currentPage;
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-7 h-7 rounded-full text-xs font-mono font-bold transition cursor-pointer ${
+                            active
+                              ? "bg-[#c7cb2d] text-black"
+                              : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                  >
+                    Next
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              )}
+              </div>
             </>
           )}
         </section>

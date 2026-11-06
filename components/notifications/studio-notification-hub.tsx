@@ -316,9 +316,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)]/50 pb-2.5">
             <div>
               <h3 className="font-display text-xs font-bold">Live Activity Notifications</h3>
-              <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                Scoped to {staff?.first_name} ({staff?.staff_id})
-              </p>
+              
             </div>
             <div className="flex items-center gap-1.5">
               {permission !== "granted" && (
