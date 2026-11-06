@@ -27,71 +27,165 @@ interface CaseStudy {
   [key: string]: any;
 }
 
-const ITEMS_PER_PAGE = 6;
+const ITEMS_PER_PAGE = 9;
+
+const STREAMLINED_FILTERS = [
+  {
+    label: "All",
+    keywords: [],
+  },
+  {
+    label: "Events",
+    keywords: [
+      "event",
+      "stage",
+      "scenography",
+      "spatial",
+      "venue",
+      "booth",
+      "exhibition",
+      "tunnel",
+      "backdrop",
+      "experiential",
+      "summit",
+      "conference",
+      "activation",
+      "set build",
+      "fabrication",
+      "lighting",
+    ],
+  },
+  {
+    label: "Event Media",
+    keywords: [
+      "media",
+      "video",
+      "photo",
+      "motion",
+      "coverage",
+      "documentary",
+      "reel",
+      "showreel",
+      "livestream",
+      "content",
+      "animation",
+      "screen",
+      "led",
+      "projection",
+    ],
+  },
+  {
+    label: "Corporate Brand",
+    keywords: [
+      "corporate",
+      "brand",
+      "identity",
+      "logo",
+      "guideline",
+      "strategy",
+      "positioning",
+      "rebrand",
+      "naming",
+      "visual identity",
+      "stationary",
+      "stationery",
+      "communications",
+    ],
+  },
+  {
+    label: "Souvenirs",
+    keywords: [
+      "souvenir",
+      "merch",
+      "merchandise",
+      "gift",
+      "collateral",
+      "lanyard",
+      "tote",
+      "shirt",
+      "apparel",
+      "wristband",
+      "badge",
+      "swag",
+      "packaging",
+      "box",
+      "hamper",
+      "diary",
+      "notebook",
+      "pen",
+    ],
+  },
+  {
+    label: "Design",
+    keywords: [
+      "design",
+      "print",
+      "graphic",
+      "publication",
+      "editorial",
+      "brochure",
+      "report",
+      "flyer",
+      "poster",
+      "signage",
+      "wayfinding",
+      "billboard",
+      "ooh",
+      "out-of-home",
+      "environmental",
+      "banner",
+      "roll-up",
+    ],
+  },
+];
 
 /**
- * Extracts a clean array of deliverable/tag strings from a case study row,
- * supporting arrays, JSON arrays, or comma/bullet-separated text in deliverables/tags.
+ * Combines all deliverable tags, categories, and descriptions on a project
+ * into a single searchable text string for smart group matching.
  */
-function extractDeliverableTags(project: CaseStudy): string[] {
-  const rawSources = [
-    project.deliverables,
-    project.tags,
-    project.services,
-    project.scope,
-    project.sub_category,
+function buildProjectSearchCorpus(project: CaseStudy): string {
+  const parts: string[] = [
+    project.category || "",
+    project.sub_category || "",
+    project.title || "",
+    project.summary || "",
   ];
 
-  const collected: string[] = [];
-
-  for (const src of rawSources) {
+  const rawLists = [project.deliverables, project.tags, project.services, project.scope];
+  for (const src of rawLists) {
     if (!src) continue;
     if (Array.isArray(src)) {
       src.forEach((item) => {
-        if (typeof item === "string" && item.trim()) {
-          collected.push(item.trim());
-        } else if (item && typeof item === "object" && (item.name || item.title || item.label)) {
-          collected.push(String(item.name || item.title || item.label).trim());
+        if (typeof item === "string") parts.push(item);
+        else if (item && typeof item === "object") {
+          parts.push(String(item.name || item.title || item.label || ""));
         }
       });
     } else if (typeof src === "string") {
-      const trimmed = src.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((p) => {
-              if (p) collected.push(String(p).trim());
-            });
-            continue;
-          }
-        } catch (_) {}
-      }
-      trimmed
-        .split(/[,•|\n]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .forEach((s) => collected.push(s));
+      parts.push(src);
     }
   }
 
-  // Deduplicate case-insensitively while preserving display casing
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const tag of collected) {
-    const key = tag.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(tag);
+  return parts.join(" ").toLowerCase();
+}
+
+/**
+ * Returns the primary streamlined group label for display on the card subtitle
+ */
+function resolvePrimaryGroupLabel(project: CaseStudy): string {
+  const corpus = buildProjectSearchCorpus(project);
+  for (const group of STREAMLINED_FILTERS) {
+    if (group.label === "All") continue;
+    if (group.keywords.some((kw) => corpus.includes(kw))) {
+      return group.label;
     }
   }
-  return unique;
+  return project.category || "Brand Experience";
 }
 
 export default function PortfolioPage() {
   const [projects, setProjects] = React.useState<CaseStudy[]>([]);
-  const [activeTag, setActiveTag] = React.useState("All");
+  const [activeFilter, setActiveFilter] = React.useState("All");
   const [currentPage, setCurrentPage] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const gridTopRef = React.useRef<HTMLDivElement>(null);
@@ -118,48 +212,21 @@ export default function PortfolioPage() {
     fetchProjects();
   }, []);
 
-  // Build filter pills dynamically from all deliverables/tags filled across projects
-  const deliverableFilterPills = React.useMemo(() => {
-    const seen = new Map<string, string>();
-    projects.forEach((p) => {
-      const pTags = extractDeliverableTags(p);
-      pTags.forEach((t) => {
-        const lower = t.toLowerCase();
-        if (!seen.has(lower)) {
-          seen.set(lower, t);
-        }
-      });
-    });
-
-    // If no deliverable tags have been entered yet, fall back to any project categories present
-    if (seen.size === 0) {
-      projects.forEach((p) => {
-        if (p.category && p.category.trim()) {
-          const lower = p.category.trim().toLowerCase();
-          if (!seen.has(lower)) seen.set(lower, p.category.trim());
-        }
-      });
-    }
-
-    return ["All", ...Array.from(seen.values())];
-  }, [projects]);
-
-  // Reset to page 1 whenever the active deliverable tag changes
+  // Reset to page 1 when switching filter groups
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [activeTag]);
+  }, [activeFilter]);
 
   const filteredProjects = React.useMemo(() => {
-    if (activeTag === "All") return projects;
-    const target = activeTag.toLowerCase();
-    return projects.filter((p) => {
-      const pTags = extractDeliverableTags(p).map((t) => t.toLowerCase());
-      if (pTags.includes(target) || pTags.some((t) => t.includes(target))) {
-        return true;
-      }
-      return (p.category || "").toLowerCase() === target;
+    if (activeFilter === "All") return projects;
+    const group = STREAMLINED_FILTERS.find((g) => g.label === activeFilter);
+    if (!group) return projects;
+
+    return projects.filter((project) => {
+      const corpus = buildProjectSearchCorpus(project);
+      return group.keywords.some((kw) => corpus.includes(kw));
     });
-  }, [projects, activeTag]);
+  }, [projects, activeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / ITEMS_PER_PAGE));
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -178,118 +245,105 @@ export default function PortfolioPage() {
       <Header />
 
       <main className="flex-1 pt-28 sm:pt-32 pb-20">
-        {/* HERO SECTION */}
-        <section className="max-w-4xl mx-auto px-5 sm:px-8 pt-8 sm:pt-12 pb-10 sm:pb-12 text-center">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] text-[11px] font-mono tracking-widest uppercase text-[var(--text-muted)] mb-6 shadow-sm">
+        {/* COMPACT HERO SECTION */}
+        <section className="max-w-4xl mx-auto px-5 sm:px-8 pt-6 sm:pt-10 pb-8 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-card)] text-[10px] font-mono tracking-widest uppercase text-[var(--text-muted)] mb-5 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#c7cb2d]" />
-            <span>Case Studies (Recent projects)</span>
+            <span>Selected Works</span>
           </div>
-          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-[var(--text-primary)] leading-[1.1] mb-5">
+          <h1 className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-[var(--text-primary)] leading-[1.1] mb-4">
             A look at what we&apos;ve been building.
           </h1>
-          <p className="text-base sm:text-lg text-[var(--text-muted)] max-w-2xl mx-auto leading-relaxed">
-            We prefer to let the work speak for itself. Here is a curated look at some of the physical spaces, stage setups, and brand identities we&apos;ve deployed recently.
+          <p className="text-sm sm:text-base text-[var(--text-muted)] max-w-xl mx-auto leading-relaxed">
+            Curated event environments, corporate brand systems, media production, and custom collateral deployed by Lavie Studios.
           </p>
         </section>
 
-        {/* DELIVERABLES / TAGS FILTER PILLS */}
-        <section ref={gridTopRef} className="max-w-7xl mx-auto px-5 sm:px-8 pb-10 flex justify-center scroll-mt-24">
-          <div className="flex flex-wrap items-center justify-center gap-2 max-w-5xl">
-            {deliverableFilterPills.map((tag) => {
-              const isActive = activeTag === tag;
+        {/* STREAMLINED 6-PILLAR FILTER BAR */}
+        <section ref={gridTopRef} className="max-w-6xl mx-auto px-5 sm:px-8 pb-10 flex justify-center scroll-mt-24">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {STREAMLINED_FILTERS.map((group) => {
+              const isActive = activeFilter === group.label;
               return (
                 <button
-                  key={tag}
+                  key={group.label}
                   type="button"
-                  onClick={() => setActiveTag(tag)}
+                  onClick={() => setActiveFilter(group.label)}
                   className={`px-4 py-2 rounded-full text-xs font-semibold tracking-wide transition-all cursor-pointer ${
                     isActive
-                      ? "bg-[var(--text-primary)] text-[var(--bg-main)] shadow-sm"
-                      : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                      ? "bg-[#c7cb2d] text-black font-bold shadow-sm"
+                      : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]/50"
                   }`}
                 >
-                  {tag}
+                  {group.label}
                 </button>
               );
             })}
           </div>
         </section>
 
-        {/* PROJECTS GRID (COMPACT 3-COLUMN OVERLAY CARDS) */}
-        <section className="max-w-7xl mx-auto px-5 sm:px-8">
+        {/* COMPACT, UNCLOUDED 3-COLUMN CARDS */}
+        <section className="max-w-6xl mx-auto px-5 sm:px-8">
           {isLoading ? (
-            <div className="py-24 flex flex-col items-center justify-center gap-3 text-[var(--text-dim)] text-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#c7cb2d]" />
+            <div className="py-20 flex flex-col items-center justify-center gap-3 text-[var(--text-dim)] text-center">
+              <Loader2 className="w-5 h-5 animate-spin text-[#c7cb2d]" />
               <p className="text-xs uppercase font-mono tracking-widest">
                 Loading portfolio...
               </p>
             </div>
           ) : filteredProjects.length === 0 ? (
-            <div className="py-24 text-center">
+            <div className="py-20 text-center">
               <p className="text-sm text-[var(--text-muted)]">
-                No projects found with this deliverable tag yet.
+                No case studies matched <strong>{activeFilter}</strong> yet.
               </p>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {paginatedProjects.map((project) => {
-                  const projectTags = extractDeliverableTags(project);
+                  const groupTag = resolvePrimaryGroupLabel(project);
                   return (
                     <Link
                       key={project.id}
                       href={`/portfolio/${project.slug}`}
-                      className="group block relative w-full aspect-[4/3] overflow-hidden rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/40 shadow-sm"
+                      className="group flex flex-col rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/50 overflow-hidden hover:border-[#c7cb2d]/60 transition-all duration-300"
                     >
-                      <Image
-                        src={project.cover_image}
-                        alt={project.title}
-                        fill
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                        className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                      />
+                      {/* CLEAN, UNOBSTRUCTED IMAGE FRAME */}
+                      <div className="relative w-full aspect-[16/10] overflow-hidden bg-black/20">
+                        <Image
+                          src={project.cover_image}
+                          alt={project.title}
+                          fill
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                          className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                        />
 
-                      {/* Dark gradient overlay for text readability */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent opacity-85 group-hover:opacity-95 transition-opacity duration-500" />
-
-                      {/* Top Right Arrow */}
-                      <div className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 backdrop-blur-md border border-white/15 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-1.5 group-hover:translate-y-0">
-                        <ArrowUpRight className="w-4 h-4" />
+                        {/* Subtle corner action icon on hover only */}
+                        <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <ArrowUpRight className="w-4 h-4 text-[#c7cb2d]" />
+                        </div>
                       </div>
 
-                      {/* Compact Text Content overlaying the image */}
-                      <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-6 text-left z-10">
-                        {projectTags.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                            {projectTags.slice(0, 3).map((t) => (
-                              <span
-                                key={t}
-                                className="px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-sm text-[9px] font-mono uppercase tracking-wider text-[#c7cb2d]"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                            {projectTags.length > 3 && (
-                              <span className="text-[9px] font-mono text-white/60">
-                                +{projectTags.length - 3}
-                              </span>
+                      {/* COMPACT FOOTER BELOW IMAGE (NO TEXT CLOUDING THE PHOTO) */}
+                      <div className="p-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-0.5">
+                            <span className="text-[#c7cb2d] font-semibold">{groupTag}</span>
+                            {project.client && (
+                              <>
+                                <span>•</span>
+                                <span className="truncate">{project.client}</span>
+                              </>
                             )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-white/70 mb-1.5">
-                            <span className="truncate">{project.category}</span>
                             <span>•</span>
                             <span>{project.year || "2026"}</span>
                           </div>
-                        )}
+                          <h2 className="font-display text-sm sm:text-base font-bold text-[var(--text-primary)] group-hover:text-[#c7cb2d] transition-colors truncate">
+                            {project.title}
+                          </h2>
+                        </div>
 
-                        <h2 className="font-display text-lg sm:text-xl font-bold tracking-tight text-white mb-1 group-hover:text-[#c7cb2d] transition-colors line-clamp-1">
-                          {project.title}
-                        </h2>
-
-                        <p className="text-xs text-white/80 line-clamp-2 leading-relaxed">
-                          {project.summary || project.description}
-                        </p>
+                        <ArrowUpRight className="w-4 h-4 text-[var(--text-dim)] group-hover:text-[#c7cb2d] shrink-0 transition-colors" />
                       </div>
                     </Link>
                   );
@@ -298,13 +352,13 @@ export default function PortfolioPage() {
 
               {/* PAGINATION CONTROLS */}
               {totalPages > 1 && (
-                <div className="mt-12 pt-8 border-t border-[var(--border-subtle)]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="mt-10 pt-6 border-t border-[var(--border-subtle)]/40 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <p className="text-xs font-mono text-[var(--text-muted)]">
                     Showing <span className="text-[var(--text-primary)] font-bold">{startIndex + 1}</span>–
                     <span className="text-[var(--text-primary)] font-bold">
                       {Math.min(startIndex + ITEMS_PER_PAGE, filteredProjects.length)}
                     </span>{" "}
-                    of <span className="text-[var(--text-primary)] font-bold">{filteredProjects.length}</span> case studies
+                    of <span className="text-[var(--text-primary)] font-bold">{filteredProjects.length}</span> projects
                   </p>
 
                   <div className="flex items-center gap-2">
@@ -312,10 +366,10 @@ export default function PortfolioPage() {
                       type="button"
                       onClick={() => handlePageChange(currentPage - 1)}
                       disabled={currentPage === 1}
-                      className="px-4 py-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1.5 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
-                      Previous
+                      Prev
                     </button>
 
                     <div className="flex items-center gap-1">
@@ -326,7 +380,7 @@ export default function PortfolioPage() {
                             key={pageNum}
                             type="button"
                             onClick={() => handlePageChange(pageNum)}
-                            className={`w-8 h-8 rounded-full text-xs font-mono font-bold transition cursor-pointer ${
+                            className={`w-7 h-7 rounded-full text-xs font-mono font-bold transition cursor-pointer ${
                               active
                                 ? "bg-[#c7cb2d] text-black"
                                 : "bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -342,7 +396,7 @@ export default function PortfolioPage() {
                       type="button"
                       onClick={() => handlePageChange(currentPage + 1)}
                       disabled={currentPage === totalPages}
-                      className="px-4 py-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1.5 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-xs font-semibold flex items-center gap-1 text-[var(--text-primary)] hover:border-[#c7cb2d] disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
                     >
                       Next
                       <ChevronRight className="w-3.5 h-3.5" />
