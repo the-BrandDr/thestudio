@@ -9,7 +9,7 @@ import OfficialDocumentModal from "@/components/admin/official-document-modal";
 import { 
   Landmark, Briefcase, FileSpreadsheet, Users, ShieldAlert, Plus, Trash2, 
   ArrowUpRight, ArrowDownRight, Calculator, RefreshCw, Printer, Receipt, Link2, FileCheck
-} , TrendingDown } from "lucide-react";
+, TrendingDown } from "lucide-react";
 
 const STUDIO_SERVICES = [
   "Brand Strategy & Positioning",
