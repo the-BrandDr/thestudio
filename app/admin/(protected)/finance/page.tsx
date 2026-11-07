@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES } from "@/utils/resolve-current-staff";
+import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES, VOUCHER_CATEGORIES } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
 import { triggerPushNotification } from "@/utils/push-notifications";
@@ -9,7 +9,7 @@ import OfficialDocumentModal from "@/components/admin/official-document-modal";
 import { 
   Landmark, Briefcase, FileSpreadsheet, Users, ShieldAlert, Plus, Trash2, 
   ArrowUpRight, ArrowDownRight, Calculator, RefreshCw, Printer, Receipt, Link2, FileCheck
-} from "lucide-react";
+} , TrendingDown } from "lucide-react";
 
 const STUDIO_SERVICES = [
   "Brand Strategy & Positioning",
@@ -78,6 +78,69 @@ export default function EnterpriseFinanceSuite() {
 
   const [receiptServiceCategory, setReceiptServiceCategory] = React.useState<string>(STUDIO_SERVICE_CATEGORIES[0]);
   const [receiptCustomService, setReceiptCustomService] = React.useState<string>("");
+
+  // Direct Studio Expense Recording (Aside from Staff Vouchers)
+  const [directExpenseForm, setDirectExpenseForm] = React.useState({
+    title: "",
+    vendor_name: "",
+    category: "Marketing & Advertising",
+    custom_category: "",
+    amount: "",
+    payment_method: "Bank Transfer",
+    expense_date: new Date().toISOString().slice(0, 10),
+    project_ref: "",
+    notes: "",
+  });
+  const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
+
+  const handleRecordDirectExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directExpenseForm.title || !directExpenseForm.amount) return;
+    setSaving(true);
+    const supabaseClient = createClient();
+    const finalCategory =
+      directExpenseForm.category === "__custom__"
+        ? directExpenseForm.custom_category.trim() || "General Expense"
+        : directExpenseForm.category;
+    const expNo = `LV-EXP-${Date.now().toString().slice(-5)}`;
+
+    await supabaseClient.from("expense_vouchers").insert({
+      voucher_no: expNo,
+      staff_name: directExpenseForm.vendor_name
+        ? `[DIRECT] ${directExpenseForm.vendor_name}`
+        : "[DIRECT] Finance Desk",
+      staff_code: "FIN-DIRECT",
+      department: "Finance, Accounting & Treasury",
+      title: directExpenseForm.title,
+      project_ref: directExpenseForm.project_ref || null,
+      category: finalCategory,
+      payment_method: directExpenseForm.payment_method,
+      description: directExpenseForm.notes || `Direct expense paid to ${directExpenseForm.vendor_name || "Vendor"}`,
+      amount: Number(directExpenseForm.amount || 0),
+      status: "approved",
+      ops_status: "approved",
+      finance_status: "approved",
+      strategist_status: "approved",
+      created_at: directExpenseForm.expense_date
+        ? new Date(directExpenseForm.expense_date).toISOString()
+        : new Date().toISOString(),
+    });
+
+    setDirectExpenseForm({
+      title: "",
+      vendor_name: "",
+      category: "Marketing & Advertising",
+      custom_category: "",
+      amount: "",
+      payment_method: "Bank Transfer",
+      expense_date: new Date().toISOString().slice(0, 10),
+      project_ref: "",
+      notes: "",
+    });
+    setSaving(false);
+    if (typeof loadFinanceData === "function") loadFinanceData();
+  };
+
 
   const [isExecDirector, setIsExecDirector] = React.useState<boolean>(true);
 
@@ -1503,6 +1566,239 @@ export default function EnterpriseFinanceSuite() {
       )}
 
       {/* TAB 5: PAYROLL (SINGLE UNIFIED SYNC & GENERATE BUTTON + STRICT ROLE APPROVALS) */}
+      
+      {/* =====================================================================
+          DIRECT EXPENSES LEDGER TAB (RECORD STUDIO EXPENSES ASIDE FROM VOUCHERS)
+      ===================================================================== */}
+      {activeTab === "expenses" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <form
+            onSubmit={handleRecordDirectExpense}
+            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
+          >
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-rose-400 font-bold block">
+                Direct Outflow Entry
+              </span>
+              <h2 className="font-display text-lg font-bold">Record Studio Expense</h2>
+              <p className="text-xs text-[var(--text-muted)]">
+                Log direct company expenses (ad spend, equipment, vendor payouts, utilities, fuel) without requiring a staff voucher.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                EXPENSE TITLE / DESCRIPTION *
+              </label>
+              <input
+                required
+                value={directExpenseForm.title}
+                onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, title: e.target.value })}
+                placeholder="e.g. Meta & Google Ads Campaign, Generator Diesel, Vendor Payout"
+                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                EXPENSE CATEGORY *
+              </label>
+              <select
+                value={directExpenseForm.category}
+                onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, category: e.target.value })}
+                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
+              >
+                {VOUCHER_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+                <option value="__custom__">+ Other / Custom Expense Category (Type below...)</option>
+              </select>
+              {directExpenseForm.category === "__custom__" && (
+                <input
+                  required
+                  value={directExpenseForm.custom_category}
+                  onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, custom_category: e.target.value })}
+                  placeholder="Type custom expense category..."
+                  className="mt-2 w-full bg-[var(--bg-main)] border border-[#c7cb2d]/60 rounded-xl px-3.5 py-2 text-xs"
+                />
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                  AMOUNT PAID (₦) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={directExpenseForm.amount}
+                  onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, amount: e.target.value })}
+                  placeholder="0"
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-rose-400"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                  EXPENSE DATE *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={directExpenseForm.expense_date}
+                  onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, expense_date: e.target.value })}
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                  VENDOR / PAYEE NAME
+                </label>
+                <input
+                  value={directExpenseForm.vendor_name}
+                  onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, vendor_name: e.target.value })}
+                  placeholder="e.g. Meta Ireland, TotalEnergies, Print Vendor"
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                  PAYMENT METHOD
+                </label>
+                <select
+                  value={directExpenseForm.payment_method}
+                  onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, payment_method: e.target.value })}
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+                >
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Corporate Card">Corporate Card</option>
+                  <option value="POS / Cash">POS / Cash</option>
+                  <option value="Direct Debit">Direct Debit</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                LINKED PROJECT / CAMPAIGN REF (OPTIONAL)
+              </label>
+              <input
+                value={directExpenseForm.project_ref}
+                onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, project_ref: e.target.value })}
+                placeholder="e.g. Q4 Brand Campaign, NABIS '25, Studio Operations"
+                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                NOTES / RECEIPT REFERENCE
+              </label>
+              <textarea
+                rows={2}
+                value={directExpenseForm.notes}
+                onChange={(e) => setDirectExpenseForm({ ...directExpenseForm, notes: e.target.value })}
+                placeholder="Optional payment breakdown or reference..."
+                className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-3 rounded-full bg-white text-black hover:bg-[#c7cb2d] font-bold text-xs uppercase transition cursor-pointer"
+            >
+              {saving ? "Recording Expense..." : "Record Direct Expense"}
+            </button>
+          </form>
+
+          {/* ALL RECORDED OUTFLOW LEDGER (DIRECT EXPENSES + CLEARED VOUCHERS) */}
+          <div className="lg:col-span-7 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-subtle)]/40 pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold">
+                  Studio Outflow & Expenses Ledger
+                </h3>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Combined record of direct company expenses and approved staff vouchers
+                </p>
+              </div>
+              <select
+                value={expenseFilterCategory}
+                onChange={(e) => setExpenseFilterCategory(e.target.value)}
+                className="bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3 py-1.5 text-xs"
+              >
+                <option value="All Categories">All Categories</option>
+                {VOUCHER_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2.5 max-h-[540px] overflow-y-auto pr-1">
+              {vouchers
+                .filter((v: any) =>
+                  expenseFilterCategory === "All Categories" ? true : v.category === expenseFilterCategory
+                )
+                .map((v: any) => {
+                  const isDirect =
+                    String(v.staff_code || "") === "FIN-DIRECT" ||
+                    String(v.voucher_no || "").startsWith("LV-EXP");
+                  return (
+                    <div
+                      key={v.id}
+                      className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold ${
+                              isDirect
+                                ? "bg-rose-500/15 text-rose-400"
+                                : "bg-[#c7cb2d]/15 text-[#c7cb2d]"
+                            }`}
+                          >
+                            {isDirect ? "DIRECT EXPENSE" : `VOUCHER (${v.voucher_no})`}
+                          </span>
+                          <span className="text-[var(--text-muted)]">{v.category}</span>
+                          {v.project_ref && (
+                            <span className="text-[var(--text-dim)]">• Ref: {v.project_ref}</span>
+                          )}
+                        </div>
+                        <h4 className="font-display text-sm font-bold truncate">{v.title}</h4>
+                        <p className="text-xs text-[var(--text-muted)] truncate">
+                          {v.staff_name} • {v.payment_method || "Bank Transfer"}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-mono text-sm font-bold text-rose-400 block">
+                          -₦{Number(v.amount || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                          {v.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {vouchers.length === 0 && (
+                <p className="text-xs text-[var(--text-muted)] py-12 text-center">
+                  No direct expenses or vouchers recorded yet. Use the form on the left to log an expense.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === "payroll" && (
         <div className="space-y-4 print:hidden">
           <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">

@@ -127,7 +127,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   // OVERVIEW FILTER & BENCHMARK RATING STATE
   // ==========================================================================
   const [datePreset, setDatePreset] = React.useState<
-    "all" | "this_month" | "last_month" | "this_quarter" | "this_year" | "custom"
+    "all" | "this_month" | "last_month" | "this_quarter" | "last_6_months" | "this_year" | "last_year" | "custom"
   >("this_year");
   const [customStartDate, setCustomStartDate] = React.useState("");
   const [customEndDate, setCustomEndDate] = React.useState("");
@@ -317,7 +317,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   // ==========================================================================
   // DATE & CRITERIA FILTER HELPER
   // ==========================================================================
-  const matchesDateFilter = React.useCallback(
+    const matchesDateFilter = React.useCallback(
     (rawDate?: string | null) => {
       if (datePreset === "all") return true;
       if (!rawDate) return true;
@@ -337,8 +337,15 @@ export default function AdminOverviewAndOpenSpacePage() {
         const qStart = new Date(now.getFullYear(), qStartMonth, 1);
         return d >= qStart && d <= now;
       }
+      if (datePreset === "last_6_months") {
+        const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+        return d >= sixAgo && d <= now;
+      }
       if (datePreset === "this_year") {
         return d.getFullYear() === now.getFullYear();
+      }
+      if (datePreset === "last_year") {
+        return d.getFullYear() === now.getFullYear() - 1;
       }
       if (datePreset === "custom") {
         if (customStartDate) {
@@ -853,7 +860,7 @@ export default function AdminOverviewAndOpenSpacePage() {
     [myVouchers, matchesDateFilter, selectedCategoryFilter]
   );
 
-    // Executive Financial, Operational & Graphical Analytics (Filtered by Date, Service, Dept & Category)
+      // Executive Financial, Operational & Graphical Analytics
   const execAnalytics = React.useMemo(() => {
     if (!isExec) return null;
 
@@ -885,8 +892,9 @@ export default function AdminOverviewAndOpenSpacePage() {
       return true;
     });
 
+    // Include both Staff Expense Vouchers AND Direct Finance Expenses (recorded with [DIRECT EXPENSE] or approved status)
     const vouchersInWindow = execData.allVouchers.filter((v) => {
-      if (!matchesDateFilter(v.created_at)) return false;
+      if (!matchesDateFilter(v.created_at || v.expense_date)) return false;
       if (selectedDeptFilter !== "All Departments" && v.department !== selectedDeptFilter) return false;
       if (selectedCategoryFilter !== "All Categories" && v.category !== selectedCategoryFilter) return false;
       return true;
@@ -912,16 +920,12 @@ export default function AdminOverviewAndOpenSpacePage() {
     const totalBilledVolume = totalInflow + receivablesPipeline;
 
     const approvedVouchers = vouchersInWindow.filter((v) =>
-      ["approved", "disbursed", "paid"].includes(String(v.status || "").toLowerCase())
+      ["approved", "disbursed", "paid", "recorded"].includes(String(v.status || "").toLowerCase())
     );
     const pendingVouchers = vouchersInWindow.filter(
       (v) => String(v.status || "pending").toLowerCase() === "pending"
     );
     const voucherOutflow = approvedVouchers.reduce((acc, v) => acc + Number(v.amount || 0), 0);
-
-    const marketingOutflow = approvedVouchers
-      .filter((v) => String(v.category || "").toLowerCase().includes("marketing"))
-      .reduce((acc, v) => acc + Number(v.amount || 0), 0);
 
     const approvedPayroll = payrollInWindow.filter((p) =>
       ["approved", "disbursed", "paid"].includes(String(p.status || "").toLowerCase())
@@ -941,41 +945,113 @@ export default function AdminOverviewAndOpenSpacePage() {
     const totalRequests = vouchersInWindow.length + leavesInWindow.length;
     const clearedRequests = approvedVouchers.length + leavesInWindow.filter((l) => l.status === "approved").length;
     const approvalTurnaroundPct = totalRequests > 0 ? Math.round((clearedRequests / totalRequests) * 100) : 100;
-    const marketingShareOfRevenuePct = totalInflow > 0 ? Math.round((marketingOutflow / totalInflow) * 100) : 0;
 
-    // 6-Month Cashflow + Net Profit Trend
+    // ========================================================================
+    // DYNAMIC TIMELINE BUCKETS FOR CASHFLOW & NET MARGIN TRAJECTORY
+    // Adapts automatically to: This Month, Last Month, This Quarter, Last 6 Months,
+    // This Year (12 mos), Previous Year (12 mos), All Time, or Custom Date Range
+    // ========================================================================
     const months: Array<{ label: string; key: string; inflow: number; outflow: number; net: number }> = [];
     const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = d.toLocaleDateString("en-US", { month: "short" });
-      months.push({ label, key, inflow: 0, outflow: 0, net: 0 });
+
+    if (datePreset === "this_month" || datePreset === "last_month") {
+      const targetYear =
+        datePreset === "this_month"
+          ? now.getFullYear()
+          : new Date(now.getFullYear(), now.getMonth() - 1, 1).getFullYear();
+      const targetMonth =
+        datePreset === "this_month"
+          ? now.getMonth()
+          : new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth();
+      const mPrefix = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}`;
+      const mShort = new Date(targetYear, targetMonth, 1).toLocaleDateString("en-US", { month: "short" });
+      for (let w = 1; w <= 4; w++) {
+        months.push({ label: `${mShort} W${w}`, key: `${mPrefix}-W${w}`, inflow: 0, outflow: 0, net: 0 });
+      }
+    } else if (datePreset === "this_quarter") {
+      const qStart = Math.floor(now.getMonth() / 3) * 3;
+      for (let m = qStart; m <= qStart + 2; m++) {
+        const d = new Date(now.getFullYear(), m, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push({ label: d.toLocaleDateString("en-US", { month: "short" }), key, inflow: 0, outflow: 0, net: 0 });
+      }
+    } else if (datePreset === "last_6_months") {
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push({ label: d.toLocaleDateString("en-US", { month: "short" }), key, inflow: 0, outflow: 0, net: 0 });
+      }
+    } else if (datePreset === "this_year" || datePreset === "last_year") {
+      const yr = datePreset === "this_year" ? now.getFullYear() : now.getFullYear() - 1;
+      for (let m = 0; m < 12; m++) {
+        const d = new Date(yr, m, 1);
+        const key = `${yr}-${String(m + 1).padStart(2, "0")}`;
+        months.push({ label: d.toLocaleDateString("en-US", { month: "short" }), key, inflow: 0, outflow: 0, net: 0 });
+      }
+    } else if (datePreset === "custom" && customStartDate && customEndDate) {
+      const s = new Date(customStartDate);
+      const e = new Date(customEndDate);
+      const cur = new Date(s.getFullYear(), s.getMonth(), 1);
+      while (cur <= e && months.length < 24) {
+        const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
+        const label = cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+        months.push({ label, key, inflow: 0, outflow: 0, net: 0 });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      if (months.length === 0) {
+        const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        months.push({ label: "Selected", key, inflow: 0, outflow: 0, net: 0 });
+      }
+    } else {
+      // "all" -> Last 12 months rolling
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push({
+          label: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+          key,
+          inflow: 0,
+          outflow: 0,
+          net: 0,
+        });
+      }
     }
 
+    const resolveBucketKey = (rawDateStr?: string | null) => {
+      if (!rawDateStr) return "";
+      const d = new Date(rawDateStr);
+      if (isNaN(d.getTime())) return "";
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (datePreset === "this_month" || datePreset === "last_month") {
+        const wk = Math.min(4, Math.ceil(d.getDate() / 7));
+        return `${ym}-W${wk}`;
+      }
+      return ym;
+    };
+
     paidInvoices.forEach((inv) => {
-      const dt = String(inv.issue_date || inv.created_at || "").slice(0, 7);
-      const m = months.find((x) => x.key === dt);
+      const k = resolveBucketKey(inv.issue_date || inv.created_at);
+      const m = months.find((x) => x.key === k);
       if (m) m.inflow += Number(inv.total_amount || inv.amount || 0);
     });
 
     if (invoiceInflow === 0 && receiptInflow > 0) {
       receiptsInWindow.forEach((rec) => {
-        const dt = String(rec.payment_date || rec.created_at || "").slice(0, 7);
-        const m = months.find((x) => x.key === dt);
+        const k = resolveBucketKey(rec.payment_date || rec.created_at);
+        const m = months.find((x) => x.key === k);
         if (m) m.inflow += Number(rec.amount_received || rec.amount || 0);
       });
     }
 
     approvedVouchers.forEach((v) => {
-      const dt = String(v.created_at || "").slice(0, 7);
-      const m = months.find((x) => x.key === dt);
+      const k = resolveBucketKey(v.expense_date || v.created_at);
+      const m = months.find((x) => x.key === k);
       if (m) m.outflow += Number(v.amount || 0);
     });
 
     approvedPayroll.forEach((p) => {
-      const dt = String(p.pay_period || p.created_at || "").slice(0, 7);
-      const m = months.find((x) => x.key === dt);
+      const k = resolveBucketKey(p.pay_period || p.created_at);
+      const m = months.find((x) => x.key === k);
       if (m) m.outflow += Number(p.net_pay || p.gross_pay || 0);
     });
 
@@ -983,9 +1059,11 @@ export default function AdminOverviewAndOpenSpacePage() {
       m.net = m.inflow - m.outflow;
     });
 
-    const maxMonthVal = Math.max(1, ...months.map((m) => Math.max(m.inflow, m.outflow)));
+    const maxMonthVal = Math.max(1, ...months.map((m) => Math.max(m.inflow, m.outflow, Math.abs(m.net))));
 
-    // Income by Service Stream Graph Data (Cleared vs Pipeline for all core services)
+    // ========================================================================
+    // INCOME BY SERVICE STREAM (AUTOMATICALLY SORTED BY HIGHEST INCOME FIRST)
+    // ========================================================================
     const serviceStatsMap: Record<
       string,
       { name: string; cleared: number; pipeline: number; totalBilled: number; count: number }
@@ -996,7 +1074,7 @@ export default function AdminOverviewAndOpenSpacePage() {
     });
 
     invoicesInWindow.forEach((inv) => {
-      const srv = extractServiceTag(inv.project_title || inv.service_category);
+      const srv = extractServiceTag(inv.project_title || i_srv(inv));
       if (!serviceStatsMap[srv]) {
         serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
       }
@@ -1007,6 +1085,10 @@ export default function AdminOverviewAndOpenSpacePage() {
       serviceStatsMap[srv].totalBilled += amt;
       serviceStatsMap[srv].count += 1;
     });
+
+    function i_srv(inv: any) {
+      return inv?.service_category || "";
+    }
 
     if (invoiceInflow === 0 && receiptInflow > 0) {
       receiptsInWindow.forEach((rec) => {
@@ -1030,22 +1112,24 @@ export default function AdminOverviewAndOpenSpacePage() {
       Object.values(serviceStatsMap).reduce((acc, s) => acc + s.cleared, 0)
     );
 
+    // Automatically sort strictly by Cleared Income (descending), then Total Billed (descending)
     const revenueByService = Object.values(serviceStatsMap)
       .map((s) => ({
         ...s,
+        shortName: s.name.split("&")[0].replace("Out-of-Home (OOH)", "OOH").trim(),
         amount: s.cleared,
         pct: s.cleared > 0 ? Math.round((s.cleared / totalClearedAcrossServices) * 100) : 0,
         barWidthPct: Math.round((s.cleared / maxServiceVolume) * 100),
         pipelineWidthPct: Math.round((s.pipeline / maxServiceVolume) * 100),
         collectionRate: s.totalBilled > 0 ? Math.round((s.cleared / s.totalBilled) * 100) : 0,
       }))
-      .sort((a, b) => b.totalBilled - a.totalBilled || b.cleared - a.cleared);
+      .sort((a, b) => b.cleared - a.cleared || b.totalBilled - a.totalBilled);
 
-    // Expense Categories Breakdown (Always highlighting Marketing & Advertising + active categories)
-    const catMap: Record<string, number> = {
-      "Marketing & Advertising": 0,
-    };
-    vouchersInWindow.forEach((v) => {
+    // ========================================================================
+    // OUTFLOW DISTRIBUTION DONUT (NO HARDCODED MKTG PIN — SORTED BY ACTUAL SPEND)
+    // ========================================================================
+    const catMap: Record<string, number> = {};
+    approvedVouchers.forEach((v) => {
       const c = v.category || "Operations";
       catMap[c] = (catMap[c] || 0) + Number(v.amount || 0);
     });
@@ -1054,23 +1138,22 @@ export default function AdminOverviewAndOpenSpacePage() {
     }
 
     const totalExpenseVol = Math.max(1, Object.values(catMap).reduce((a, b) => a + b, 0));
-    const palette = ["#c7cb2d", "#34d399", "#fbbf24", "#60a5fa", "#f472b6", "#a78bfa", "#f87171"];
+    const palette = ["#f43f5e", "#f59e0b", "#10b981", "#38bdf8", "#a855f7", "#ec4899", "#c7cb2d"];
     const topExpenseCategories = Object.entries(catMap)
+      .filter(([, amount]) => amount > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
       .map(([name, amount], idx) => ({
         name,
         amount,
-        pct: amount > 0 ? Math.round((amount / totalExpenseVol) * 100) : 0,
+        pct: Math.round((amount / totalExpenseVol) * 100),
         color: palette[idx % palette.length],
-      }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 6);
+      }));
 
     return {
       totalInflow,
       totalOutflow,
       voucherOutflow,
-      marketingOutflow,
-      marketingShareOfRevenuePct,
       payrollOutflow,
       netPosition,
       receivablesPipeline,
@@ -1083,12 +1166,16 @@ export default function AdminOverviewAndOpenSpacePage() {
       approvalTurnaroundPct,
       months,
       maxMonthVal,
+      maxServiceVolume,
       revenueByService,
       topExpenseCategories,
     };
   }, [
     isExec,
     execData,
+    datePreset,
+    customStartDate,
+    customEndDate,
     matchesDateFilter,
     selectedServiceFilter,
     selectedDeptFilter,
@@ -1168,7 +1255,9 @@ export default function AdminOverviewAndOpenSpacePage() {
                 { id: "this_month", label: "This Month" },
                 { id: "last_month", label: "Last Month" },
                 { id: "this_quarter", label: "This Quarter" },
-                { id: "this_year", label: "Year (2026)" },
+                { id: "last_6_months", label: "6 Months" },
+                { id: "this_year", label: "This Year (2026)" },
+                { id: "last_year", label: "Prev Year (2025)" },
                 { id: "all", label: "All Time" },
                 { id: "custom", label: "Custom Range" },
               ].map((preset) => (
@@ -1433,37 +1522,37 @@ export default function AdminOverviewAndOpenSpacePage() {
                 ))}
               </div>
 
-              {/* EXECUTIVE CHARTS ROW 1: 6-MONTH CASHFLOW & NET TREND SVG GRAPH + OUTFLOW DONUT CHART */}
+              {/* EXECUTIVE CHARTS ROW 1: DYNAMIC CASHFLOW & NET MARGIN TRAJECTORY + UNBIASED OUTFLOW DONUT */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-1">
-                {/* 6-MONTH CASHFLOW COMBO GRAPH (DUAL BARS + SVG NET TREND LINE) */}
+                {/* DYNAMIC PERIOD CASHFLOW & NET MARGIN TRAJECTORY (HIGH-CONTRAST COLORS) */}
                 <div className="lg:col-span-7 p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-[#c7cb2d]" />
+                      <BarChart3 className="w-4 h-4 text-emerald-400" />
                       <div>
                         <h3 className="font-display text-sm font-bold">
-                          6-Month Cashflow & Net Margin Trajectory
+                          Cashflow & Net Margin Trajectory ({execAnalytics.months.length} Period View)
                         </h3>
                         <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                          Monthly Inflow vs. Outflow Bars with Net Operating Curve
+                          Adapts dynamically to your selected Date Filter above (Month, Quarter, 6M, Year, Prev Year, Custom)
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 text-[10px] font-mono">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-[#c7cb2d] inline-block" /> Inflow
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono">
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-[#10b981] inline-block" /> Inflow
                       </span>
-                      <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-amber-400/50 inline-block" /> Outflow
+                      <span className="flex items-center gap-1.5 text-rose-400 font-bold">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-[#f43f5e] inline-block" /> Outflow
                       </span>
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        ● Net Curve
+                      <span className="flex items-center gap-1.5 text-yellow-400 font-bold">
+                        ● Net Margin Curve
                       </span>
                     </div>
                   </div>
 
-                  <div className="relative h-52 pt-6 px-3 border-b border-[var(--border-subtle)]/50 flex flex-col justify-end">
-                    {/* Horizontal Benchmark Grid Lines */}
+                  <div className="relative h-56 pt-6 px-3 border-b border-[var(--border-subtle)]/50 flex flex-col justify-end">
+                    {/* Horizontal Scale Grid Lines */}
                     <div className="absolute inset-x-3 top-6 bottom-6 flex flex-col justify-between pointer-events-none">
                       {[1, 0.66, 0.33, 0].map((ratio, idx) => (
                         <div
@@ -1477,53 +1566,73 @@ export default function AdminOverviewAndOpenSpacePage() {
                       ))}
                     </div>
 
-                    {/* SVG Net Profit Polyline Overlay */}
-                    <svg
-                      viewBox="0 0 600 140"
-                      className="absolute inset-x-6 top-8 h-36 w-[calc(100%-3rem)] overflow-visible pointer-events-none z-10"
-                      preserveAspectRatio="none"
-                    >
-                      <polyline
-                        fill="none"
-                        stroke="#34d399"
-                        strokeWidth="2.5"
-                        points={execAnalytics.months
-                          .map((m, idx) => {
-                            const x = idx * 110 + 35;
-                            const norm = Math.max(0, m.inflow - m.outflow) / execAnalytics.maxMonthVal;
+                    {/* High-Contrast Gold SVG Smooth Curve for Net Margin */}
+                    {execAnalytics.months.length > 1 && (
+                      <svg
+                        viewBox="0 0 600 140"
+                        className="absolute inset-x-4 top-8 h-36 w-[calc(100%-2rem)] overflow-visible pointer-events-none z-10"
+                        preserveAspectRatio="none"
+                      >
+                        {(() => {
+                          const pts = execAnalytics.months.map((m, idx) => {
+                            const count = Math.max(1, execAnalytics.months.length - 1);
+                            const x = Math.round((idx / count) * 540) + 30;
+                            const norm = Math.max(0, m.net) / execAnalytics.maxMonthVal;
                             const y = 130 - Math.round(norm * 115);
-                            return `${x},${y}`;
-                          })
-                          .join(" ")}
-                      />
-                      {execAnalytics.months.map((m, idx) => {
-                        const x = idx * 110 + 35;
-                        const norm = Math.max(0, m.inflow - m.outflow) / execAnalytics.maxMonthVal;
-                        const y = 130 - Math.round(norm * 115);
-                        return <circle key={m.key} cx={x} cy={y} r="4" fill="#34d399" />;
-                      })}
-                    </svg>
+                            return { x, y, label: m.label, net: m.net };
+                          });
+                          const dPath = pts.reduce((acc, pt, i, a) => {
+                            if (i === 0) return `M ${pt.x},${pt.y}`;
+                            const prev = a[i - 1];
+                            const cx = Math.round((prev.x + pt.x) / 2);
+                            return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
+                          }, "");
+                          return (
+                            <>
+                              <path
+                                d={dPath}
+                                fill="none"
+                                stroke="#facc15"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                              />
+                              {pts.map((pt, idx) => (
+                                <circle
+                                  key={idx}
+                                  cx={pt.x}
+                                  cy={pt.y}
+                                  r="4.5"
+                                  fill="#facc15"
+                                  stroke="#000"
+                                  strokeWidth="1.5"
+                                />
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </svg>
+                    )}
 
-                    {/* Dual Bars */}
-                    <div className="relative z-0 flex items-end justify-between gap-3 h-40">
+                    {/* High-Contrast Emerald (#10b981) vs Crimson Rose (#f43f5e) Bars */}
+                    <div className="relative z-0 flex items-end justify-between gap-2 h-40">
                       {execAnalytics.months.map((m) => {
-                        const inHeight = Math.max(6, Math.round((m.inflow / execAnalytics.maxMonthVal) * 135));
-                        const outHeight = Math.max(6, Math.round((m.outflow / execAnalytics.maxMonthVal) * 135));
+                        const inHeight = Math.max(5, Math.round((m.inflow / execAnalytics.maxMonthVal) * 135));
+                        const outHeight = Math.max(5, Math.round((m.outflow / execAnalytics.maxMonthVal) * 135));
                         return (
-                          <div key={m.key} className="flex-1 flex flex-col items-center gap-2 group">
-                            <div className="w-full flex items-end justify-center gap-1.5 h-36">
+                          <div key={m.key} className="flex-1 flex flex-col items-center gap-1.5 group min-w-0">
+                            <div className="w-full flex items-end justify-center gap-1 h-36">
                               <div
-                                style={{ height: `${inHeight}px` }}
+                                style={{ height: `${inHeight}px`, backgroundColor: "#10b981" }}
                                 title={`${m.label} Inflow: ₦${m.inflow.toLocaleString()}`}
-                                className="w-4 sm:w-6 rounded-t-md bg-[#c7cb2d] group-hover:brightness-110 transition-all"
+                                className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
                               />
                               <div
-                                style={{ height: `${outHeight}px` }}
+                                style={{ height: `${outHeight}px`, backgroundColor: "#f43f5e" }}
                                 title={`${m.label} Outflow: ₦${m.outflow.toLocaleString()}`}
-                                className="w-4 sm:w-6 rounded-t-md bg-amber-400/45 group-hover:bg-amber-400/70 transition-all"
+                                className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
                               />
                             </div>
-                            <span className="text-[10px] font-mono text-[var(--text-muted)] pb-1">
+                            <span className="text-[9px] font-mono text-[var(--text-muted)] pb-1 truncate max-w-full">
                               {m.label}
                             </span>
                           </div>
@@ -1533,25 +1642,27 @@ export default function AdminOverviewAndOpenSpacePage() {
                   </div>
                 </div>
 
-                {/* OUTFLOW & EXPENSE CATEGORY SVG DONUT CHART (INCLUDING MARKETING & ADVERTISING) */}
+                {/* UNBIASED OUTFLOW DISTRIBUTION DONUT CHART (DYNAMICALLY SORTED BY ACTUAL SPEND) */}
                 <div className="lg:col-span-5 p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <PieChart className="w-4 h-4 text-[#c7cb2d]" />
+                      <PieChart className="w-4 h-4 text-rose-400" />
                       <div>
                         <h3 className="font-display text-sm font-bold">Outflow Distribution Graph</h3>
                         <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                          Marketing & Advertising, Production, Payroll & Ops
+                          Ranked automatically by actual spend (Vouchers, Direct Expenses & Payroll)
                         </p>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-400 text-[10px] font-mono font-bold">
-                      Mktg: ₦{execAnalytics.marketingOutflow.toLocaleString()}
-                    </span>
+                    <Link
+                      href="/admin/finance"
+                      className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-400 text-[10px] font-mono font-bold hover:bg-rose-500/25 transition"
+                    >
+                      + Record Expense
+                    </Link>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center pt-1">
-                    {/* SVG Multi-Segment Donut Ring */}
                     <div className="sm:col-span-5 flex justify-center">
                       <div className="relative w-32 h-32 flex items-center justify-center">
                         <svg viewBox="0 0 36 36" className="w-32 h-32 -rotate-90">
@@ -1595,108 +1706,243 @@ export default function AdminOverviewAndOpenSpacePage() {
                       </div>
                     </div>
 
-                    {/* Category Legend & Progress Bars */}
                     <div className="sm:col-span-7 space-y-2.5">
-                      {execAnalytics.topExpenseCategories.map((cat) => (
-                        <div key={cat.name} className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="flex items-center gap-1.5 truncate font-medium">
-                              <span
-                                className="w-2.5 h-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: cat.color }}
-                              />
-                              <span className="truncate">{cat.name}</span>
-                            </span>
-                            <span className="font-mono text-[10px] text-[var(--text-muted)] shrink-0">
-                              ₦{cat.amount.toLocaleString()} ({cat.pct}%)
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-[var(--bg-card)] overflow-hidden">
-                            <div
-                              style={{
-                                width: `${Math.max(4, cat.pct)}%`,
-                                backgroundColor: cat.color,
-                              }}
-                              className="h-full rounded-full"
-                            />
-                          </div>
+                      {execAnalytics.topExpenseCategories.length === 0 ? (
+                        <div className="space-y-1.5 text-center sm:text-left py-4">
+                          <p className="text-xs font-semibold text-[var(--text-muted)]">
+                            No outflow recorded in this period.
+                          </p>
+                          <p className="text-[10px] text-[var(--text-dim)]">
+                            Approve a staff voucher or record a direct expense in Finance Desk to populate the distribution ring.
+                          </p>
                         </div>
-                      ))}
+                      ) : (
+                        execAnalytics.topExpenseCategories.map((cat) => (
+                          <div key={cat.name} className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="flex items-center gap-1.5 truncate font-medium">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: cat.color }}
+                                />
+                                <span className="truncate">{cat.name}</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-[var(--text-muted)] shrink-0">
+                                ₦{cat.amount.toLocaleString()} ({cat.pct}%)
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-[var(--bg-card)] overflow-hidden">
+                              <div
+                                style={{
+                                  width: `${Math.max(4, cat.pct)}%`,
+                                  backgroundColor: cat.color,
+                                }}
+                                className="h-full rounded-full"
+                              />
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* EXECUTIVE CHARTS ROW 2: INCOME BY SERVICE STREAM COMPARATIVE BAR GRAPH */}
-              <div className="p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-4">
+              {/* EXECUTIVE CHARTS ROW 2: INCOME BY SERVICE STREAM — SMOOTH CURVE GRAPH (AUTO-SORTED BY INCOME) */}
+              <div className="p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-subtle)]/40 pb-3">
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-[#c7cb2d]" />
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
                     <div>
                       <h3 className="font-display text-sm font-bold">
-                        Income by Service Stream — Comparative Performance Graph
+                        Income by Service Stream — Comparative Performance Curve
                       </h3>
                       <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                        Measures Cleared Revenue (Green) vs. Unpaid Pipeline (Amber) & Collection Efficiency per Service
+                        Automatically sorted from highest-earning service to lowest • Plots Cleared Inflow vs. Billed Pipeline
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-[10px] font-mono">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" /> Cleared Inflow
+                    <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                      ● Cleared Inflow Curve
                     </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-[#c7cb2d]/50 inline-block" /> Unpaid Pipeline
+                    <span className="flex items-center gap-1.5 text-sky-400 font-bold">
+                      ● Total Billed Pipeline Curve
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3.5 pt-1">
-                  {execAnalytics.revenueByService.map((srv: any) => (
+                {/* SVG SMOOTH SPLINE AREA & CURVE GRAPH SORTED BY SERVICE INCOME */}
+                <div className="relative pt-4 pb-2 px-2">
+                  <div className="h-52 w-full relative">
+                    <svg
+                      viewBox="0 0 900 180"
+                      className="w-full h-full overflow-visible"
+                      preserveAspectRatio="none"
+                    >
+                      <defs>
+                        <linearGradient id="clearedGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+                          <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="pipelineGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Horizontal Grid Lines */}
+                      {[0, 0.25, 0.5, 0.75, 1].map((g, idx) => (
+                        <line
+                          key={idx}
+                          x1="20"
+                          x2="880"
+                          y1={20 + g * 130}
+                          y2={20 + g * 130}
+                          stroke="rgba(255,255,255,0.07)"
+                          strokeDasharray="4 4"
+                        />
+                      ))}
+
+                      {(() => {
+                        const list = execAnalytics.revenueByService;
+                        const count = Math.max(1, list.length - 1);
+                        const maxV = Math.max(1, execAnalytics.maxServiceVolume);
+
+                        const clearedPts = list.map((s: any, i: number) => ({
+                          x: Math.round((i / count) * 840) + 30,
+                          y: 150 - Math.round((s.cleared / maxV) * 125),
+                          val: s.cleared,
+                          name: s.shortName,
+                        }));
+
+                        const billedPts = list.map((s: any, i: number) => ({
+                          x: Math.round((i / count) * 840) + 30,
+                          y: 150 - Math.round((s.totalBilled / maxV) * 125),
+                          val: s.totalBilled,
+                          name: s.shortName,
+                        }));
+
+                        const buildSmoothPath = (pts: Array<{ x: number; y: number }>) =>
+                          pts.reduce((acc, pt, i, a) => {
+                            if (i === 0) return `M ${pt.x},${pt.y}`;
+                            const prev = a[i - 1];
+                            const cx = Math.round((prev.x + pt.x) / 2);
+                            return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
+                          }, "");
+
+                        const clearedCurve = buildSmoothPath(clearedPts);
+                        const billedCurve = buildSmoothPath(billedPts);
+                        const clearedArea = `${clearedCurve} L ${clearedPts[clearedPts.length - 1].x},150 L ${clearedPts[0].x},150 Z`;
+                        const billedArea = `${billedCurve} L ${billedPts[billedPts.length - 1].x},150 L ${billedPts[0].x},150 Z`;
+
+                        return (
+                          <>
+                            <path d={billedArea} fill="url(#pipelineGrad)" />
+                            <path
+                              d={billedCurve}
+                              fill="none"
+                              stroke="#38bdf8"
+                              strokeWidth="2.2"
+                              strokeDasharray="5 3"
+                            />
+                            <path d={clearedArea} fill="url(#clearedGrad)" />
+                            <path
+                              d={clearedCurve}
+                              fill="none"
+                              stroke="#10b981"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                            />
+                            {billedPts.map((pt, i) => (
+                              <circle key={`b-${i}`} cx={pt.x} cy={pt.y} r="3.5" fill="#38bdf8" />
+                            ))}
+                            {clearedPts.map((pt, i) => (
+                              <g key={`c-${i}`}>
+                                <circle
+                                  cx={pt.x}
+                                  cy={pt.y}
+                                  r="5"
+                                  fill="#10b981"
+                                  stroke="#000"
+                                  strokeWidth="1.5"
+                                />
+                                {pt.val > 0 && (
+                                  <text
+                                    x={pt.x}
+                                    y={pt.y - 10}
+                                    textAnchor="middle"
+                                    fill="#10b981"
+                                    fontSize="10"
+                                    fontFamily="monospace"
+                                    fontWeight="bold"
+                                  >
+                                    ₦{Math.round(pt.val / 1000).toLocaleString()}k
+                                  </text>
+                                )}
+                              </g>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+
+                  {/* X-Axis Sorted Service Labels */}
+                  <div
+                    className="grid gap-1 pt-2 border-t border-[var(--border-subtle)]/30"
+                    style={{
+                      gridTemplateColumns: `repeat(${execAnalytics.revenueByService.length}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {execAnalytics.revenueByService.map((srv: any, idx: number) => (
+                      <div key={srv.name} className="text-center px-0.5">
+                        <span className="text-[9px] font-mono text-[#c7cb2d] font-bold block">
+                          #{idx + 1}
+                        </span>
+                        <span
+                          title={srv.name}
+                          className="text-[10px] font-mono text-[var(--text-muted)] truncate block"
+                        >
+                          {srv.shortName}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* COMPACT RANKED SERVICE LEADERBOARD CARDS (AUTO-SORTED BY INCOME) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                  {execAnalytics.revenueByService.map((srv: any, idx: number) => (
                     <div
                       key={srv.name}
-                      className="p-3.5 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/40 space-y-2"
+                      className="p-3 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/40 flex items-center justify-between gap-3"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold truncate">{srv.name}</span>
-                        <div className="flex items-center gap-2 shrink-0 font-mono text-[10px]">
-                          <span className="text-emerald-400 font-bold">
-                            ₦{srv.cleared.toLocaleString()}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-[var(--bg-main)] text-[9px] font-mono font-bold text-[#c7cb2d]">
+                            #{idx + 1}
                           </span>
-                          {srv.pipeline > 0 && (
-                            <span className="text-[#c7cb2d]">
-                              +₦{srv.pipeline.toLocaleString()} pipeline
-                            </span>
-                          )}
-                          <span className="px-1.5 py-0.5 rounded bg-[var(--bg-main)] text-[var(--text-muted)]">
-                            {srv.pct}% share
-                          </span>
+                          <span className="text-xs font-bold truncate">{srv.name}</span>
                         </div>
+                        <p className="text-[10px] font-mono text-[var(--text-dim)] mt-0.5">
+                          {srv.count} txn(s) • {srv.pct}% share • {srv.collectionRate}% collected
+                        </p>
                       </div>
-
-                      {/* Dual Stacked Comparative Bar (Cleared vs Pipeline) */}
-                      <div className="w-full h-2.5 rounded-full bg-[var(--bg-main)] overflow-hidden flex">
-                        <div
-                          style={{ width: `${srv.cleared > 0 ? Math.max(6, srv.barWidthPct) : 0}%` }}
-                          title={`Cleared: ₦${srv.cleared.toLocaleString()}`}
-                          className="h-full bg-emerald-400 transition-all"
-                        />
-                        <div
-                          style={{ width: `${srv.pipeline > 0 ? Math.max(6, srv.pipelineWidthPct) : 0}%` }}
-                          title={`Unpaid Pipeline: ₦${srv.pipeline.toLocaleString()}`}
-                          className="h-full bg-[#c7cb2d]/50 transition-all"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] font-mono text-[var(--text-dim)]">
-                        <span>{srv.count} Transaction(s)</span>
-                        <span>Collection Efficiency: {srv.collectionRate}%</span>
+                      <div className="text-right shrink-0 font-mono">
+                        <span className="text-xs font-bold text-emerald-400 block">
+                          ₦{srv.cleared.toLocaleString()}
+                        </span>
+                        {srv.pipeline > 0 && (
+                          <span className="text-[9px] text-sky-400 block">
+                            +₦{srv.pipeline.toLocaleString()} billed
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
           )}
 
           {/* -----------------------------------------------------------------
