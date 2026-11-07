@@ -296,25 +296,56 @@ export default function AdminOverviewAndOpenSpacePage() {
       }));
 
       if (isExecutiveDirector(resolved)) {
-        const [projRes, invRes, recRes, payRes, inqRes] = await Promise.all([
+        const [
+          projRes1,
+          projRes2,
+          invRes1,
+          invRes2,
+          invRes3,
+          recRes1,
+          recRes2,
+          payRes,
+          inqRes1,
+          inqRes2,
+        ] = await Promise.all([
           supabase.from("finance_projects").select("*").order("created_at", { ascending: false }),
+          supabase.from("projects").select("*").order("created_at", { ascending: false }),
+          supabase.from("client_invoices").select("*").order("created_at", { ascending: false }),
+          supabase.from("invoices").select("*").order("created_at", { ascending: false }),
           supabase.from("finance_invoices").select("*").order("created_at", { ascending: false }),
           supabase.from("finance_receipts").select("*").order("created_at", { ascending: false }),
+          supabase.from("receipts").select("*").order("created_at", { ascending: false }),
           supabase.from("payroll_records").select("*").order("created_at", { ascending: false }),
-          supabase
-            .from("contact_inquiries")
-            .select("id, name, service, status, created_at")
-            .order("created_at", { ascending: false }),
+          supabase.from("contact_messages").select("*").order("created_at", { ascending: false }),
+          supabase.from("contact_inquiries").select("*").order("created_at", { ascending: false }),
         ]);
+
+        // Merge & deduplicate by id across any matching table names so Single Source of Truth is 100% preserved
+        const mergeById = (...lists: any[][]) => {
+          const map = new Map<string, any>();
+          for (const list of lists) {
+            for (const row of list || []) {
+              if (row && row.id && !map.has(String(row.id))) {
+                map.set(String(row.id), row);
+              }
+            }
+          }
+          return Array.from(map.values());
+        };
+
+        const mergedProjects = mergeById(projRes1.data || [], projRes2.data || []);
+        const mergedInvoices = mergeById(invRes1.data || [], invRes2.data || [], invRes3.data || []);
+        const mergedReceipts = mergeById(recRes1.data || [], recRes2.data || []);
+        const mergedInquiries = mergeById(inqRes1.data || [], inqRes2.data || []);
 
         setExecData({
           allLeaves: leaveData || [],
           allVouchers: voucherData || [],
-          projects: projRes.data || [],
-          invoices: invRes.data || [],
-          receipts: recRes.data || [],
+          projects: mergedProjects,
+          invoices: mergedInvoices,
+          receipts: mergedReceipts,
           payroll: payRes.data || [],
-          inquiries: inqRes.data || [],
+          inquiries: mergedInquiries,
         });
       }
     }
@@ -996,39 +1027,49 @@ export default function AdminOverviewAndOpenSpacePage() {
       return true;
     });
 
-    const paidInvoices = invoicesInWindow.filter((i) =>
-      ["paid", "completed", "cleared"].includes(String(i.status || "").toLowerCase())
-    );
-    const unpaidInvoices = invoicesInWindow.filter(
-      (i) => !["paid", "completed", "cleared", "cancelled"].includes(String(i.status || "").toLowerCase())
-    );
+    const projectsInWindow = (execData.projects || []).filter((p) => {
+      if (!matchesDateFilter(p.created_at || p.start_date)) return false;
+      if (selectedServiceFilter !== "All Services") {
+        const srv = extractServiceTag(p.project_title || p.title || p.name || p.service_category);
+        if (srv !== selectedServiceFilter) return false;
+      }
+      return true;
+    });
 
-    const projectPaidInflow = projectsInWindow.reduce(
-      (acc, p) => acc + Number(p.amount_paid || p.paid_amount || 0),
+    const getRowTotal = (r: any) =>
+      Number(r.total_amount ?? r.project_value ?? r.amount ?? r.subtotal ?? r.budget ?? 0);
+    const getRowPaid = (r: any) => {
+      if (r.amount_paid !== undefined && r.amount_paid !== null) return Number(r.amount_paid);
+      if (r.paid_amount !== undefined && r.paid_amount !== null) return Number(r.paid_amount);
+      if (r.amount_received !== undefined && r.amount_received !== null) return Number(r.amount_received);
+      const st = String(r.status || r.payment_status || "").toLowerCase();
+      if (["paid", "completed", "cleared"].includes(st)) return getRowTotal(r);
+      return 0;
+    };
+
+    const paidInvoices = invoicesInWindow.filter((i) => {
+      const st = String(i.status || i.payment_status || "").toLowerCase();
+      return ["paid", "completed", "cleared", "partially_paid"].includes(st) || getRowPaid(i) > 0;
+    });
+
+    const projectPaidInflow = projectsInWindow.reduce((acc, p) => acc + getRowPaid(p), 0);
+    const projectUnpaidBalance = projectsInWindow.reduce(
+      (acc, p) => acc + Math.max(0, getRowTotal(p) - getRowPaid(p)),
       0
     );
-    const projectUnpaidBalance = projectsInWindow.reduce((acc, p) => {
-      const val = Number(p.project_value || p.total_amount || p.amount || 0);
-      const paid = Number(p.amount_paid || p.paid_amount || 0);
-      return acc + Math.max(0, val - paid);
-    }, 0);
 
-    const invoiceInflow = paidInvoices.reduce(
-      (acc, i) => acc + Number(i.total_amount || i.amount_paid || i.amount || 0),
+    const invoiceInflow = invoicesInWindow.reduce((acc, i) => acc + getRowPaid(i), 0);
+    const invoiceUnpaid = invoicesInWindow.reduce(
+      (acc, i) => acc + Math.max(0, getRowTotal(i) - getRowPaid(i)),
       0
     );
+
     const receiptInflow = receiptsInWindow.reduce(
-      (acc, r) => acc + Number(r.amount_received || r.amount_paid || r.amount || 0),
+      (acc, r) => acc + Number(r.amount_received ?? r.amount_paid ?? r.amount ?? 0),
       0
     );
 
-    // Single Source of Truth Total Inflow (matches Finance Desk logic)
     const totalInflow = Math.max(projectPaidInflow + invoiceInflow, receiptInflow, projectPaidInflow, invoiceInflow);
-
-    const invoiceUnpaid = unpaidInvoices.reduce(
-      (acc, i) => acc + Number(i.total_amount || i.amount || 0),
-      0
-    );
     const receivablesPipeline = projectUnpaidBalance + invoiceUnpaid;
     const totalBilledVolume = totalInflow + receivablesPipeline;
 
@@ -2883,7 +2924,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <span className="text-[10px] font-mono text-[#c7cb2d]">
-                        {v.voucher_no} • {v.category}
+                        {v.voucher_no || v.voucher_code} • {v.category}
                       </span>
                       <h3 className="font-display text-sm font-bold">{v.title}</h3>
                       {v.description && <p className="text-xs text-[var(--text-muted)]">{v.description}</p>}

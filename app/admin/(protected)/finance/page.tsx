@@ -1825,7 +1825,7 @@ export default function EnterpriseFinanceSuite() {
                 .map((v: any) => {
                   const isDirect =
                     String(v.staff_code || "") === "FIN-DIRECT" ||
-                    String(v.voucher_no || "").startsWith("LV-EXP");
+                    String((v.voucher_no || v.voucher_code) || "").startsWith("LV-EXP");
                   return (
                     <div
                       key={v.id}
@@ -1840,7 +1840,7 @@ export default function EnterpriseFinanceSuite() {
                                 : "bg-[#c7cb2d]/15 text-[#c7cb2d]"
                             }`}
                           >
-                            {isDirect ? "DIRECT EXPENSE" : `VOUCHER (${v.voucher_no})`}
+                            {isDirect ? "DIRECT EXPENSE" : `VOUCHER (${(v.voucher_no || v.voucher_code)})`}
                           </span>
                           <span className="text-[var(--text-muted)]">{v.category}</span>
                           {v.project_ref && (

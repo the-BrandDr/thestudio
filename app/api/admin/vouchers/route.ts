@@ -35,7 +35,11 @@ export async function POST(req: Request) {
     const body = await req.json();
     const supabase = await getDbClient();
 
-    let payload: Record<string, any> = { ...body };
+    let payload: Record<string, any> = {
+      ...body,
+      voucher_code: body.voucher_code || body.voucher_no || `LV-VCH-${Date.now().toString().slice(-5)}`,
+      voucher_no: body.voucher_no || body.voucher_code || `LV-VCH-${Date.now().toString().slice(-5)}`,
+    };
 
     // Validate UUID for staff_id; if not a strict UUID, remove staff_id so FK/UUID never fails
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
