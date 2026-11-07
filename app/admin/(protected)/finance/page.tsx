@@ -1,6 +1,6 @@
-import { resolveAuthenticatedStaff, isExecutiveDirector } from "@/utils/resolve-current-staff";
 "use client";
 
+import { resolveAuthenticatedStaff, isExecutiveDirector } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
 import { triggerPushNotification } from "@/utils/push-notifications";

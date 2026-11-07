@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
 "use client";
 
+import type { Metadata } from "next";
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
