@@ -163,6 +163,7 @@ export const STUDIO_DEPARTMENTS = [
 
 export const STUDIO_SERVICE_CATEGORIES = [
   "Event Branding & Scenography",
+  "Craft Productions & Custom Fabrication",
   "Corporate Branding & Identity",
   "Event Media & Video Production",
   "Photography & Visual Coverage",

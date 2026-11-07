@@ -25,6 +25,7 @@ export function StudioStructuredData() {
           "Event Branding & Experiential Scenography",
           "Corporate Identity & Brand Strategy",
           "Stage Design & Spatial Fabrication",
+          "Craft Productions — Custom Exhibition Desks, Branded Tents & Kiosks",
           "Event Media, Documentary & Photography",
           "Out-of-Home (OOH) Advertising & Signage",
           "Design, Print Production & Corporate Souvenirs",

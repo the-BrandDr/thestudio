@@ -32,6 +32,7 @@ const ITEMS_PER_PAGE = 6;
 const FILTER_CATEGORIES = [
   "All",
   "Event Branding",
+  "Craft Productions",
   "Corporate Branding",
   "Event Media",
   "Photography",
@@ -125,6 +126,22 @@ function classifyProjectCategories(project: CaseStudy): FilterCategory[] {
   ) {
     matched.add("Event Branding");
   }
+
+  // 1B. Craft Productions (custom exhibition desks, tents, kiosks, podiums, props, bespoke woodwork/acrylic fabrication)
+  if (
+    hasAny(fullContext, [
+      /\bcraft\s*production/i,
+      /\bexhibition\s*(desk|table|counter|stand)/i,
+      /\bbranded\s*(tent|canopy|gazebo|kiosk|desk|counter)/i,
+      /\b(tent|canopy|gazebo|kiosk|podium|lectern|rostrum)\b/i,
+      /\bcustom\s*(desk|table|counter|booth|prop|fabrication|build|stand)/i,
+      /\bbespoke\s*(fabrication|prop|build|desk|stand)/i,
+      /\b(woodwork|carpentry|acrylic\s*fabrication|prop\s*fabrication|standee)\b/i,
+    ])
+  ) {
+    matched.add("Craft Productions");
+  }
+
 
   // 2. Corporate Branding (strictly corporate identity, logo, brand strategy, brand guidelines, rebranding — NEVER triggered by "Event Branding")
   const textWithoutEventBranding = fullContext

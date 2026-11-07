@@ -1414,7 +1414,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                     </h3>
                   </div>
                   <span className="text-[10px] font-mono text-[var(--text-dim)]">
-                    Event Branding • Corporate • Photography • Gadgets Rental • OOH
+                    Event Branding • Craft Productions • Corporate • Photography • Gadgets Rental • OOH
                   </span>
                 </div>
 
