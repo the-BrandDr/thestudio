@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { createClient as createServerClient } from "@/utils/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
-async function getDbClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (url && serviceKey) {
-    return createSupabaseClient(url, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return await createServerClient();
+function getDbClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "";
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 export async function GET() {
   try {
-    const supabase = await getDbClient();
+    const supabase = getDbClient();
     const { data, error } = await supabase
       .from("expense_vouchers")
       .select("*")
@@ -26,30 +26,32 @@ export async function GET() {
     }
     return NextResponse.json({ data: data || [] });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Failed to fetch vouchers", data: [] }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Failed to fetch vouchers", data: [] },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const supabase = await getDbClient();
+    const supabase = getDbClient();
 
+    const codeFallback = `LV-VCH-${Date.now().toString().slice(-5)}`;
     let payload: Record<string, any> = {
       ...body,
-      voucher_code: body.voucher_code || body.voucher_no || `LV-VCH-${Date.now().toString().slice(-5)}`,
-      voucher_no: body.voucher_no || body.voucher_code || `LV-VCH-${Date.now().toString().slice(-5)}`,
+      voucher_code: body.voucher_code || body.voucher_no || codeFallback,
+      voucher_no: body.voucher_no || body.voucher_code || codeFallback,
     };
 
-    // Validate UUID for staff_id; if not a strict UUID, remove staff_id so FK/UUID never fails
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!payload.staff_id || !uuidRegex.test(String(payload.staff_id))) {
       delete payload.staff_id;
     }
 
-    // Attempt insert with adaptive column stripping (up to 8 retries if any column is missing in DB)
     let lastError: any = null;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       const { data, error } = await supabase
         .from("expense_vouchers")
         .insert(payload)
@@ -63,7 +65,6 @@ export async function POST(req: Request) {
       lastError = error;
       const msg = String(error?.message || "");
 
-      // Check if PostgREST complained about a missing column: Could not find the 'xyz' column
       const colMatch =
         msg.match(/Could not find the '([^']+)' column/i) ||
         msg.match(/column "([^"]+)" of relation "expense_vouchers" does not exist/i);
@@ -73,8 +74,11 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // If foreign key violation on staff_id, strip staff_id and retry
-      if (msg.toLowerCase().includes("staff_id") || error?.code === "23503" || error?.code === "23502") {
+      if (
+        msg.toLowerCase().includes("staff_id") ||
+        error?.code === "23503" ||
+        error?.code === "23502"
+      ) {
         delete payload.staff_id;
         continue;
       }
@@ -98,7 +102,7 @@ export async function PATCH(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "Missing voucher id" }, { status: 400 });
     }
-    const supabase = await getDbClient();
+    const supabase = getDbClient();
     const { data, error } = await supabase
       .from("expense_vouchers")
       .update(updates)
