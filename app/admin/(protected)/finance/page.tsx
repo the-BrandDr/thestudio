@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES, VOUCHER_CATEGORIES } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -67,6 +68,38 @@ export default function EnterpriseFinanceSuite() {
     });
   }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<any>("overview");
+
+  // Pagination states for Finance lists
+  const [projectsPage, setProjectsPage] = React.useState(1);
+  const [invoicesPage, setInvoicesPage] = React.useState(1);
+  const [receiptsPage, setReceiptsPage] = React.useState(1);
+  const [expensesPage, setExpensesPage] = React.useState(1);
+  const [payrollPage, setPayrollPage] = React.useState(1);
+  const [newProjectStatus, setNewProjectStatus] = React.useState<"ongoing" | "pending" | "completed">("ongoing");
+
+  // Support ?tab=expenses deep link
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get("tab");
+      if (t && ["overview", "projects", "billing", "receipts", "expenses", "payroll", "tax"].includes(t)) {
+        setActiveTab(t as any);
+      }
+    }
+  }, []);
+
+  const handleUpdateProjectStatus = async (project: any, nextStatus: "ongoing" | "pending" | "completed") => {
+    const supabaseClient = createClient();
+    // Update in finance_projects (and projects fallback)
+    await supabaseClient.from("finance_projects").update({ status: nextStatus }).eq("id", project.id);
+    // Also update local state immediately
+    if (typeof setProjects === "function") {
+      setProjects((prev: any[]) =>
+        prev.map((p: any) => (p.id === project.id ? { ...p, status: nextStatus } : p))
+      );
+    }
+  };
+
 
   // Accountable Service Category Dropdown + Custom Entry states
   const [projectServiceCategory, setProjectServiceCategory] = React.useState<string>(STUDIO_SERVICE_CATEGORIES[0]);
@@ -931,6 +964,7 @@ export default function EnterpriseFinanceSuite() {
             { id: "sales", label: "Projects & Sales", icon: Briefcase, badge: unifiedProjects.length },
             { id: "billing", label: "Billing", icon: FileSpreadsheet, badge: invoices.length },
             { id: "receipts", label: "Receipts", icon: Receipt, badge: receipts.length },
+          { id: "expenses", label: "Expenses", icon: TrendingDown },
             { id: "payroll", label: "Payroll", icon: Users, badge: payrollList.length },
             { id: "tax", label: "Tax", icon: ShieldAlert, badge: taxList.filter(t => t.status !== "remitted").length },
           ].map((tab) => {
@@ -1119,7 +1153,21 @@ export default function EnterpriseFinanceSuite() {
                 <input type="number" value={saleForm.amount_paid} onChange={(e) => setSaleForm({ ...saleForm, amount_paid: e.target.value })} className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs font-mono" />
               </div>
             </div>
-            <button type="submit" disabled={saving} className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer">
+            <div>
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1.5">
+                    PROJECT STATUS *
+                  </label>
+                  <select
+                    value={newProjectStatus}
+                    onChange={(e) => setNewProjectStatus(e.target.value as any)}
+                    className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono uppercase text-[#c7cb2d] font-bold"
+                  >
+                    <option value="ongoing">Ongoing</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+                <button type="submit" disabled={saving} className="w-full py-2.5 rounded-full bg-[var(--text-primary)] text-[var(--bg-main)] text-xs font-bold cursor-pointer">
               Save Project
             </button>
           </form>
@@ -1143,7 +1191,7 @@ export default function EnterpriseFinanceSuite() {
             </div>
 
             <div className="space-y-3">
-              {filteredProjects.map((sale) => {
+              {filteredProjects.slice((projectsPage - 1) * 6, projectsPage * 6).map((sale) => {
                 const bal = Math.max(0, Number(sale.contract_value || 0) - Number(sale.amount_paid || 0));
                 const badgeLabel =
                   bal <= 0 && Number(sale.contract_value) > 0
@@ -1214,6 +1262,7 @@ export default function EnterpriseFinanceSuite() {
           </div>
         </div>
       )}
+              <AdminPagination currentPage={projectsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setProjectsPage} itemLabel="projects" />
 
       {/* TAB 3: BILLING */}
       {activeTab === "billing" && (
@@ -1386,7 +1435,7 @@ export default function EnterpriseFinanceSuite() {
           <div className="lg:col-span-7 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3">
             <h2 className="font-display text-base font-bold">Invoices</h2>
             <div className="space-y-3">
-              {invoices.map((inv) => {
+              {invoices.slice((invoicesPage - 1) * 6, invoicesPage * 6).map((inv) => {
                 const paid = Number(inv.amount_paid || (inv.status === "paid" ? inv.total_amount : 0));
                 const bal = Math.max(0, Number(inv.total_amount || 0) - paid);
                 return (
@@ -1488,7 +1537,7 @@ export default function EnterpriseFinanceSuite() {
                 className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
               >
                 <option value="">-- Standalone / Manual Receipt --</option>
-                {invoices.map((inv) => (
+                {invoices.slice((invoicesPage - 1) * 6, invoicesPage * 6).map((inv) => (
                   <option key={inv.id} value={inv.id}>
                     {inv.invoice_no} — {inv.client_company || inv.client_name} (₦{Number(inv.total_amount).toLocaleString()})
                   </option>
@@ -1531,7 +1580,7 @@ export default function EnterpriseFinanceSuite() {
           <div className="lg:col-span-8 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3">
             <h2 className="font-display text-base font-bold">Issued Receipts</h2>
             <div className="space-y-2.5">
-              {receipts.map((rct) => (
+              {receipts.slice((receiptsPage - 1) * 6, receiptsPage * 6).map((rct) => (
                 <div key={rct.id} className="p-4 rounded-2xl bg-[var(--bg-main)] flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">

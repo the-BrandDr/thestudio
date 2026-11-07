@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
 import { triggerPushNotification } from "@/utils/push-notifications";
@@ -62,6 +63,7 @@ async function compressImageFile(file: File, maxWidth = 1600, quality = 0.82): P
 }
 
 export default function AdminPortfolioPage() {
+  const [cmsPage, setCmsPage] = React.useState(1);
   const supabase = createClient();
   const [activeSection, setActiveSection] = React.useState<"projects" | "hero_media">("projects");
   const [projects, setProjects] = React.useState<any[]>([]);
@@ -754,7 +756,7 @@ export default function AdminPortfolioPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredProjects.map((item) => {
+              {filteredProjects.slice((cmsPage - 1) * 6, cmsPage * 6).map((item) => {
                 const imgCount =
                   Array.isArray(item.images) && item.images.length > 0
                     ? item.images.length
@@ -821,6 +823,7 @@ export default function AdminPortfolioPage() {
                 No case studies in this category yet.
               </div>
             )}
+          <AdminPagination currentPage={cmsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setCmsPage} itemLabel="case studies" />
           </div>
         </div>
       )}

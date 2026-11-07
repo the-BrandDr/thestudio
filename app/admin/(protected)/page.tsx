@@ -37,6 +37,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import {
   resolveAuthenticatedStaff,
   isExecutiveDirector,
@@ -122,6 +123,9 @@ export default function AdminOverviewAndOpenSpacePage() {
   const [messages, setMessages] = React.useState<any[]>([]);
   const [caseStudies, setCaseStudies] = React.useState<any[]>([]);
   const [saving, setSaving] = React.useState(false);
+  const [voucherNotice, setVoucherNotice] = React.useState("");
+  const [leavePage, setLeavePage] = React.useState(1);
+  const [voucherPage, setVoucherPage] = React.useState(1);
 
   // ==========================================================================
   // OVERVIEW FILTER & BENCHMARK RATING STATE
@@ -140,6 +144,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   const [execData, setExecData] = React.useState<{
     allLeaves: any[];
     allVouchers: any[];
+    projects: any[];
     invoices: any[];
     receipts: any[];
     payroll: any[];
@@ -147,6 +152,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   }>({
     allLeaves: [],
     allVouchers: [],
+    projects: [],
     invoices: [],
     receipts: [],
     payroll: [],
@@ -256,10 +262,14 @@ export default function AdminOverviewAndOpenSpacePage() {
           (l) => (myId && l.staff_id === myId) || (myCode && String(l.staff_code || "").toUpperCase() === myCode)
         )
       );
+      const fullNameLower = `${resolved.first_name || ""} ${resolved.last_name || ""}`.trim().toLowerCase();
       setMyVouchers(
-        (voucherData || []).filter(
-          (v) => (myId && v.staff_id === myId) || (myCode && String(v.staff_code || "").toUpperCase() === myCode)
-        )
+        (voucherData || []).filter((v) => {
+          if (myId && v.staff_id === myId) return true;
+          if (myCode && String(v.staff_code || "").toUpperCase() === myCode) return true;
+          if (fullNameLower && String(v.staff_name || "").trim().toLowerCase() === fullNameLower) return true;
+          return false;
+        })
       );
       setMyPromotions(
         (promoData || []).filter(
@@ -286,7 +296,8 @@ export default function AdminOverviewAndOpenSpacePage() {
       }));
 
       if (isExecutiveDirector(resolved)) {
-        const [{ data: invData }, { data: recData }, { data: payData }, { data: inqData }] = await Promise.all([
+        const [projRes, invRes, recRes, payRes, inqRes] = await Promise.all([
+          supabase.from("finance_projects").select("*").order("created_at", { ascending: false }),
           supabase.from("finance_invoices").select("*").order("created_at", { ascending: false }),
           supabase.from("finance_receipts").select("*").order("created_at", { ascending: false }),
           supabase.from("payroll_records").select("*").order("created_at", { ascending: false }),
@@ -299,10 +310,11 @@ export default function AdminOverviewAndOpenSpacePage() {
         setExecData({
           allLeaves: leaveData || [],
           allVouchers: voucherData || [],
-          invoices: invData || [],
-          receipts: recData || [],
-          payroll: payData || [],
-          inquiries: inqData || [],
+          projects: projRes.data || [],
+          invoices: invRes.data || [],
+          receipts: recRes.data || [],
+          payroll: payRes.data || [],
+          inquiries: inqRes.data || [],
         });
       }
     }
@@ -312,7 +324,25 @@ export default function AdminOverviewAndOpenSpacePage() {
 
   React.useEffect(() => {
     loadOpenSpace();
-  }, [loadOpenSpace]);
+    const ch = supabase
+      .channel("open-space-vouchers-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_vouchers" }, () => {
+        loadOpenSpace();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "finance_projects" }, () => {
+        loadOpenSpace();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "finance_invoices" }, () => {
+        loadOpenSpace();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "finance_receipts" }, () => {
+        loadOpenSpace();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [loadOpenSpace, supabase]);
 
   // ==========================================================================
   // DATE & CRITERIA FILTER HELPER
@@ -456,12 +486,14 @@ export default function AdminOverviewAndOpenSpacePage() {
     reader.readAsDataURL(file);
   };
 
-  const handleCreateVoucher = async (e: React.FormEvent) => {
+    const handleCreateVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!me) return;
     setSaving(true);
+    setVoucherNotice("");
     const vNo = `LV-VCH-${Date.now().toString().slice(-5)}`;
     const authorName = `${me.first_name || "Staff"} ${me.last_name || ""}`.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(me.id || ""));
 
     const initialComments = voucherForm.initial_comment.trim()
       ? [
@@ -473,20 +505,20 @@ export default function AdminOverviewAndOpenSpacePage() {
         ]
       : [];
 
-    await supabase.from("expense_vouchers").insert({
+    const fullPayload: Record<string, any> = {
       voucher_no: vNo,
-      staff_id: me.id,
+      staff_id: isUuid ? me.id : null,
       staff_name: authorName,
-      staff_code: me.staff_id || "STAFF",
+      staff_code: me.staff_id || "LS-01",
       department: me.department || "Operations",
       title: voucherForm.title,
-      project_ref: voucherForm.project_ref,
+      project_ref: voucherForm.project_ref || null,
       category: voucherForm.category,
       payment_method: voucherForm.payment_method,
-      bank_name: voucherForm.bank_name,
-      bank_account_name: voucherForm.bank_account_name,
-      bank_account_no: voucherForm.bank_account_no,
-      description: voucherForm.description,
+      bank_name: voucherForm.bank_name || null,
+      bank_account_name: voucherForm.bank_account_name || null,
+      bank_account_no: voucherForm.bank_account_no || null,
+      description: voucherForm.description || null,
       line_items: voucherItems,
       amount: computedVoucherTotal,
       attachment_url: voucherForm.attachment_data || null,
@@ -496,7 +528,47 @@ export default function AdminOverviewAndOpenSpacePage() {
       ops_status: "pending",
       finance_status: "pending",
       strategist_status: "pending",
-    });
+    };
+
+    let { data: insertedRow, error } = await supabase
+      .from("expense_vouchers")
+      .insert(fullPayload)
+      .select("*")
+      .single();
+
+    // Fallback if optional columns haven't been migrated yet
+    if (error) {
+      const minimalPayload: Record<string, any> = {
+        voucher_no: vNo,
+        staff_name: authorName,
+        staff_code: me.staff_id || "LS-01",
+        department: me.department || "Operations",
+        title: voucherForm.title,
+        category: voucherForm.category,
+        description:
+          voucherForm.description ||
+          `${voucherForm.payment_method} — ${voucherForm.bank_name} ${voucherForm.bank_account_no}`,
+        amount: computedVoucherTotal,
+        status: "pending",
+      };
+      const retry = await supabase.from("expense_vouchers").insert(minimalPayload).select("*").single();
+      insertedRow = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      setVoucherNotice(`❌ Could not save voucher: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    if (insertedRow) {
+      setMyVouchers((prev) => [insertedRow, ...prev]);
+      setExecData((prev) => ({ ...prev, allVouchers: [insertedRow, ...prev.allVouchers] }));
+    }
+
+    setVoucherNotice(`✅ Voucher ${vNo} submitted successfully!`);
+    setTimeout(() => setVoucherNotice(""), 4000);
 
     setVoucherForm((prev) => ({
       ...prev,
@@ -523,9 +595,25 @@ export default function AdminOverviewAndOpenSpacePage() {
     const text = (voucherCommentInputs[v.id] || "").trim();
     if (!text) return;
     const author = me ? `${me.first_name || "Staff"} (${me.staff_id || "STAFF"})` : "Team Member";
-    const updated = [...(Array.isArray(v.comments) ? v.comments : []), { author, text, at: new Date().toISOString() }];
+    const newComment = { author, text, at: new Date().toISOString() };
+    const existingComments = Array.isArray(v.comments) ? v.comments : [];
+    const updated = [...existingComments, newComment];
+
+    // Optimistic UI update so comment appears instantaneously
     setVoucherCommentInputs((prev) => ({ ...prev, [v.id]: "" }));
+    setMyVouchers((prev) => prev.map((item) => (item.id === v.id ? { ...item, comments: updated } : item)));
+
     await supabase.from("expense_vouchers").update({ comments: updated }).eq("id", v.id);
+
+    if (v.staff_code && v.staff_code !== me?.staff_id) {
+      triggerPushNotification({
+        title: `💬 New Comment on Voucher ${v.voucher_no || v.title}`,
+        message: `${author}: ${text}`,
+        url: "https://studioslavie.com/admin",
+        targetType: "staff_codes",
+        staffCodes: [v.staff_code],
+      });
+    }
     loadOpenSpace();
   };
 
@@ -909,14 +997,49 @@ export default function AdminOverviewAndOpenSpacePage() {
     const leavesInWindow = execData.allLeaves.filter((l) => matchesDateFilter(l.created_at || l.start_date));
     const inquiriesInWindow = execData.inquiries.filter((inq) => matchesDateFilter(inq.created_at));
 
-    const paidInvoices = invoicesInWindow.filter((i) => String(i.status || "").toLowerCase() === "paid");
-    const unpaidInvoices = invoicesInWindow.filter((i) => String(i.status || "").toLowerCase() !== "paid");
+    const projectsInWindow = (execData.projects || []).filter((p) => {
+      if (!matchesDateFilter(p.created_at || p.start_date)) return false;
+      if (selectedServiceFilter !== "All Services") {
+        const srv = extractServiceTag(p.project_title || p.title || p.service_category);
+        if (srv !== selectedServiceFilter) return false;
+      }
+      return true;
+    });
 
-    const invoiceInflow = paidInvoices.reduce((acc, i) => acc + Number(i.total_amount || i.amount || 0), 0);
-    const receiptInflow = receiptsInWindow.reduce((acc, r) => acc + Number(r.amount_received || r.amount || 0), 0);
-    const totalInflow = Math.max(invoiceInflow, receiptInflow);
+    const paidInvoices = invoicesInWindow.filter((i) =>
+      ["paid", "completed", "cleared"].includes(String(i.status || "").toLowerCase())
+    );
+    const unpaidInvoices = invoicesInWindow.filter(
+      (i) => !["paid", "completed", "cleared", "cancelled"].includes(String(i.status || "").toLowerCase())
+    );
 
-    const receivablesPipeline = unpaidInvoices.reduce((acc, i) => acc + Number(i.total_amount || i.amount || 0), 0);
+    const projectPaidInflow = projectsInWindow.reduce(
+      (acc, p) => acc + Number(p.amount_paid || p.paid_amount || 0),
+      0
+    );
+    const projectUnpaidBalance = projectsInWindow.reduce((acc, p) => {
+      const val = Number(p.project_value || p.total_amount || p.amount || 0);
+      const paid = Number(p.amount_paid || p.paid_amount || 0);
+      return acc + Math.max(0, val - paid);
+    }, 0);
+
+    const invoiceInflow = paidInvoices.reduce(
+      (acc, i) => acc + Number(i.total_amount || i.amount_paid || i.amount || 0),
+      0
+    );
+    const receiptInflow = receiptsInWindow.reduce(
+      (acc, r) => acc + Number(r.amount_received || r.amount_paid || r.amount || 0),
+      0
+    );
+
+    // Single Source of Truth Total Inflow (matches Finance Desk logic)
+    const totalInflow = Math.max(projectPaidInflow + invoiceInflow, receiptInflow, projectPaidInflow, invoiceInflow);
+
+    const invoiceUnpaid = unpaidInvoices.reduce(
+      (acc, i) => acc + Number(i.total_amount || i.amount || 0),
+      0
+    );
+    const receivablesPipeline = projectUnpaidBalance + invoiceUnpaid;
     const totalBilledVolume = totalInflow + receivablesPipeline;
 
     const approvedVouchers = vouchersInWindow.filter((v) =>
@@ -1032,7 +1155,15 @@ export default function AdminOverviewAndOpenSpacePage() {
     paidInvoices.forEach((inv) => {
       const k = resolveBucketKey(inv.issue_date || inv.created_at);
       const m = months.find((x) => x.key === k);
-      if (m) m.inflow += Number(inv.total_amount || inv.amount || 0);
+      if (m) m.inflow += Number(inv.total_amount || inv.amount_paid || inv.amount || 0);
+    });
+    projectsInWindow.forEach((proj) => {
+      const paid = Number(proj.amount_paid || proj.paid_amount || 0);
+      if (paid > 0) {
+        const k = resolveBucketKey(proj.created_at || proj.start_date);
+        const m = months.find((x) => x.key === k);
+        if (m) m.inflow += paid;
+      }
     });
 
     if (invoiceInflow === 0 && receiptInflow > 0) {
@@ -1079,10 +1210,24 @@ export default function AdminOverviewAndOpenSpacePage() {
         serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
       }
       const amt = Number(inv.total_amount || inv.amount || 0);
-      const isPaid = String(inv.status || "").toLowerCase() === "paid";
+      const isPaid = ["paid", "completed", "cleared"].includes(String(inv.status || "").toLowerCase());
       if (isPaid) serviceStatsMap[srv].cleared += amt;
       else serviceStatsMap[srv].pipeline += amt;
       serviceStatsMap[srv].totalBilled += amt;
+      serviceStatsMap[srv].count += 1;
+    });
+
+    projectsInWindow.forEach((proj) => {
+      const srv = extractServiceTag(proj.project_title || proj.title || proj.service_category);
+      if (!serviceStatsMap[srv]) {
+        serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
+      }
+      const val = Number(proj.project_value || proj.total_amount || proj.amount || 0);
+      const paid = Number(proj.amount_paid || proj.paid_amount || 0);
+      const unpaid = Math.max(0, val - paid);
+      serviceStatsMap[srv].cleared += paid;
+      serviceStatsMap[srv].pipeline += unpaid;
+      serviceStatsMap[srv].totalBilled += Math.max(val, paid);
       serviceStatsMap[srv].count += 1;
     });
 
@@ -1655,10 +1800,10 @@ export default function AdminOverviewAndOpenSpacePage() {
                       </div>
                     </div>
                     <Link
-                      href="/admin/finance"
-                      className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-400 text-[10px] font-mono font-bold hover:bg-rose-500/25 transition"
+                      href="/admin/finance?tab=expenses"
+                      className="px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 text-[9px] font-mono font-bold hover:bg-rose-500/25 shrink-0 transition"
                     >
-                      + Record Expense
+                      + Expense
                     </Link>
                   </div>
 
@@ -2569,7 +2714,7 @@ export default function AdminOverviewAndOpenSpacePage() {
           </form>
 
           <div className="lg:col-span-7 space-y-3 max-h-[560px] overflow-y-auto pr-1">
-            {myLeaves.map((lv) => (
+            {myLeaves.slice((leavePage - 1) * 5, leavePage * 5).map((lv) => (
               <div key={lv.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -2590,6 +2735,13 @@ export default function AdminOverviewAndOpenSpacePage() {
                 You have not submitted any leave applications yet.
               </div>
             )}
+            <AdminPagination
+              currentPage={leavePage}
+              totalItems={myLeaves.length}
+              pageSize={5}
+              onPageChange={setLeavePage}
+              itemLabel="leave requests"
+            />
           </div>
         </div>
       )}
@@ -2716,6 +2868,9 @@ export default function AdminOverviewAndOpenSpacePage() {
               className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
             />
 
+            {voucherNotice && (
+              <p className="text-xs font-mono font-bold text-[#c7cb2d]">{voucherNotice}</p>
+            )}
             <div className="flex items-center justify-between pt-1">
               <span className="text-xs font-mono font-bold text-[#c7cb2d]">
                 Total: ₦{computedVoucherTotal.toLocaleString()}
@@ -2731,7 +2886,7 @@ export default function AdminOverviewAndOpenSpacePage() {
           </form>
 
           <div className="lg:col-span-7 space-y-3 max-h-[560px] overflow-y-auto pr-1">
-            {myVouchers.map((v) => {
+            {myVouchers.slice((voucherPage - 1) * 5, voucherPage * 5).map((v) => {
               const vComments = Array.isArray(v.comments) ? v.comments : [];
               return (
                 <div key={v.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
@@ -2772,7 +2927,13 @@ export default function AdminOverviewAndOpenSpacePage() {
                       <input
                         value={voucherCommentInputs[v.id] || ""}
                         onChange={(e) => setVoucherCommentInputs((prev) => ({ ...prev, [v.id]: e.target.value }))}
-                        placeholder="Add comment..."
+                        placeholder="Write a comment & press Enter..."
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddVoucherComment(v);
+                          }
+                        }}
                         className="flex-1 bg-[var(--bg-main)] rounded-xl px-3 py-1.5 text-xs"
                       />
                       <button
@@ -2792,6 +2953,13 @@ export default function AdminOverviewAndOpenSpacePage() {
                 You have not submitted any expense vouchers yet.
               </div>
             )}
+            <AdminPagination
+              currentPage={voucherPage}
+              totalItems={myVouchers.length}
+              pageSize={5}
+              onPageChange={setVoucherPage}
+              itemLabel="vouchers"
+            />
           </div>
         </div>
       )}

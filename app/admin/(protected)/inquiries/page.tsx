@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminPagination } from "@/components/admin/admin-pagination";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 
 import * as React from "react";
@@ -10,6 +11,15 @@ import { Mail, Trash2, Edit3, X, Save, User, Flag, FileText, Plus, Printer, Acti
 import FormattedDate from "@/components/admin/formatted-date";
 
 export default function AdminInquiriesPage() {
+  const [inqPageMap, setInqPageMap] = React.useState<Record<string, number>>({
+    inquiries: 1,
+    quotes: 1,
+    feedbacks: 1,
+    newsletter: 1,
+    activity: 1,
+  });
+  const setSectionPage = (key: string, page: number) =>
+    setInqPageMap((prev) => ({ ...prev, [key]: page }));
   const supabase = createClient();
   const [subscribers, setSubscribers] = React.useState<any[]>([]);
   const [canManageNewsletter, setCanManageNewsletter] = React.useState(true);
@@ -49,7 +59,7 @@ export default function AdminInquiriesPage() {
     }
     const rows = [
       ["Email", "Subscribed At", "Status"],
-      ...subscribers.map((s) => [
+      ...subscribers.slice(((inqPageMap["newsletter"] || 1) - 1) * 8, (inqPageMap["newsletter"] || 1) * 8).map((s) => [
         s.email || "",
         s.created_at ? new Date(s.created_at).toISOString().split("T")[0] : "",
         s.status || "active",
@@ -459,7 +469,7 @@ export default function AdminInquiriesPage() {
             </button>
           </div>
           <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
-          {quotes.map((qt) => (
+          {quotes.slice(((inqPageMap["quotes"] || 1) - 1) * 8, (inqPageMap["quotes"] || 1) * 8).map((qt) => (
             <div key={qt.id} className="p-4 rounded-2xl bg-[var(--bg-main)] flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -486,11 +496,12 @@ export default function AdminInquiriesPage() {
           </div>
         </div>
       )}
+            <AdminPagination currentPage={inqPageMap["quotes"] || 1} totalItems={quotes.length} pageSize={8} onPageChange={(p) => setSectionPage("quotes", p)} itemLabel="quotes" />
 
       {/* VIEW 3: STAFF ACTIVITY LOGS */}
       {activeView === "activity" && (
         <div className="bg-[var(--bg-card)] p-5 rounded-3xl space-y-2 print:hidden">
-          {activityLogs.map((log) => (
+          {activityLogs.slice(((inqPageMap["activity"] || 1) - 1) * 8, (inqPageMap["activity"] || 1) * 8).map((log) => (
             <div key={log.id} className="p-3 rounded-xl bg-[var(--bg-main)] flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-mono text-[10px] font-bold">
@@ -508,6 +519,7 @@ export default function AdminInquiriesPage() {
           {activityLogs.length === 0 && <p className="text-xs text-[var(--text-muted)] py-8 text-center">No staff actions recorded yet.</p>}
         </div>
       )}
+            <AdminPagination currentPage={inqPageMap["activity"] || 1} totalItems={activityLogs.length} pageSize={8} onPageChange={(p) => setSectionPage("activity", p)} itemLabel="activity logs" />
 
       {/* MODAL: GENERATE QUOTE FROM INQUIRY */}
       {quoteModal && (

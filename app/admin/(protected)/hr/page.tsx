@@ -224,6 +224,18 @@ async function compressChatOrVoucherImage(file: File, maxW = 1200, quality = 0.7
 
 export default function HRAndWorkspaceSuite() {
   const supabase = createClient();
+  React.useEffect(() => {
+    const ch = supabase
+      .channel("hr-vouchers-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_vouchers" }, () => {
+        if (typeof loadHR === "function") loadHR();
+        if (typeof loadHrData === "function") loadHrData();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<
     "directory" | "onboard" | "leave" | "vouchers" | "promotions" | "salary_matrix" | "chat"
   >("directory");
