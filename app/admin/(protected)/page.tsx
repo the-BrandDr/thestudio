@@ -296,56 +296,94 @@ export default function AdminOverviewAndOpenSpacePage() {
       }));
 
       if (isExecutiveDirector(resolved)) {
-        const [
-          projRes1,
-          projRes2,
-          invRes1,
-          invRes2,
-          invRes3,
-          recRes1,
-          recRes2,
-          payRes,
-          inqRes1,
-          inqRes2,
-        ] = await Promise.all([
-          supabase.from("finance_projects").select("*").order("created_at", { ascending: false }),
-          supabase.from("projects").select("*").order("created_at", { ascending: false }),
-          supabase.from("client_invoices").select("*").order("created_at", { ascending: false }),
-          supabase.from("invoices").select("*").order("created_at", { ascending: false }),
-          supabase.from("finance_invoices").select("*").order("created_at", { ascending: false }),
-          supabase.from("finance_receipts").select("*").order("created_at", { ascending: false }),
-          supabase.from("receipts").select("*").order("created_at", { ascending: false }),
-          supabase.from("payroll_records").select("*").order("created_at", { ascending: false }),
-          supabase.from("contact_messages").select("*").order("created_at", { ascending: false }),
-          supabase.from("contact_inquiries").select("*").order("created_at", { ascending: false }),
-        ]);
-
-        // Merge & deduplicate by id across any matching table names so Single Source of Truth is 100% preserved
-        const mergeById = (...lists: any[][]) => {
-          const map = new Map<string, any>();
-          for (const list of lists) {
-            for (const row of list || []) {
-              if (row && row.id && !map.has(String(row.id))) {
-                map.set(String(row.id), row);
-              }
-            }
+        const safeFetchTable = async (tableName: string) => {
+          try {
+            const { data, error } = await supabase
+              .from(tableName)
+              .select("*")
+              .order("created_at", { ascending: false });
+            if (error || !Array.isArray(data)) return [];
+            return data;
+          } catch (_) {
+            return [];
           }
-          return Array.from(map.values());
         };
 
-        const mergedProjects = mergeById(projRes1.data || [], projRes2.data || []);
-        const mergedInvoices = mergeById(invRes1.data || [], invRes2.data || [], invRes3.data || []);
-        const mergedReceipts = mergeById(recRes1.data || [], recRes2.data || []);
-        const mergedInquiries = mergeById(inqRes1.data || [], inqRes2.data || []);
+        const mergeUniqueRows = (...arrays: any[][]) => {
+          const seen = new Map<string, any>();
+          for (const arr of arrays) {
+            for (const row of arr || []) {
+              if (!row) continue;
+              const key = String(
+                row.id ||
+                  row.invoice_no ||
+                  row.invoice_number ||
+                  row.receipt_no ||
+                  row.voucher_no ||
+                  row.voucher_code ||
+                  JSON.stringify(row)
+              );
+              if (!seen.has(key)) seen.set(key, row);
+            }
+          }
+          return Array.from(seen.values());
+        };
+
+        const [
+          tFinProjects,
+          tProjects,
+          tSalesRecords,
+          tClientProjects,
+          tFinInvoices,
+          tClientInvoices,
+          tInvoices,
+          tFinReceipts,
+          tClientReceipts,
+          tReceipts,
+          tVouchers,
+          tStudioExpenses,
+          tExpenses,
+          tPayrollRecords,
+          tStaffPayroll,
+          tInquiries,
+          tContactMessages,
+          tClientQuotes,
+        ] = await Promise.all([
+          safeFetchTable("finance_projects"),
+          safeFetchTable("projects"),
+          safeFetchTable("sales_records"),
+          safeFetchTable("client_projects"),
+          safeFetchTable("finance_invoices"),
+          safeFetchTable("client_invoices"),
+          safeFetchTable("invoices"),
+          safeFetchTable("finance_receipts"),
+          safeFetchTable("client_receipts"),
+          safeFetchTable("receipts"),
+          safeFetchTable("expense_vouchers"),
+          safeFetchTable("studio_expenses"),
+          safeFetchTable("expenses"),
+          safeFetchTable("payroll_records"),
+          safeFetchTable("staff_payroll"),
+          safeFetchTable("contact_inquiries"),
+          safeFetchTable("contact_messages"),
+          safeFetchTable("client_quotes"),
+        ]);
+
+        const allMergedProjects = mergeUniqueRows(tFinProjects, tProjects, tSalesRecords, tClientProjects);
+        const allMergedInvoices = mergeUniqueRows(tFinInvoices, tClientInvoices, tInvoices);
+        const allMergedReceipts = mergeUniqueRows(tFinReceipts, tClientReceipts, tReceipts);
+        const allMergedVouchers = mergeUniqueRows(voucherData || [], tVouchers, tStudioExpenses, tExpenses);
+        const allMergedPayroll = mergeUniqueRows(tPayrollRecords, tStaffPayroll);
+        const allMergedInquiries = mergeUniqueRows(tInquiries, tContactMessages, tClientQuotes);
 
         setExecData({
           allLeaves: leaveData || [],
-          allVouchers: voucherData || [],
-          projects: mergedProjects,
-          invoices: mergedInvoices,
-          receipts: mergedReceipts,
-          payroll: payRes.data || [],
-          inquiries: mergedInquiries,
+          allVouchers: allMergedVouchers,
+          projects: allMergedProjects,
+          invoices: allMergedInvoices,
+          receipts: allMergedReceipts,
+          payroll: allMergedPayroll,
+          inquiries: allMergedInquiries,
         });
       }
     }
@@ -973,143 +1011,218 @@ export default function AdminOverviewAndOpenSpacePage() {
   const execAnalytics = React.useMemo(() => {
     if (!isExec) return null;
 
-    const extractServiceTag = (rawTitle?: string | null, fallback = "Event Branding & Scenography") => {
-      const str = String(rawTitle || "").trim();
-      const match = str.match(/^\[([^\]]+)\]/);
-      if (match && match[1]) return match[1].trim();
-      for (const s of STUDIO_SERVICE_CATEGORIES) {
-        if (str.toLowerCase().includes(s.split(" ")[0].toLowerCase())) return s;
+    // Cleanly parse numbers even if stored as "150,000" or "₦150,000"
+    const toNum = (val: any): number => {
+      if (typeof val === "number") return isFinite(val) ? val : 0;
+      if (typeof val === "string") {
+        const cleaned = val.replace(/[^0-9.-]+/g, "");
+        const parsed = parseFloat(cleaned);
+        return isFinite(parsed) ? parsed : 0;
       }
+      return 0;
+    };
+
+    const extractServiceTag = (row: any, fallback = "Event Branding & Scenography") => {
+      const rawCandidates = [
+        row?.service_category,
+        row?.service,
+        row?.category,
+        row?.project_title,
+        row?.title,
+        row?.project_name,
+        row?.payment_for,
+        row?.description,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const bracketMatch = rawCandidates.match(/\[([^\]]+)\]/);
+      if (bracketMatch && bracketMatch[1]) {
+        const inner = bracketMatch[1].trim();
+        for (const s of STUDIO_SERVICE_CATEGORIES) {
+          if (s.toLowerCase() === inner.toLowerCase() || s.toLowerCase().includes(inner.toLowerCase())) {
+            return s;
+          }
+        }
+        return inner;
+      }
+
+      const lower = rawCandidates.toLowerCase();
+      if (lower.includes("craft") || lower.includes("tent") || lower.includes("desk") || lower.includes("kiosk"))
+        return "Craft Productions & Custom Fabrication";
+      if (lower.includes("corporate") || lower.includes("identity") || lower.includes("logo") || lower.includes("guideline"))
+        return "Corporate Branding & Identity";
+      if (lower.includes("gadget") || lower.includes("equipment") || lower.includes("rental"))
+        return "Gadgets & Equipment Rental";
+      if (lower.includes("photo") || lower.includes("portrait") || lower.includes("headshot"))
+        return "Photography & Visual Coverage";
+      if (lower.includes("video") || lower.includes("media") || lower.includes("documentary") || lower.includes("livestream"))
+        return "Event Media & Video Production";
+      if (lower.includes("souvenir") || lower.includes("merch") || lower.includes("tote") || lower.includes("gift") || lower.includes("jotter"))
+        return "Souvenirs & Corporate Merch";
+      if (lower.includes("print") || lower.includes("design") || lower.includes("brochure") || lower.includes("flyer") || lower.includes("roll-up"))
+        return "Design & Print Production";
+      if (lower.includes("ooh") || lower.includes("billboard") || lower.includes("signage") || lower.includes("wayfinding"))
+        return "Out-of-Home (OOH) Advertising";
+      if (lower.includes("stage") || lower.includes("lighting") || lower.includes("led"))
+        return "Stage, Lighting & LED Screen Rental";
+      if (lower.includes("strategy") || lower.includes("consult"))
+        return "Brand Strategy & Consultation";
+
       return fallback;
     };
 
-    const invoicesInWindow = execData.invoices.filter((i) => {
-      if (!matchesDateFilter(i.issue_date || i.created_at)) return false;
-      if (selectedServiceFilter !== "All Services") {
-        const srv = extractServiceTag(i.project_title || i.service_category);
-        if (srv !== selectedServiceFilter) return false;
+    const getRowDate = (r: any) =>
+      r?.issue_date ||
+      r?.payment_date ||
+      r?.expense_date ||
+      r?.start_date ||
+      r?.date ||
+      r?.created_at ||
+      null;
+
+    // Total contract/invoice value of a row
+    const getRowTotalValue = (r: any) => {
+      const candidates = [
+        r?.project_value,
+        r?.total_amount,
+        r?.total,
+        r?.contract_value,
+        r?.amount,
+        r?.subtotal,
+        r?.budget,
+        r?.price,
+      ];
+      for (const c of candidates) {
+        const n = toNum(c);
+        if (n > 0) return n;
       }
-      return true;
-    });
+      return 0;
+    };
 
-    const receiptsInWindow = execData.receipts.filter((r) => {
-      if (!matchesDateFilter(r.payment_date || r.created_at)) return false;
-      if (selectedServiceFilter !== "All Services") {
-        const srv = extractServiceTag(r.payment_for);
-        if (srv !== selectedServiceFilter) return false;
+    // Actual cleared/paid inflow on a project or invoice row
+    const getRowClearedAmount = (r: any) => {
+      const explicitPaid = Math.max(
+        toNum(r?.amount_paid),
+        toNum(r?.paid_amount),
+        toNum(r?.amount_received),
+        toNum(r?.deposit_paid)
+      );
+      if (explicitPaid > 0) return explicitPaid;
+
+      const statusStr = String(r?.status || r?.payment_status || "").toLowerCase();
+      if (["paid", "completed", "cleared", "settled", "approved"].includes(statusStr)) {
+        return getRowTotalValue(r);
       }
+      return 0;
+    };
+
+    const projectsInWindow = (execData.projects || []).filter((p) => {
+      if (!matchesDateFilter(getRowDate(p))) return false;
+      if (selectedServiceFilter !== "All Services" && extractServiceTag(p) !== selectedServiceFilter) return false;
       return true;
     });
 
-    // Include both Staff Expense Vouchers AND Direct Finance Expenses (recorded with [DIRECT EXPENSE] or approved status)
-    const vouchersInWindow = execData.allVouchers.filter((v) => {
-      if (!matchesDateFilter(v.created_at || v.expense_date)) return false;
-      if (selectedDeptFilter !== "All Departments" && v.department !== selectedDeptFilter) return false;
-      if (selectedCategoryFilter !== "All Categories" && v.category !== selectedCategoryFilter) return false;
+    const invoicesInWindow = (execData.invoices || []).filter((i) => {
+      if (!matchesDateFilter(getRowDate(i))) return false;
+      if (selectedServiceFilter !== "All Services" && extractServiceTag(i) !== selectedServiceFilter) return false;
       return true;
     });
 
-    const payrollInWindow = execData.payroll.filter((p) => {
-      if (!matchesDateFilter(p.created_at)) return false;
+    const receiptsInWindow = (execData.receipts || []).filter((r) => {
+      if (!matchesDateFilter(getRowDate(r))) return false;
+      if (selectedServiceFilter !== "All Services" && extractServiceTag(r) !== selectedServiceFilter) return false;
+      return true;
+    });
+
+    const vouchersInWindow = (execData.allVouchers || []).filter((v) => {
+      if (!matchesDateFilter(getRowDate(v))) return false;
+      if (selectedDeptFilter !== "All Departments" && v.department && v.department !== selectedDeptFilter) return false;
+      if (selectedCategoryFilter !== "All Categories" && v.category && v.category !== selectedCategoryFilter) return false;
+      return true;
+    });
+
+    const payrollInWindow = (execData.payroll || []).filter((p) => {
+      if (!matchesDateFilter(getRowDate(p))) return false;
       if (selectedDeptFilter !== "All Departments" && p.department && p.department !== selectedDeptFilter) return false;
       return true;
     });
 
-    const leavesInWindow = execData.allLeaves.filter((l) => matchesDateFilter(l.created_at || l.start_date));
-    const inquiriesInWindow = execData.inquiries.filter((inq) => matchesDateFilter(inq.created_at));
+    const leavesInWindow = (execData.allLeaves || []).filter((l) => matchesDateFilter(getRowDate(l)));
+    const inquiriesInWindow = (execData.inquiries || []).filter((inq) => matchesDateFilter(getRowDate(inq)));
 
-    const projectsInWindow = (execData.projects || []).filter((p) => {
-      if (!matchesDateFilter(p.created_at || p.start_date)) return false;
-      if (selectedServiceFilter !== "All Services") {
-        const srv = extractServiceTag(p.project_title || p.title || p.name || p.service_category);
-        if (srv !== selectedServiceFilter) return false;
-      }
-      return true;
-    });
-
-    const getRowTotal = (r: any) =>
-      Number(r.total_amount ?? r.project_value ?? r.amount ?? r.subtotal ?? r.budget ?? 0);
-    const getRowPaid = (r: any) => {
-      if (r.amount_paid !== undefined && r.amount_paid !== null) return Number(r.amount_paid);
-      if (r.paid_amount !== undefined && r.paid_amount !== null) return Number(r.paid_amount);
-      if (r.amount_received !== undefined && r.amount_received !== null) return Number(r.amount_received);
-      const st = String(r.status || r.payment_status || "").toLowerCase();
-      if (["paid", "completed", "cleared"].includes(st)) return getRowTotal(r);
-      return 0;
-    };
-
-    const paidInvoices = invoicesInWindow.filter((i) => {
-      const st = String(i.status || i.payment_status || "").toLowerCase();
-      return ["paid", "completed", "cleared", "partially_paid"].includes(st) || getRowPaid(i) > 0;
-    });
-
-    const projectPaidInflow = projectsInWindow.reduce((acc, p) => acc + getRowPaid(p), 0);
-    const projectUnpaidBalance = projectsInWindow.reduce(
-      (acc, p) => acc + Math.max(0, getRowTotal(p) - getRowPaid(p)),
+    // Calculate Inflow & Unpaid Pipeline across Projects, Invoices, and Receipts
+    const projectClearedTotal = projectsInWindow.reduce((acc, p) => acc + getRowClearedAmount(p), 0);
+    const projectUnpaidTotal = projectsInWindow.reduce(
+      (acc, p) => acc + Math.max(0, getRowTotalValue(p) - getRowClearedAmount(p)),
       0
     );
 
-    const invoiceInflow = invoicesInWindow.reduce((acc, i) => acc + getRowPaid(i), 0);
-    const invoiceUnpaid = invoicesInWindow.reduce(
-      (acc, i) => acc + Math.max(0, getRowTotal(i) - getRowPaid(i)),
+    const invoiceClearedTotal = invoicesInWindow.reduce((acc, i) => acc + getRowClearedAmount(i), 0);
+    const invoiceUnpaidTotal = invoicesInWindow.reduce(
+      (acc, i) => acc + Math.max(0, getRowTotalValue(i) - getRowClearedAmount(i)),
       0
     );
 
-    const receiptInflow = receiptsInWindow.reduce(
-      (acc, r) => acc + Number(r.amount_received ?? r.amount_paid ?? r.amount ?? 0),
+    const receiptClearedTotal = receiptsInWindow.reduce(
+      (acc, r) => acc + Math.max(toNum(r?.amount_received), toNum(r?.amount_paid), toNum(r?.amount), toNum(r?.total)),
       0
     );
 
-    const totalInflow = Math.max(projectPaidInflow + invoiceInflow, receiptInflow, projectPaidInflow, invoiceInflow);
-    const receivablesPipeline = projectUnpaidBalance + invoiceUnpaid;
+    // Avoid double-counting if receipts mirror paid invoices, while capturing all distinct inflows
+    const combinedProjectAndInvoiceInflow = projectClearedTotal + invoiceClearedTotal;
+    const totalInflow = Math.max(combinedProjectAndInvoiceInflow, receiptClearedTotal);
+    const receivablesPipeline = projectUnpaidTotal + invoiceUnpaidTotal;
     const totalBilledVolume = totalInflow + receivablesPipeline;
 
-    const approvedVouchers = vouchersInWindow.filter((v) =>
-      ["approved", "disbursed", "paid", "recorded"].includes(String(v.status || "").toLowerCase())
-    );
+    // Outflow (Approved/Cleared Vouchers + Direct Expenses + Disbursed Payroll)
+    const clearedVouchers = vouchersInWindow.filter((v) => {
+      const st = String(v?.status || "approved").toLowerCase();
+      return !["rejected", "declined", "cancelled"].includes(st);
+    });
     const pendingVouchers = vouchersInWindow.filter(
-      (v) => String(v.status || "pending").toLowerCase() === "pending"
+      (v) => String(v?.status || "").toLowerCase() === "pending"
     );
-    const voucherOutflow = approvedVouchers.reduce((acc, v) => acc + Number(v.amount || 0), 0);
 
-    const approvedPayroll = payrollInWindow.filter((p) =>
-      ["approved", "disbursed", "paid"].includes(String(p.status || "").toLowerCase())
+    const voucherOutflow = clearedVouchers
+      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
+      .reduce((acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost), 0);
+
+    const disbursedPayroll = payrollInWindow.filter((p) =>
+      ["approved", "disbursed", "paid", "cleared"].includes(String(p?.status || "").toLowerCase())
     );
-    const payrollOutflow = approvedPayroll.reduce((acc, p) => acc + Number(p.net_pay || p.gross_pay || 0), 0);
+    const payrollOutflow = disbursedPayroll.reduce(
+      (acc, p) => acc + Math.max(toNum(p?.net_pay), toNum(p?.gross_pay), toNum(p?.amount), toNum(p?.salary)),
+      0
+    );
 
     const totalOutflow = voucherOutflow + payrollOutflow;
     const netPosition = totalInflow - totalOutflow;
 
-    const pendingLeaves = leavesInWindow.filter((l) => String(l.status || "pending").toLowerCase() === "pending");
+    const pendingLeaves = leavesInWindow.filter((l) => String(l?.status || "pending").toLowerCase() === "pending");
 
-    // Performance Rating Criteria
+    // Performance Benchmarks
     const targetAchievementPct =
       revenueTargetBenchmark > 0 ? Math.min(999, Math.round((totalInflow / revenueTargetBenchmark) * 100)) : 0;
     const operatingMarginPct = totalInflow > 0 ? Math.round((netPosition / totalInflow) * 100) : 0;
     const collectionEfficiencyPct = totalBilledVolume > 0 ? Math.round((totalInflow / totalBilledVolume) * 100) : 100;
     const totalRequests = vouchersInWindow.length + leavesInWindow.length;
-    const clearedRequests = approvedVouchers.length + leavesInWindow.filter((l) => l.status === "approved").length;
+    const clearedRequests =
+      vouchersInWindow.filter((v) => ["approved", "disbursed", "paid"].includes(String(v?.status || "").toLowerCase())).length +
+      leavesInWindow.filter((l) => String(l?.status || "").toLowerCase() === "approved").length;
     const approvalTurnaroundPct = totalRequests > 0 ? Math.round((clearedRequests / totalRequests) * 100) : 100;
 
-    // ========================================================================
-    // DYNAMIC TIMELINE BUCKETS FOR CASHFLOW & NET MARGIN TRAJECTORY
-    // Adapts automatically to: This Month, Last Month, This Quarter, Last 6 Months,
-    // This Year (12 mos), Previous Year (12 mos), All Time, or Custom Date Range
-    // ========================================================================
+    // Dynamic Timeline Buckets
     const months: Array<{ label: string; key: string; inflow: number; outflow: number; net: number }> = [];
     const now = new Date();
 
     if (datePreset === "this_month" || datePreset === "last_month") {
-      const targetYear =
-        datePreset === "this_month"
-          ? now.getFullYear()
-          : new Date(now.getFullYear(), now.getMonth() - 1, 1).getFullYear();
-      const targetMonth =
-        datePreset === "this_month"
-          ? now.getMonth()
-          : new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth();
-      const mPrefix = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}`;
-      const mShort = new Date(targetYear, targetMonth, 1).toLocaleDateString("en-US", { month: "short" });
+      const targetDate =
+        datePreset === "this_month" ? now : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const y = targetDate.getFullYear();
+      const m = targetDate.getMonth();
+      const mPrefix = `${y}-${String(m + 1).padStart(2, "0")}`;
+      const mShort = new Date(y, m, 1).toLocaleDateString("en-US", { month: "short" });
       for (let w = 1; w <= 4; w++) {
         months.push({ label: `${mShort} W${w}`, key: `${mPrefix}-W${w}`, inflow: 0, outflow: 0, net: 0 });
       }
@@ -1143,12 +1256,7 @@ export default function AdminOverviewAndOpenSpacePage() {
         months.push({ label, key, inflow: 0, outflow: 0, net: 0 });
         cur.setMonth(cur.getMonth() + 1);
       }
-      if (months.length === 0) {
-        const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        months.push({ label: "Selected", key, inflow: 0, outflow: 0, net: 0 });
-      }
     } else {
-      // "all" -> Last 12 months rolling
       for (let i = 11; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1163,49 +1271,63 @@ export default function AdminOverviewAndOpenSpacePage() {
     }
 
     const resolveBucketKey = (rawDateStr?: string | null) => {
-      if (!rawDateStr) return "";
-      const d = new Date(rawDateStr);
-      if (isNaN(d.getTime())) return "";
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const d = rawDateStr ? new Date(rawDateStr) : new Date();
+      const validDate = isNaN(d.getTime()) ? new Date() : d;
+      const ym = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, "0")}`;
       if (datePreset === "this_month" || datePreset === "last_month") {
-        const wk = Math.min(4, Math.ceil(d.getDate() / 7));
+        const wk = Math.min(4, Math.max(1, Math.ceil(validDate.getDate() / 7)));
         return `${ym}-W${wk}`;
       }
       return ym;
     };
 
-    paidInvoices.forEach((inv) => {
-      const k = resolveBucketKey(inv.issue_date || inv.created_at);
-      const m = months.find((x) => x.key === k);
-      if (m) m.inflow += Number(inv.total_amount || inv.amount_paid || inv.amount || 0);
-    });
-    projectsInWindow.forEach((proj) => {
-      const paid = Number(proj.amount_paid || proj.paid_amount || 0);
-      if (paid > 0) {
-        const k = resolveBucketKey(proj.created_at || proj.start_date);
-        const m = months.find((x) => x.key === k);
-        if (m) m.inflow += paid;
+    projectsInWindow.forEach((p) => {
+      const val = getRowClearedAmount(p);
+      if (val > 0) {
+        const k = resolveBucketKey(getRowDate(p));
+        const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+        if (bucket) bucket.inflow += val;
       }
     });
 
-    if (invoiceInflow === 0 && receiptInflow > 0) {
+    invoicesInWindow.forEach((inv) => {
+      const val = getRowClearedAmount(inv);
+      if (val > 0) {
+        const k = resolveBucketKey(getRowDate(inv));
+        const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+        if (bucket) bucket.inflow += val;
+      }
+    });
+
+    if (combinedProjectAndInvoiceInflow === 0 && receiptClearedTotal > 0) {
       receiptsInWindow.forEach((rec) => {
-        const k = resolveBucketKey(rec.payment_date || rec.created_at);
-        const m = months.find((x) => x.key === k);
-        if (m) m.inflow += Number(rec.amount_received || rec.amount || 0);
+        const val = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount));
+        if (val > 0) {
+          const k = resolveBucketKey(getRowDate(rec));
+          const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+          if (bucket) bucket.inflow += val;
+        }
       });
     }
 
-    approvedVouchers.forEach((v) => {
-      const k = resolveBucketKey(v.expense_date || v.created_at);
-      const m = months.find((x) => x.key === k);
-      if (m) m.outflow += Number(v.amount || 0);
-    });
+    clearedVouchers
+      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
+      .forEach((v) => {
+        const val = toNum(v?.amount || v?.total_amount || v?.cost);
+        if (val > 0) {
+          const k = resolveBucketKey(getRowDate(v));
+          const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+          if (bucket) bucket.outflow += val;
+        }
+      });
 
-    approvedPayroll.forEach((p) => {
-      const k = resolveBucketKey(p.pay_period || p.created_at);
-      const m = months.find((x) => x.key === k);
-      if (m) m.outflow += Number(p.net_pay || p.gross_pay || 0);
+    disbursedPayroll.forEach((p) => {
+      const val = Math.max(toNum(p?.net_pay), toNum(p?.gross_pay), toNum(p?.amount), toNum(p?.salary));
+      if (val > 0) {
+        const k = resolveBucketKey(getRowDate(p));
+        const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+        if (bucket) bucket.outflow += val;
+      }
     });
 
     months.forEach((m) => {
@@ -1214,9 +1336,7 @@ export default function AdminOverviewAndOpenSpacePage() {
 
     const maxMonthVal = Math.max(1, ...months.map((m) => Math.max(m.inflow, m.outflow, Math.abs(m.net))));
 
-    // ========================================================================
-    // INCOME BY SERVICE STREAM (AUTOMATICALLY SORTED BY HIGHEST INCOME FIRST)
-    // ========================================================================
+    // Income by Service Stream Curve Data (Sorted automatically by highest income)
     const serviceStatsMap: Record<
       string,
       { name: string; cleared: number; pipeline: number; totalBilled: number; count: number }
@@ -1226,47 +1346,37 @@ export default function AdminOverviewAndOpenSpacePage() {
       serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
     });
 
-    invoicesInWindow.forEach((inv) => {
-      const srv = extractServiceTag(inv.project_title || i_srv(inv));
+    const recordServiceRow = (row: any, clearedVal: number, unpaidVal: number) => {
+      const srv = extractServiceTag(row);
       if (!serviceStatsMap[srv]) {
         serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
       }
-      const amt = Number(inv.total_amount || inv.amount || 0);
-      const isPaid = ["paid", "completed", "cleared"].includes(String(inv.status || "").toLowerCase());
-      if (isPaid) serviceStatsMap[srv].cleared += amt;
-      else serviceStatsMap[srv].pipeline += amt;
-      serviceStatsMap[srv].totalBilled += amt;
-      serviceStatsMap[srv].count += 1;
-    });
+      serviceStatsMap[srv].cleared += clearedVal;
+      serviceStatsMap[srv].pipeline += unpaidVal;
+      serviceStatsMap[srv].totalBilled += clearedVal + unpaidVal;
+      if (clearedVal > 0 || unpaidVal > 0) {
+        serviceStatsMap[srv].count += 1;
+      }
+    };
 
     projectsInWindow.forEach((proj) => {
-      const srv = extractServiceTag(proj.project_title || proj.title || proj.service_category);
-      if (!serviceStatsMap[srv]) {
-        serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
-      }
-      const val = Number(proj.project_value || proj.total_amount || proj.amount || 0);
-      const paid = Number(proj.amount_paid || proj.paid_amount || 0);
-      const unpaid = Math.max(0, val - paid);
-      serviceStatsMap[srv].cleared += paid;
-      serviceStatsMap[srv].pipeline += unpaid;
-      serviceStatsMap[srv].totalBilled += Math.max(val, paid);
-      serviceStatsMap[srv].count += 1;
+      const totalV = getRowTotalValue(proj);
+      const clearedV = getRowClearedAmount(proj);
+      const unpaidV = Math.max(0, totalV - clearedV);
+      recordServiceRow(proj, clearedV, unpaidV);
     });
 
-    function i_srv(inv: any) {
-      return inv?.service_category || "";
-    }
+    invoicesInWindow.forEach((inv) => {
+      const totalV = getRowTotalValue(inv);
+      const clearedV = getRowClearedAmount(inv);
+      const unpaidV = Math.max(0, totalV - clearedV);
+      recordServiceRow(inv, clearedV, unpaidV);
+    });
 
-    if (invoiceInflow === 0 && receiptInflow > 0) {
+    if (combinedProjectAndInvoiceInflow === 0 && receiptClearedTotal > 0) {
       receiptsInWindow.forEach((rec) => {
-        const srv = extractServiceTag(rec.payment_for);
-        if (!serviceStatsMap[srv]) {
-          serviceStatsMap[srv] = { name: srv, cleared: 0, pipeline: 0, totalBilled: 0, count: 0 };
-        }
-        const amt = Number(rec.amount_received || rec.amount || 0);
-        serviceStatsMap[srv].cleared += amt;
-        serviceStatsMap[srv].totalBilled += amt;
-        serviceStatsMap[srv].count += 1;
+        const clearedV = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount));
+        recordServiceRow(rec, clearedV, 0);
       });
     }
 
@@ -1279,7 +1389,6 @@ export default function AdminOverviewAndOpenSpacePage() {
       Object.values(serviceStatsMap).reduce((acc, s) => acc + s.cleared, 0)
     );
 
-    // Automatically sort strictly by Cleared Income (descending), then Total Billed (descending)
     const revenueByService = Object.values(serviceStatsMap)
       .map((s) => ({
         ...s,
@@ -1292,20 +1401,20 @@ export default function AdminOverviewAndOpenSpacePage() {
       }))
       .sort((a, b) => b.cleared - a.cleared || b.totalBilled - a.totalBilled);
 
-    // ========================================================================
-    // OUTFLOW DISTRIBUTION DONUT (NO HARDCODED MKTG PIN — SORTED BY ACTUAL SPEND)
-    // ========================================================================
+    // Outflow Distribution Donut (Sorted by actual spend)
     const catMap: Record<string, number> = {};
-    approvedVouchers.forEach((v) => {
-      const c = v.category || "Operations";
-      catMap[c] = (catMap[c] || 0) + Number(v.amount || 0);
-    });
+    clearedVouchers
+      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
+      .forEach((v) => {
+        const c = v.category || "Operations";
+        catMap[c] = (catMap[c] || 0) + toNum(v?.amount || v?.total_amount || v?.cost);
+      });
     if (payrollOutflow > 0) {
       catMap["Staff Payroll (Disbursed)"] = payrollOutflow;
     }
 
     const totalExpenseVol = Math.max(1, Object.values(catMap).reduce((a, b) => a + b, 0));
-    const palette = ["#f59e0b", "#f59e0b", "#10b981", "#38bdf8", "#a855f7", "#60a5fa", "#c7cb2d"];
+    const palette = ["#c7cb2d", "#10b981", "#f59e0b", "#38bdf8", "#a855f7", "#60a5fa"];
     const topExpenseCategories = Object.entries(catMap)
       .filter(([, amount]) => amount > 0)
       .sort((a, b) => b[1] - a[1])
