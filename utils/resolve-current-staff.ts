@@ -124,3 +124,22 @@ export function checkModuleAccess(staff: any, moduleName: "hr" | "finance" | "po
   }
   return false;
 }
+
+
+export function isExecutiveDirector(staff: any): boolean {
+  if (!staff) return false;
+  const code = String(staff.staff_id || "").toUpperCase();
+  const role = String(staff.role || "").toLowerCase();
+  const level = String(staff.hierarchy_level || "").toUpperCase();
+  const title = String(staff.job_title || "").toLowerCase();
+  return (
+    code === "LS-01" ||
+    role === "super_admin" ||
+    role === "executive" ||
+    level.startsWith("L7") ||
+    title.includes("executive director") ||
+    title.includes("managing director") ||
+    title.includes("ceo") ||
+    title.includes("founder")
+  );
+}

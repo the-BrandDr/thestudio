@@ -1,3 +1,4 @@
+import { resolveAuthenticatedStaff, isExecutiveDirector } from "@/utils/resolve-current-staff";
 "use client";
 
 import * as React from "react";
@@ -65,7 +66,23 @@ export default function EnterpriseFinanceSuite() {
       }
     });
   }, [supabase]);
-  const [activeTab, setActiveTab] = React.useState<"overview" | "sales" | "billing" | "receipts" | "payroll" | "tax">("overview");
+  const [activeTab, setActiveTab] = React.useState<any>("overview");
+  const [isExecDirector, setIsExecDirector] = React.useState<boolean>(true);
+
+  React.useEffect(() => {
+    async function checkExecClearance() {
+      const supabaseClient = createClient();
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const { data: staffRows } = await supabaseClient.from("staff_profiles").select("*");
+      const resolved = resolveAuthenticatedStaff(authData?.user, staffRows || []);
+      const execAllowed = isExecutiveDirector(resolved);
+      setIsExecDirector(execAllowed);
+      if (!execAllowed) {
+        setActiveTab((prev: string) => (prev === "overview" ? "projects" : prev));
+      }
+    }
+    checkExecClearance();
+  }, []);
   const [projectFilter, setProjectFilter] = React.useState<"all" | "ongoing" | "pending" | "completed">("all");
   const [saving, setSaving] = React.useState(false);
   const [notice, setNotice] = React.useState("");
@@ -835,7 +852,7 @@ export default function EnterpriseFinanceSuite() {
       <div className="bg-[var(--bg-card)] px-3 py-2 rounded-2xl border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <div className="flex flex-wrap items-center gap-1">
           {[
-            { id: "overview", label: "Overview", icon: Landmark },
+            ...(isExecDirector ? [{ id: "overview", label: "Overview", icon: Landmark }] : []),
             { id: "sales", label: "Projects & Sales", icon: Briefcase, badge: unifiedProjects.length },
             { id: "billing", label: "Billing", icon: FileSpreadsheet, badge: invoices.length },
             { id: "receipts", label: "Receipts", icon: Receipt, badge: receipts.length },
@@ -868,7 +885,7 @@ export default function EnterpriseFinanceSuite() {
       </div>
 
       {/* TAB 1: OVERVIEW */}
-      {activeTab === "overview" && (
+      {activeTab === "overview" && isExecDirector && (
         <div className="space-y-5 print:hidden">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/50 space-y-1.5">
