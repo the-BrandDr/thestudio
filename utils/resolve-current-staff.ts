@@ -143,3 +143,33 @@ export function isExecutiveDirector(staff: any): boolean {
     title.includes("founder")
   );
 }
+
+
+export const STUDIO_DEPARTMENTS = [
+  "Executive & Board Governance",
+  "Brand Strategy & Positioning",
+  "Brand Communications & PR",
+  "Design & Creative",
+  "Spatial & Event Production",
+  "Out-of-Home (OOH) & Media",
+  "Digital, UI/UX & Engineering",
+  "Motion, Video & Photography",
+  "Client Services & Growth",
+  "Operations, Logistics & Procurement",
+  "Human Resources & People Operations",
+  "Finance, Accounting & Treasury",
+  "Facility, Fleet & Support Services",
+];
+
+export const STUDIO_SERVICE_CATEGORIES = [
+  "Event Branding & Scenography",
+  "Corporate Branding & Identity",
+  "Event Media & Video Production",
+  "Photography & Visual Coverage",
+  "Gadgets & Equipment Rental",
+  "Souvenirs & Corporate Merch",
+  "Design & Print Production",
+  "Out-of-Home (OOH) Advertising",
+  "Stage, Lighting & LED Screen Rental",
+  "Brand Strategy & Consultation",
+];

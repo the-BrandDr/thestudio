@@ -117,13 +117,19 @@ const DEPARTMENT_JOB_TITLES: Record<string, string[]> = {
     "Logistics & Inventory Officer",
     "Facility & Power Systems Technician",
   ],
-  "Finance, HR & Administration": [
-    "Head of Finance",
-    "Accountant & Finance Officer",
+  "Human Resources & People Operations": [
+    "HR & People Operations Lead",
+    "Human Resources Officer",
+    "Talent Acquisition & Culture Specialist",
+    "Administrative & Office Coordinator",
+    "People Operations Associate"
+  ],
+  "Finance, Accounting & Treasury": [
+    "Finance & Accounts Lead",
+    "Accountant / Treasury Officer",
+    "Billing, Invoicing & Revenue Officer",
     "Payroll & Tax Compliance Specialist",
-    "HR & People Operations Manager",
-    "Administrative & Compliance Officer",
-    "Front Desk & Studio Coordinator",
+    "Accounts Payable / Receivable Associate"
   ],
   "Facility, Fleet & Support Services": [
     "Executive & Fleet Driver",

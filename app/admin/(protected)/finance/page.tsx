@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveAuthenticatedStaff, isExecutiveDirector } from "@/utils/resolve-current-staff";
+import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
 import { triggerPushNotification } from "@/utils/push-notifications";
@@ -67,6 +67,18 @@ export default function EnterpriseFinanceSuite() {
     });
   }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<any>("overview");
+
+  // Accountable Service Category Dropdown + Custom Entry states
+  const [projectServiceCategory, setProjectServiceCategory] = React.useState<string>(STUDIO_SERVICE_CATEGORIES[0]);
+  const [projectCustomService, setProjectCustomService] = React.useState<string>("");
+  const [projectServiceFilter, setProjectServiceFilter] = React.useState<string>("All Services");
+
+  const [invoiceServiceCategory, setInvoiceServiceCategory] = React.useState<string>(STUDIO_SERVICE_CATEGORIES[0]);
+  const [invoiceCustomService, setInvoiceCustomService] = React.useState<string>("");
+
+  const [receiptServiceCategory, setReceiptServiceCategory] = React.useState<string>(STUDIO_SERVICE_CATEGORIES[0]);
+  const [receiptCustomService, setReceiptCustomService] = React.useState<string>("");
+
   const [isExecDirector, setIsExecDirector] = React.useState<boolean>(true);
 
   React.useEffect(() => {
@@ -993,6 +1005,32 @@ export default function EnterpriseFinanceSuite() {
             <div>
               <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">Project Title</label>
               <input type="text" required value={saleForm.project_name} onChange={(e) => setSaleForm({ ...saleForm, project_name: e.target.value })} className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs" />
+                <div className="pt-2">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1.5">
+                    SERVICE CATEGORY *
+                  </label>
+                  <select
+                    value={projectServiceCategory}
+                    onChange={(e) => setProjectServiceCategory(e.target.value)}
+                    className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)]"
+                  >
+                    {STUDIO_SERVICE_CATEGORIES.map((srv) => (
+                      <option key={srv} value={srv}>
+                        {srv}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Other / Custom Service (Type below...)</option>
+                  </select>
+                  {projectServiceCategory === "__custom__" && (
+                    <input
+                      required
+                      value={projectCustomService}
+                      onChange={(e) => setProjectCustomService(e.target.value)}
+                      placeholder="Type custom service category (e.g. Drone Cinematography, Truss Rental)..."
+                      className="mt-2 w-full bg-[var(--bg-main)] border border-[#c7cb2d]/60 rounded-xl px-3.5 py-2 text-xs text-[var(--text-primary)]"
+                    />
+                  )}
+                </div>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               <div>
@@ -1119,6 +1157,32 @@ export default function EnterpriseFinanceSuite() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 print:hidden">
           <form onSubmit={(e) => { if (execViewOnly) { e.preventDefault(); alert("Executive Oversight Mode (View-Only): You have full visibility into Finance operations, but modifying financial records requires Finance clearance."); return; } return handleCreateInvoice(e); }} className="lg:col-span-5 bg-[var(--bg-card)] p-5 rounded-3xl space-y-3.5 h-fit">
             <h2 className="font-display text-base font-bold">Create Invoice</h2>
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
+                  INVOICE SERVICE CATEGORY *
+                </label>
+                <select
+                  value={invoiceServiceCategory}
+                  onChange={(e) => setInvoiceServiceCategory(e.target.value)}
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)]"
+                >
+                  {STUDIO_SERVICE_CATEGORIES.map((srv) => (
+                    <option key={srv} value={srv}>
+                      {srv}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Other / Custom Service (Type below...)</option>
+                </select>
+                {invoiceServiceCategory === "__custom__" && (
+                  <input
+                    required
+                    value={invoiceCustomService}
+                    onChange={(e) => setInvoiceCustomService(e.target.value)}
+                    placeholder="Enter custom service name..."
+                    className="mt-2 w-full bg-[var(--bg-main)] border border-[#c7cb2d]/60 rounded-xl px-3.5 py-2 text-xs"
+                  />
+                )}
+              </div>
 
             <div className="grid grid-cols-2 gap-2.5">
               <div>

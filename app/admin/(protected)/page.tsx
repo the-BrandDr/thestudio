@@ -55,7 +55,8 @@ const STUDIO_DEPARTMENTS = [
   "Motion, Video & Photography",
   "Client Services & Growth",
   "Operations, Logistics & Procurement",
-  "Finance, HR & Administration",
+  "Human Resources & People Operations",
+  "Finance, Accounting & Treasury",
   "Facility, Fleet & Support Services",
 ];
 
@@ -953,8 +954,30 @@ export default function AdminOverviewAndOpenSpacePage() {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
+    const srvMap: Record<string, number> = {};
+    paidInvoices.forEach((inv) => {
+      const title = String(inv.project_title || "");
+      const bracketMatch = title.match(/^\[([^\]]+)\]/);
+      const srvName = bracketMatch ? bracketMatch[1] : (inv.service_category || "Event Branding & Scenography");
+      srvMap[srvName] = (srvMap[srvName] || 0) + Number(inv.total_amount || inv.amount || 0);
+    });
+    if (Object.keys(srvMap).length === 0) {
+      receiptsInWindow.forEach((rec) => {
+        const pf = String(rec.payment_for || "");
+        const bracketMatch = pf.match(/^\[([^\]]+)\]/);
+        const srvName = bracketMatch ? bracketMatch[1] : "General Studio Services";
+        srvMap[srvName] = (srvMap[srvName] || 0) + Number(rec.amount_received || rec.amount || 0);
+      });
+    }
+    const totalSrvRev = Math.max(1, Object.values(srvMap).reduce((a, b) => a + b, 0));
+    const revenueByService = Object.entries(srvMap)
+      .map(([name, amount]) => ({ name, amount, pct: Math.round((amount / totalSrvRev) * 100) }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+
     return {
       totalInflow,
+      revenueByService,
       totalOutflow,
       voucherOutflow,
       payrollOutflow,
@@ -1380,6 +1403,47 @@ export default function AdminOverviewAndOpenSpacePage() {
                 </div>
               </div>
             </div>
+
+              {/* ACCOUNTABLE REVENUE BY SERVICE STREAM (GENERATED FROM SALES, INVOICES & RECEIPTS DROPDOWNS) */}
+              <div className="p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-[#c7cb2d]" />
+                    <h3 className="font-display text-sm font-bold">
+                      Revenue Breakdown by Service Category (Sales, Invoices & Receipts)
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-mono text-[var(--text-dim)]">
+                    Event Branding • Corporate • Photography • Gadgets Rental • OOH
+                  </span>
+                </div>
+
+                {(!execAnalytics.revenueByService || execAnalytics.revenueByService.length === 0) ? (
+                  <p className="text-xs text-[var(--text-muted)] py-4 text-center">
+                    No cleared revenue tagged by service category in this period yet. Select a service category when recording a project, invoice, or receipt to populate live insights.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                    {execAnalytics.revenueByService.map((srv: any) => (
+                      <div key={srv.name} className="p-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/40 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold truncate">{srv.name}</span>
+                          <span className="font-mono text-[10px] text-[#c7cb2d] font-bold">{srv.pct}%</span>
+                        </div>
+                        <p className="font-mono text-sm font-bold text-emerald-400">
+                          ₦{srv.amount.toLocaleString()}
+                        </p>
+                        <div className="w-full h-1.5 rounded-full bg-[var(--bg-main)] overflow-hidden">
+                          <div
+                            style={{ width: `${Math.max(5, srv.pct)}%` }}
+                            className="h-full rounded-full bg-emerald-400"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
           )}
 
           {/* -----------------------------------------------------------------
