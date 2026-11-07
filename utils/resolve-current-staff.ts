@@ -5,6 +5,7 @@ export const FOUNDER_EMAILS = [
 ];
 
 export const VOUCHER_CATEGORIES = [
+  "Marketing & Advertising",
   "Operational & Studio Upkeep",
   "Project & Event Production",
   "Print, Signage & Large-Format Media",
