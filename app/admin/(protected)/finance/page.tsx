@@ -126,18 +126,18 @@ export default function EnterpriseFinanceSuite() {
   });
   const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
 
-  const handleRecordDirectExpense = async (e: React.FormEvent) => {
+    const handleRecordDirectExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!directExpenseForm.title || !directExpenseForm.amount) return;
     setSaving(true);
-    const supabaseClient = createClient();
+    setExpenseNotice("");
     const finalCategory =
       directExpenseForm.category === "__custom__"
         ? directExpenseForm.custom_category.trim() || "General Expense"
         : directExpenseForm.category;
     const expNo = `LV-EXP-${Date.now().toString().slice(-5)}`;
 
-    await supabaseClient.from("expense_vouchers").insert({
+    const payload = {
       voucher_no: expNo,
       staff_name: directExpenseForm.vendor_name
         ? `[DIRECT] ${directExpenseForm.vendor_name}`
@@ -148,30 +148,56 @@ export default function EnterpriseFinanceSuite() {
       project_ref: directExpenseForm.project_ref || null,
       category: finalCategory,
       payment_method: directExpenseForm.payment_method,
-      description: directExpenseForm.notes || `Direct expense paid to ${directExpenseForm.vendor_name || "Vendor"}`,
+      description:
+        directExpenseForm.notes ||
+        `Direct studio expense paid to ${directExpenseForm.vendor_name || "Vendor"}`,
       amount: Number(directExpenseForm.amount || 0),
       status: "approved",
       ops_status: "approved",
       finance_status: "approved",
       strategist_status: "approved",
+      expense_date: directExpenseForm.expense_date || new Date().toISOString().slice(0, 10),
       created_at: directExpenseForm.expense_date
         ? new Date(directExpenseForm.expense_date).toISOString()
         : new Date().toISOString(),
-    });
+    };
 
-    setDirectExpenseForm({
-      title: "",
-      vendor_name: "",
-      category: "Marketing & Advertising",
-      custom_category: "",
-      amount: "",
-      payment_method: "Bank Transfer",
-      expense_date: new Date().toISOString().slice(0, 10),
-      project_ref: "",
-      notes: "",
-    });
-    setSaving(false);
-    if (typeof loadFinanceData === "function") loadFinanceData();
+    try {
+      const res = await fetch("/api/admin/vouchers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.error) {
+        setExpenseNotice(`❌ Failed to record expense: ${json.error || "Database error"}`);
+        setSaving(false);
+        return;
+      }
+
+      if (json.data && typeof setVouchers === "function") {
+        setVouchers((prev: any[]) => [json.data, ...prev]);
+      }
+
+      setExpenseNotice(`✅ Direct Expense (${expNo}) saved to database!`);
+      setDirectExpenseForm({
+        title: "",
+        vendor_name: "",
+        category: "Marketing & Advertising",
+        custom_category: "",
+        amount: "",
+        payment_method: "Bank Transfer",
+        expense_date: new Date().toISOString().slice(0, 10),
+        project_ref: "",
+        notes: "",
+      });
+      setTimeout(() => setExpenseNotice(""), 5000);
+    } catch (err: any) {
+      setExpenseNotice(`❌ Network error: ${err?.message || "Failed to reach server"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
 

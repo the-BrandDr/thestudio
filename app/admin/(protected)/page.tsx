@@ -486,14 +486,13 @@ export default function AdminOverviewAndOpenSpacePage() {
     reader.readAsDataURL(file);
   };
 
-    const handleCreateVoucher = async (e: React.FormEvent) => {
+      const handleCreateVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!me) return;
     setSaving(true);
     setVoucherNotice("");
     const vNo = `LV-VCH-${Date.now().toString().slice(-5)}`;
     const authorName = `${me.first_name || "Staff"} ${me.last_name || ""}`.trim();
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(me.id || ""));
 
     const initialComments = voucherForm.initial_comment.trim()
       ? [
@@ -505,9 +504,9 @@ export default function AdminOverviewAndOpenSpacePage() {
         ]
       : [];
 
-    const fullPayload: Record<string, any> = {
+    const payload = {
       voucher_no: vNo,
-      staff_id: isUuid ? me.id : null,
+      staff_id: me.id || null,
       staff_name: authorName,
       staff_code: me.staff_id || "LS-01",
       department: me.department || "Operations",
@@ -530,65 +529,53 @@ export default function AdminOverviewAndOpenSpacePage() {
       strategist_status: "pending",
     };
 
-    let { data: insertedRow, error } = await supabase
-      .from("expense_vouchers")
-      .insert(fullPayload)
-      .select("*")
-      .single();
+    try {
+      const res = await fetch("/api/admin/vouchers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
 
-    // Fallback if optional columns haven't been migrated yet
-    if (error) {
-      const minimalPayload: Record<string, any> = {
-        voucher_no: vNo,
-        staff_name: authorName,
-        staff_code: me.staff_id || "LS-01",
-        department: me.department || "Operations",
-        title: voucherForm.title,
-        category: voucherForm.category,
-        description:
-          voucherForm.description ||
-          `${voucherForm.payment_method} — ${voucherForm.bank_name} ${voucherForm.bank_account_no}`,
-        amount: computedVoucherTotal,
-        status: "pending",
-      };
-      const retry = await supabase.from("expense_vouchers").insert(minimalPayload).select("*").single();
-      insertedRow = retry.data;
-      error = retry.error;
-    }
+      if (!res.ok || json.error) {
+        setVoucherNotice(`❌ Failed to save voucher: ${json.error || "Check Supabase table permissions"}`);
+        setSaving(false);
+        return;
+      }
 
-    if (error) {
-      setVoucherNotice(`❌ Could not save voucher: ${error.message}`);
+      const insertedRow = json.data;
+      if (insertedRow) {
+        setMyVouchers((prev) => [insertedRow, ...prev]);
+        setExecData((prev) => ({ ...prev, allVouchers: [insertedRow, ...prev.allVouchers] }));
+      }
+
+      setVoucherNotice(`✅ Voucher ${vNo} saved to database!`);
+      setTimeout(() => setVoucherNotice(""), 5000);
+
+      setVoucherForm((prev) => ({
+        ...prev,
+        title: "",
+        project_ref: "",
+        description: "",
+        attachment_data: "",
+        attachment_name: "",
+        initial_comment: "",
+      }));
+      setVoucherItems([{ item: "", qty: 1, unitPrice: 0 }]);
+
+      triggerPushNotification({
+        title: "🧾 New Expense Voucher Submitted",
+        message: `${authorName} raised "${voucherForm.title}" (₦${computedVoucherTotal.toLocaleString()}).`,
+        url: "https://studioslavie.com/admin/hr",
+        targetType: "clearance",
+        clearance: "finance",
+      });
+      loadOpenSpace();
+    } catch (err: any) {
+      setVoucherNotice(`❌ Network error: ${err?.message || "Could not reach server"}`);
+    } finally {
       setSaving(false);
-      return;
     }
-
-    if (insertedRow) {
-      setMyVouchers((prev) => [insertedRow, ...prev]);
-      setExecData((prev) => ({ ...prev, allVouchers: [insertedRow, ...prev.allVouchers] }));
-    }
-
-    setVoucherNotice(`✅ Voucher ${vNo} submitted successfully!`);
-    setTimeout(() => setVoucherNotice(""), 4000);
-
-    setVoucherForm((prev) => ({
-      ...prev,
-      title: "",
-      project_ref: "",
-      description: "",
-      attachment_data: "",
-      attachment_name: "",
-      initial_comment: "",
-    }));
-    triggerPushNotification({
-      title: "🧾 New Expense Voucher Submitted",
-      message: `${authorName} raised "${voucherForm.title}" (₦${computedVoucherTotal.toLocaleString()}).`,
-      url: "https://studioslavie.com/admin/hr",
-      targetType: "clearance",
-      clearance: "finance",
-    });
-    setVoucherItems([{ item: "", qty: 1, unitPrice: 0 }]);
-    setSaving(false);
-    loadOpenSpace();
   };
 
   const handleAddVoucherComment = async (v: any) => {
@@ -599,11 +586,14 @@ export default function AdminOverviewAndOpenSpacePage() {
     const existingComments = Array.isArray(v.comments) ? v.comments : [];
     const updated = [...existingComments, newComment];
 
-    // Optimistic UI update so comment appears instantaneously
     setVoucherCommentInputs((prev) => ({ ...prev, [v.id]: "" }));
     setMyVouchers((prev) => prev.map((item) => (item.id === v.id ? { ...item, comments: updated } : item)));
 
-    await supabase.from("expense_vouchers").update({ comments: updated }).eq("id", v.id);
+    await fetch("/api/admin/vouchers", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: v.id, comments: updated }),
+    });
 
     if (v.staff_code && v.staff_code !== me?.staff_id) {
       triggerPushNotification({
