@@ -1021,15 +1021,6 @@ export default function AdminOverviewAndOpenSpacePage() {
     const projectsInWindow = (execData.projects || []).filter((p) => {
       if (!matchesDateFilter(p.created_at || p.start_date)) return false;
       if (selectedServiceFilter !== "All Services") {
-        const srv = extractServiceTag(p.project_title || p.title || p.service_category);
-        if (srv !== selectedServiceFilter) return false;
-      }
-      return true;
-    });
-
-    const projectsInWindow = (execData.projects || []).filter((p) => {
-      if (!matchesDateFilter(p.created_at || p.start_date)) return false;
-      if (selectedServiceFilter !== "All Services") {
         const srv = extractServiceTag(p.project_title || p.title || p.name || p.service_category);
         if (srv !== selectedServiceFilter) return false;
       }
