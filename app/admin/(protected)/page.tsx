@@ -1305,7 +1305,7 @@ export default function AdminOverviewAndOpenSpacePage() {
     }
 
     const totalExpenseVol = Math.max(1, Object.values(catMap).reduce((a, b) => a + b, 0));
-    const palette = ["#f43f5e", "#f59e0b", "#10b981", "#38bdf8", "#a855f7", "#ec4899", "#c7cb2d"];
+    const palette = ["#f59e0b", "#f59e0b", "#10b981", "#38bdf8", "#a855f7", "#60a5fa", "#c7cb2d"];
     const topExpenseCategories = Object.entries(catMap)
       .filter(([, amount]) => amount > 0)
       .sort((a, b) => b[1] - a[1])
@@ -1700,17 +1700,15 @@ export default function AdminOverviewAndOpenSpacePage() {
                         <h3 className="font-display text-sm font-bold">
                           Cashflow & Net Margin Trajectory ({execAnalytics.months.length} Period View)
                         </h3>
-                        <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                          Adapts dynamically to your selected Date Filter above (Month, Quarter, 6M, Year, Prev Year, Custom)
-                        </p>
+                        
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono">
                       <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                         <span className="w-2.5 h-2.5 rounded-sm bg-[#10b981] inline-block" /> Inflow
                       </span>
-                      <span className="flex items-center gap-1.5 text-rose-400 font-bold">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-[#f43f5e] inline-block" /> Outflow
+                      <span className="flex items-center gap-1.5 text-[#c7cb2d] font-bold">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b] inline-block" /> Outflow
                       </span>
                       <span className="flex items-center gap-1.5 text-yellow-400 font-bold">
                         ● Net Margin Curve
@@ -1780,7 +1778,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                       </svg>
                     )}
 
-                    {/* High-Contrast Emerald (#10b981) vs Crimson Rose (#f43f5e) Bars */}
+                    {/* High-Contrast Emerald (#10b981) vs Crimson Rose (#f59e0b) Bars */}
                     <div className="relative z-0 flex items-end justify-between gap-2 h-40">
                       {execAnalytics.months.map((m) => {
                         const inHeight = Math.max(5, Math.round((m.inflow / execAnalytics.maxMonthVal) * 135));
@@ -1794,7 +1792,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                                 className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
                               />
                               <div
-                                style={{ height: `${outHeight}px`, backgroundColor: "#f43f5e" }}
+                                style={{ height: `${outHeight}px`, backgroundColor: "#f59e0b" }}
                                 title={`${m.label} Outflow: ₦${m.outflow.toLocaleString()}`}
                                 className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
                               />
@@ -1813,17 +1811,15 @@ export default function AdminOverviewAndOpenSpacePage() {
                 <div className="lg:col-span-5 p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <PieChart className="w-4 h-4 text-rose-400" />
+                      <PieChart className="w-4 h-4 text-[#c7cb2d]" />
                       <div>
                         <h3 className="font-display text-sm font-bold">Outflow Distribution Graph</h3>
-                        <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                          Ranked automatically by actual spend (Vouchers, Direct Expenses & Payroll)
-                        </p>
+                        
                       </div>
                     </div>
                     <Link
                       href="/admin/finance?tab=expenses"
-                      className="px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 text-[9px] font-mono font-bold hover:bg-rose-500/25 shrink-0 transition"
+                      className="px-2 py-0.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[#c7cb2d] text-[9px] font-mono font-bold hover:border-[#c7cb2d] shrink-0 transition"
                     >
                       + Expense
                     </Link>
@@ -1924,9 +1920,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                       <h3 className="font-display text-sm font-bold">
                         Income by Service Stream — Comparative Performance Curve
                       </h3>
-                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                        Automatically sorted from highest-earning service to lowest • Plots Cleared Inflow vs. Billed Pipeline
-                      </p>
+                      
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-[10px] font-mono">
