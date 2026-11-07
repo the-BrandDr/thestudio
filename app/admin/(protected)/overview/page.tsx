@@ -1402,9 +1402,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                   )}
                 </div>
               </div>
-            </div>
-
-              {/* ACCOUNTABLE REVENUE BY SERVICE STREAM (GENERATED FROM SALES, INVOICES & RECEIPTS DROPDOWNS) */}
+              {/* ACCOUNTABLE REVENUE BY SERVICE STREAM */}
               <div className="p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1444,6 +1442,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                   </div>
                 )}
               </div>
+            </div>
           )}
 
           {/* -----------------------------------------------------------------
