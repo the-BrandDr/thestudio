@@ -1943,6 +1943,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                   ))}
                 </div>
               </div>
+                      </div>
           )}
 
           {/* -----------------------------------------------------------------
