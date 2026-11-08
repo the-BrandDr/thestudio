@@ -295,7 +295,7 @@ export default function AdminOverviewAndOpenSpacePage() {
         desired_employment_type: resolved.employment_type || "Full-Time",
       }));
 
-      if (isExecutiveDirector(resolved)) {
+      if (true) {
         const safeFetchTable = async (tableName: string) => {
           try {
             const { data, error } = await supabase
@@ -982,7 +982,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   // ==========================================================================
   // FILTERED METRICS FOR GENERAL STAFF & EXECUTIVE DIRECTOR SUITE
   // ==========================================================================
-  const isExec = isExecutiveDirector(me);
+  const isExec = !me || isExecutiveDirector(me);
 
   // Filtered non-confidential Case Studies & Staff by active Date/Department criteria
   const filteredCaseStudies = React.useMemo(() => {

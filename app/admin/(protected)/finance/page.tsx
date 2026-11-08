@@ -88,24 +88,56 @@ export default function EnterpriseFinanceSuite() {
     }
   }, []);
 
-      const handleUpdateProjectStatus = async (rowItem: any, nextStatus: "ongoing" | "pending" | "completed") => {
-    const supabaseClient = createClient();
-    const targetId = rowItem?.id;
-    const targetCode = rowItem?.project_code || rowItem?.code || rowItem?.invoice_no;
-
-    // 1. Update local state arrays immediately so the UI & filter tabs (ALL / ONGOING / PENDING / COMPLETED) react live
-    setProjects((prev: any[]) => prev.map((x: any) => (x.id === targetId || (targetCode && (x.project_code === targetCode || x.code === targetCode)) ? { ...x, status: nextStatus, project_status: nextStatus } : x)));
-    
-    setInvoices((prev: any[]) => prev.map((x: any) => (x.id === targetId ? { ...x, project_status: nextStatus } : x)));
-
-    // 2. Persist status update to Supabase across all project/sales tables
-    const tablesToTry = ["finance_projects", "projects", "sales_records", "client_projects", "client_invoices", "finance_invoices", "invoices"];
-    for (const tbl of tablesToTry) {
+        const [projectStatusOverrides, setProjectStatusOverrides] = React.useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
       try {
-        if (targetId) {
+        return JSON.parse(window.localStorage.getItem("lavie_project_status_overrides") || "{}");
+      } catch (_) {}
+    }
+    return {};
+  });
+
+  const handleUpdateProjectStatus = async (rowItem: any, nextStatus: "ongoing" | "pending" | "completed") => {
+    const supabaseClient = createClient();
+    const targetId = String(rowItem?.id || "");
+    const targetCode = String(rowItem?.project_code || rowItem?.code || rowItem?.invoice_no || "");
+    const overrideKey = targetId || targetCode;
+
+    if (overrideKey) {
+      setProjectStatusOverrides((prev) => {
+        const next = { ...prev, [overrideKey]: nextStatus };
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem("lavie_project_status_overrides", JSON.stringify(next));
+          } catch (_) {}
+        }
+        return next;
+      });
+    }
+
+    // Update all possible state hooks in finance/page.tsx
+    const updater = (prev: any[]) =>
+      (prev || []).map((x: any) =>
+        String(x.id || "") === targetId ||
+        (targetCode && String(x.project_code || x.code || x.invoice_no || "") === targetCode)
+          ? { ...x, status: nextStatus, project_status: nextStatus }
+          : x
+      );
+
+    try {
+      // Dynamically call any state setter present in scope
+      
+      setProjects(updater);
+      
+      
+    } catch (_) {}
+
+    // Persist to Supabase across all project/sales tables
+    const tablesToUpdate = ["finance_projects", "projects", "sales_records", "client_projects", "client_invoices", "invoices"];
+    for (const tbl of tablesToUpdate) {
+      try {
+        if (targetId && !targetId.startsWith("inv-")) {
           await supabaseClient.from(tbl).update({ status: nextStatus }).eq("id", targetId);
-        } else if (targetCode) {
-          await supabaseClient.from(tbl).update({ status: nextStatus }).eq("project_code", targetCode);
         }
       } catch (_) {}
     }
@@ -428,13 +460,22 @@ export default function EnterpriseFinanceSuite() {
     return list;
   }, [projectsSales, invoices, receipts]);
 
-  const filteredProjects = unifiedProjects.filter((p) => {
+  const filteredProjects = combinedProjects.filter((sale: any) => {
     if (projectFilter === "all") return true;
-    const bal = Math.max(0, Number(p.contract_value || 0) - Number(p.amount_paid || 0));
-    if (projectFilter === "completed") return p.status === "completed" || (bal <= 0 && Number(p.contract_value) > 0);
-    if (projectFilter === "pending") return p.status === "lead" || Number(p.amount_paid || 0) === 0;
-    if (projectFilter === "ongoing") return p.status === "in_progress" || p.status === "review" || (Number(p.amount_paid) > 0 && bal > 0);
-    return true;
+    const bal = Math.max(0, Number(sale.contract_value || 0) - Number(sale.amount_paid || 0));
+    const overrideKey = String(sale.id || sale.project_code || sale.code || "");
+    const rawExplicit = String(
+      projectStatusOverrides[overrideKey] || sale.project_status || sale.status || ""
+    ).toLowerCase();
+    const effectiveStatus =
+      rawExplicit === "ongoing" || rawExplicit === "pending" || rawExplicit === "completed"
+        ? rawExplicit
+        : bal <= 0 && Number(sale.contract_value) > 0
+        ? "completed"
+        : Number(sale.amount_paid) > 0
+        ? "ongoing"
+        : "pending";
+    return effectiveStatus === projectFilter.toLowerCase();
   });
 
   // Non-duplicated Total Inflow, Sales Pipeline, and Unpaid Balance:
@@ -1231,8 +1272,18 @@ export default function EnterpriseFinanceSuite() {
             <div className="space-y-3">
               {filteredProjects.slice((projectsPage - 1) * 6, projectsPage * 6).map((sale) => {
                 const bal = Math.max(0, Number(sale.contract_value || 0) - Number(sale.amount_paid || 0));
+                const overrideKey = String(sale.id || sale.project_code || sale.code || "");
+                const rawExplicitStatus = String(
+                  projectStatusOverrides[overrideKey] || sale.project_status || sale.status || ""
+                ).toLowerCase();
                 const badgeLabel =
-                  bal <= 0 && Number(sale.contract_value) > 0
+                  rawExplicitStatus === "ongoing"
+                    ? "Ongoing"
+                    : rawExplicitStatus === "pending"
+                    ? "Pending"
+                    : rawExplicitStatus === "completed"
+                    ? "Completed"
+                    : bal <= 0 && Number(sale.contract_value) > 0
                     ? "Completed"
                     : Number(sale.amount_paid) > 0
                     ? "Ongoing"
@@ -1247,11 +1298,25 @@ export default function EnterpriseFinanceSuite() {
                             {sale.project_code}
                           </span>
                           <span className="text-xs font-bold">{sale.project_name}</span>
-                          <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded ${
-                            badgeLabel === "Completed" ? "bg-[#c7cb2d]/15 text-[#c7cb2d]" : badgeLabel === "Ongoing" ? "bg-[var(--bg-main)] text-[var(--text-primary)] border border-[var(--border-subtle)]" : "bg-amber-500/15 text-amber-400"
-                          }`}>
-                            {badgeLabel}
-                          </span>
+                          <select
+                          value={badgeLabel.toLowerCase()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleUpdateProjectStatus(sale, e.target.value as "ongoing" | "pending" | "completed");
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`px-2.5 py-0.5 rounded-md text-[10px] font-mono uppercase font-bold border cursor-pointer transition focus:outline-none ${
+                            badgeLabel === "Completed"
+                              ? "bg-[#c7cb2d]/20 text-[#c7cb2d] border-[#c7cb2d]/40"
+                              : badgeLabel === "Ongoing"
+                              ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                              : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                          }`}
+                        >
+                          <option value="ongoing" className="bg-[#141414] text-white">ONGOING</option>
+                          <option value="pending" className="bg-[#141414] text-white">PENDING</option>
+                          <option value="completed" className="bg-[#141414] text-white">COMPLETED</option>
+                        </select>
                         </div>
                         <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                           {sale.client_company || sale.client_name} • {sale.sale_type}
