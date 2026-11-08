@@ -181,6 +181,9 @@ export function getVoucherStageMeta(v: any): {
   label: string;
   badgeClass: string;
   isDisbursedOutflow: boolean;
+  isDirectExpense: boolean;
+  isDisbursedVoucher: boolean;
+  canDisburse: boolean;
   approvalSummary: string;
 } {
   const codeStr = String(v?.voucher_no || v?.voucher_code || "");
@@ -195,6 +198,9 @@ export function getVoucherStageMeta(v: any): {
       label: "DIRECT EXPENSE • PAID",
       badgeClass: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
       isDisbursedOutflow: true,
+      isDirectExpense: true,
+      isDisbursedVoucher: false,
+      canDisburse: false,
       approvalSummary: "Direct Finance Entry",
     };
   }
@@ -218,6 +224,9 @@ export function getVoucherStageMeta(v: any): {
       label: "REJECTED",
       badgeClass: "bg-red-500/15 text-red-400 border border-red-500/30",
       isDisbursedOutflow: false,
+      isDirectExpense: false,
+      isDisbursedVoucher: false,
+      canDisburse: false,
       approvalSummary,
     };
   }
@@ -228,25 +237,30 @@ export function getVoucherStageMeta(v: any): {
       label: "DISBURSED",
       badgeClass: "bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/40",
       isDisbursedOutflow: true,
+      isDirectExpense: false,
+      isDisbursedVoucher: true,
+      canDisburse: false,
       approvalSummary,
     };
   }
 
-  // Require ALL 3 sign-offs (Ops AND Finance AND Exec) OR explicit final status === "approved"
+  // Strictly require ALL 3 approval levels (Ops + Finance + Exec) to be "approved"
   const allThreeApproved =
     opsStatus === "approved" && finStatus === "approved" && stratStatus === "approved";
 
-  if (allThreeApproved || rawStatus === "approved") {
+  if (allThreeApproved) {
     return {
       stage: "approved_waiting",
       label: "APPROVED • AWAITING DISBURSEMENT",
       badgeClass: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
       isDisbursedOutflow: false,
+      isDirectExpense: false,
+      isDisbursedVoucher: false,
+      canDisburse: true,
       approvalSummary,
     };
   }
 
-  // Count how many have approved so far (e.g. 1/3, 2/3)
   const approvedCount =
     (opsStatus === "approved" ? 1 : 0) +
     (finStatus === "approved" ? 1 : 0) +
@@ -257,6 +271,9 @@ export function getVoucherStageMeta(v: any): {
     label: approvedCount > 0 ? `PENDING APPROVAL (${approvedCount}/3 SIGNED)` : "PENDING APPROVAL",
     badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
     isDisbursedOutflow: false,
+    isDirectExpense: false,
+    isDisbursedVoucher: false,
+    canDisburse: false,
     approvalSummary,
   };
 }

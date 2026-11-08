@@ -1240,10 +1240,15 @@ export default function AdminOverviewAndOpenSpacePage() {
       (v) => getVoucherStageMeta(v).stage === "pending"
     );
 
-    const voucherOutflow = disbursedVouchersAndExpenses.reduce(
-      (acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost),
-      0
-    );
+    const directExpensesOutflow = disbursedVouchersAndExpenses
+      .filter((v) => getVoucherStageMeta(v).isDirectExpense)
+      .reduce((acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost), 0);
+
+    const disbursedVouchersOutflow = disbursedVouchersAndExpenses
+      .filter((v) => getVoucherStageMeta(v).isDisbursedVoucher)
+      .reduce((acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost), 0);
+
+    const voucherOutflow = directExpensesOutflow + disbursedVouchersOutflow;
 
     const disbursedPayroll = payrollInWindow.filter((p) =>
       ["disbursed", "paid", "completed", "cleared", "approved"].includes(
@@ -1496,6 +1501,8 @@ export default function AdminOverviewAndOpenSpacePage() {
       totalInflow,
       totalOutflow,
       voucherOutflow,
+      directExpensesOutflow,
+      disbursedVouchersOutflow,
       payrollOutflow,
       netPosition,
       receivablesPipeline,
@@ -1761,7 +1768,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                     ₦{execAnalytics.totalOutflow.toLocaleString()}
                   </p>
                   <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                    Expenses & Disbursed Vouchers: ₦{execAnalytics.voucherOutflow.toLocaleString()} • Salaries Paid: ₦{execAnalytics.payrollOutflow.toLocaleString()}
+                    Expenses: ₦{(execAnalytics.directExpensesOutflow || 0).toLocaleString()} • Vouchers: ₦{(execAnalytics.disbursedVouchersOutflow || 0).toLocaleString()} • Salary Paid: ₦{execAnalytics.payrollOutflow.toLocaleString()}
                   </p>
                 </div>
 

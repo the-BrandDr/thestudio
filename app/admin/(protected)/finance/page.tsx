@@ -170,29 +170,22 @@ export default function EnterpriseFinanceSuite() {
   const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
   const [expenseNotice, setExpenseNotice] = React.useState("");
 
-    const handleDisburseVoucherInFinance = async (
+      const handleDisburseVoucherInFinance = async (
     voucher: any,
-    action: "approve_ops" | "approve_fin" | "approve_exec" | "approve_all" | "disbursed" | "pending"
+    action: "approve_ops" | "approve_fin" | "approve_exec" | "disbursed" | "pending"
   ) => {
     try {
       let updates: Record<string, any> = {};
       if (action === "approve_ops") updates = { ops_status: "approved" };
       else if (action === "approve_fin") updates = { finance_status: "approved" };
       else if (action === "approve_exec") updates = { strategist_status: "approved" };
-      else if (action === "approve_all") {
-        updates = {
-          ops_status: "approved",
-          finance_status: "approved",
-          strategist_status: "approved",
-          status: "approved",
-        };
-      } else if (action === "disbursed") {
-        updates = {
-          ops_status: "approved",
-          finance_status: "approved",
-          strategist_status: "approved",
-          status: "disbursed",
-        };
+      else if (action === "disbursed") {
+        const allApproved =
+          String(voucher.ops_status || "").toLowerCase() === "approved" &&
+          String(voucher.finance_status || "").toLowerCase() === "approved" &&
+          String(voucher.strategist_status || "").toLowerCase() === "approved";
+        if (!allApproved) return;
+        updates = { status: "disbursed" };
       } else if (action === "pending") {
         updates = {
           ops_status: "pending",
@@ -202,18 +195,14 @@ export default function EnterpriseFinanceSuite() {
         };
       }
 
-      // Check if all 3 stages are now approved after a single stage click
       const nextOps = updates.ops_status || voucher.ops_status || "pending";
       const nextFin = updates.finance_status || voucher.finance_status || "pending";
       const nextExec = updates.strategist_status || voucher.strategist_status || "pending";
-      if (
-        action !== "disbursed" &&
-        action !== "pending" &&
-        nextOps === "approved" &&
-        nextFin === "approved" &&
-        nextExec === "approved"
-      ) {
-        updates.status = "approved";
+      if (action !== "disbursed" && action !== "pending") {
+        updates.status =
+          nextOps === "approved" && nextFin === "approved" && nextExec === "approved"
+            ? "approved"
+            : "pending";
       }
 
       const res = await fetch("/api/admin/vouchers", {
@@ -1179,7 +1168,7 @@ export default function EnterpriseFinanceSuite() {
                     .reduce((s: number, p: any) => s + Number(String(p.net_pay ?? p.amount_paid ?? p.salary ?? p.gross_pay ?? 0).replace(/[^0-9.-]+/g, "")), 0)
                 ).toLocaleString()}</p>
               <p className="text-[10px] font-mono text-[var(--text-dim)] pt-1">
-                {(vouchers || []).filter((v: any) => getVoucherStageMeta(v).isDisbursedOutflow).length} cleared expense(s) & payroll
+                Expenses: ₦{(vouchers || []).filter((v: any) => getVoucherStageMeta(v).isDirectExpense).reduce((s: number, v: any) => s + Number(String(v.amount || 0).replace(/[^0-9.-]+/g, "")), 0).toLocaleString()} • Vouchers: ₦{(vouchers || []).filter((v: any) => getVoucherStageMeta(v).isDisbursedVoucher).reduce((s: number, v: any) => s + Number(String(v.amount || 0).replace(/[^0-9.-]+/g, "")), 0).toLocaleString()} • Salary Paid: ₦{(typeof payroll !== "undefined" ? payroll : []).filter((p: any) => ["disbursed", "paid", "completed"].includes(String(p.status || p.payment_status || "").toLowerCase())).reduce((s: number, p: any) => s + Number(String(p.net_pay ?? p.amount_paid ?? p.salary ?? p.gross_pay ?? 0).replace(/[^0-9.-]+/g, "")), 0).toLocaleString()}
               </p>
             </div>
 
@@ -2017,7 +2006,7 @@ export default function EnterpriseFinanceSuite() {
                                   <button
                                     type="button"
                                     onClick={() => handleDisburseVoucherInFinance(v, "approve_ops")}
-                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
                                   >
                                     + Ops
                                   </button>
@@ -2026,7 +2015,7 @@ export default function EnterpriseFinanceSuite() {
                                   <button
                                     type="button"
                                     onClick={() => handleDisburseVoucherInFinance(v, "approve_fin")}
-                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
                                   >
                                     + Finance
                                   </button>
@@ -2035,25 +2024,30 @@ export default function EnterpriseFinanceSuite() {
                                   <button
                                     type="button"
                                     onClick={() => handleDisburseVoucherInFinance(v, "approve_exec")}
-                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
                                   >
                                     + Exec
-                                  </button>
-                                )}
-                                {stageMeta.stage === "pending" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_all")}
-                                    className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-mono font-bold hover:bg-sky-500/30 cursor-pointer transition"
-                                  >
-                                    Approve All
                                   </button>
                                 )}
                                 {stageMeta.stage !== "disbursed" && (
                                   <button
                                     type="button"
-                                    onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
-                                    className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
+                                    disabled={!stageMeta.canDisburse}
+                                    onClick={() => {
+                                      if (stageMeta.canDisburse) {
+                                        handleDisburseVoucherInFinance(v, "disbursed");
+                                      }
+                                    }}
+                                    title={
+                                      stageMeta.canDisburse
+                                        ? "Disburse approved voucher"
+                                        : "Requires Ops, Finance & Executive approval first"
+                                    }
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition ${
+                                      stageMeta.canDisburse
+                                        ? "bg-[#c7cb2d] text-black hover:brightness-110 cursor-pointer"
+                                        : "bg-[var(--bg-card)] border border-[var(--border-subtle)]/50 text-[var(--text-dim)] opacity-45 cursor-not-allowed"
+                                    }`}
                                   >
                                     Mark Disbursed
                                   </button>
