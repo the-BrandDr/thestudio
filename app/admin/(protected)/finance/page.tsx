@@ -88,15 +88,27 @@ export default function EnterpriseFinanceSuite() {
     }
   }, []);
 
-  const handleUpdateProjectStatus = async (project: any, nextStatus: "ongoing" | "pending" | "completed") => {
+    const handleUpdateProjectStatus = async (project: any, nextStatus: "ongoing" | "pending" | "completed") => {
     const supabaseClient = createClient();
-    // Update in finance_projects (and projects fallback)
-    await supabaseClient.from("finance_projects").update({ status: nextStatus }).eq("id", project.id);
-    // Also update local state immediately
+    const targetId = project?.id;
+
+    // Optimistically update local projects state
     if (typeof setProjects === "function") {
       setProjects((prev: any[]) =>
-        prev.map((p: any) => (p.id === project.id ? { ...p, status: nextStatus } : p))
+        prev.map((p: any) =>
+          p.id === targetId || p.project_code === project.project_code
+            ? { ...p, status: nextStatus, project_status: nextStatus }
+            : p
+        )
       );
+    }
+
+    // Persist to Supabase across the project table (and invoice table if it's a synced paid invoice)
+    const candidateTables = ["finance_projects","studio_projects","client_invoices"];
+    for (const tbl of candidateTables) {
+      if (targetId) {
+        await supabaseClient.from(tbl).update({ status: nextStatus }).eq("id", targetId);
+      }
     }
   };
 

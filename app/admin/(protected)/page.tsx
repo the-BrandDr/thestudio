@@ -391,6 +391,33 @@ export default function AdminOverviewAndOpenSpacePage() {
     if (msgData) setMessages(msgData);
   }, [supabase]);
 
+  
+  React.useEffect(() => {
+    let active = true;
+    async function syncExecutiveFinanceData() {
+      try {
+        const res = await fetch("/api/admin/overview-sync", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (active && json && !json.error) {
+          setExecData((prev) => ({
+            allLeaves: (json.allLeaves && json.allLeaves.length > 0) ? json.allLeaves : prev.allLeaves,
+            allVouchers: (json.allVouchers && json.allVouchers.length > 0) ? json.allVouchers : prev.allVouchers,
+            projects: (json.projects && json.projects.length > 0) ? json.projects : prev.projects,
+            invoices: (json.invoices && json.invoices.length > 0) ? json.invoices : prev.invoices,
+            receipts: (json.receipts && json.receipts.length > 0) ? json.receipts : prev.receipts,
+            payroll: (json.payroll && json.payroll.length > 0) ? json.payroll : prev.payroll,
+            inquiries: (json.inquiries && json.inquiries.length > 0) ? json.inquiries : prev.inquiries,
+          }));
+        }
+      } catch (_) {}
+    }
+    syncExecutiveFinanceData();
+    return () => {
+      active = false;
+    };
+  }, [activeTab]);
+
   React.useEffect(() => {
     loadOpenSpace();
     const ch = supabase
@@ -1048,8 +1075,14 @@ export default function AdminOverviewAndOpenSpacePage() {
       }
 
       const lower = rawCandidates.toLowerCase();
-      if (lower.includes("craft") || lower.includes("tent") || lower.includes("desk") || lower.includes("kiosk"))
+      if (lower.includes("craft") || lower.includes("tent") || lower.includes("desk") || lower.includes("kiosk") || lower.includes("fabrication"))
         return "Craft Productions & Custom Fabrication";
+      if (lower.includes("camera") || lower.includes("tv stand") || lower.includes("rentage") || lower.includes("gadget") || lower.includes("equipment") || lower.includes("lens"))
+        return "Gadgets & Equipment Rental";
+      if (lower.includes("backdrop") || lower.includes("scenography") || lower.includes("event branding") || lower.includes("venue") || lower.includes("tunnel"))
+        return "Event Branding & Scenography";
+      if (lower.includes("rollup") || lower.includes("roll-up") || lower.includes("banner") || lower.includes("print") || lower.includes("flyer") || lower.includes("brochure"))
+        return "Design & Print Production";
       if (lower.includes("corporate") || lower.includes("identity") || lower.includes("logo") || lower.includes("guideline"))
         return "Corporate Branding & Identity";
       if (lower.includes("gadget") || lower.includes("equipment") || lower.includes("rental"))
