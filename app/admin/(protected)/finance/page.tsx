@@ -1448,6 +1448,7 @@ export default function EnterpriseFinanceSuite() {
           </div>
         </div>
       )}
+              <AdminPagination currentPage={projectsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setProjectsPage} itemLabel="projects" />
 
       {/* TAB 3: BILLING */}
       {activeTab === "billing" && (
@@ -1684,6 +1685,7 @@ export default function EnterpriseFinanceSuite() {
                   </div>
                 );
               })}
+              <AdminPagination currentPage={invoicesPage} totalItems={invoices.length} pageSize={6} onPageChange={setInvoicesPage} itemLabel="invoices" />
             </div>
           </div>
         </div>
@@ -1794,6 +1796,7 @@ export default function EnterpriseFinanceSuite() {
                   </div>
                 </div>
               ))}
+              <AdminPagination currentPage={receiptsPage} totalItems={receipts.length} pageSize={6} onPageChange={setReceiptsPage} itemLabel="receipts" />
             </div>
           </div>
         </div>
@@ -2073,8 +2076,8 @@ export default function EnterpriseFinanceSuite() {
                         No expenses recorded in this filter yet.
                       </p>
                     )}
-              <AdminPagination currentPage={expensesPage} totalItems={filteredExp.length} pageSize={6} onPageChange={setExpensesPage} itemLabel="expenses" />
                   </div>
+                  <AdminPagination currentPage={expensesPage} totalItems={filteredExp.length} pageSize={6} onPageChange={setExpensesPage} itemLabel="expenses" />
                 </>
               );
             })()}
