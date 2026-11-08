@@ -125,7 +125,7 @@ export default function EnterpriseFinanceSuite() {
       );
 
     try {
-      // Dynamically call any state setter present in scope
+      setProjectsSales(updater);
       
       setProjects(updater);
       
@@ -460,7 +460,7 @@ export default function EnterpriseFinanceSuite() {
     return list;
   }, [projectsSales, invoices, receipts]);
 
-  const filteredProjects = combinedProjects.filter((sale: any) => {
+  const filteredProjects = (projectsSales || []).filter((sale: any) => {
     if (projectFilter === "all") return true;
     const bal = Math.max(0, Number(sale.contract_value || 0) - Number(sale.amount_paid || 0));
     const overrideKey = String(sale.id || sale.project_code || sale.code || "");

@@ -51,7 +51,7 @@ export async function GET() {
     const supabase = getDb();
 
     // Query every table used in Finance Desk + HR Desk
-    const discovered = ["staff_profiles","finance_projects","studio_projects","client_invoices","payment_receipts","expense_vouchers","payroll_runs","tax_records","staff_tax_reliefs"];
+    const discovered = ["staff_profiles","studio_projects","client_invoices","payment_receipts","expense_vouchers","payroll_runs","tax_records","staff_tax_reliefs"];
     const tableResults: Record<string, any[]> = {};
 
     await Promise.all(
@@ -90,7 +90,7 @@ export async function GET() {
     for (const [tbl, rows] of Object.entries(tableResults)) {
       if (!rows || rows.length === 0) continue;
       const name = tbl.toLowerCase();
-      if (name.includes("project") || name.includes("sale")) {
+      if (name.includes("project") || name.includes("sale") || name === "clients" || name === "client_quotes") {
         projectArrays.push(rows);
       } else if (name.includes("invoice") && !name.includes("item")) {
         invoiceArrays.push(rows);

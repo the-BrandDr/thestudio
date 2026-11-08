@@ -395,6 +395,33 @@ export default function AdminOverviewAndOpenSpacePage() {
   React.useEffect(() => {
     let active = true;
     async function syncExecutiveFinanceData() {
+    // Also read any localStorage keys used by Finance Desk if present
+    let localProjects: any[] = [];
+    let localInvoices: any[] = [];
+    let localReceipts: any[] = [];
+    let localVouchers: any[] = [];
+    if (typeof window !== "undefined") {
+      const tryParseKey = (k: string) => {
+        try {
+          const raw = window.localStorage.getItem(k);
+          if (!raw) return [];
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          return [];
+        }
+      };
+      for (const k of ["lavie_project_status_overrides"]) {
+        const rows = tryParseKey(k);
+        if (rows.length === 0) continue;
+        const kl = k.toLowerCase();
+        if (kl.includes("project") || kl.includes("sale")) localProjects.push(...rows);
+        else if (kl.includes("invoice") || kl.includes("bill")) localInvoices.push(...rows);
+        else if (kl.includes("receipt")) localReceipts.push(...rows);
+        else if (kl.includes("voucher") || kl.includes("expense")) localVouchers.push(...rows);
+      }
+    }
+
       try {
         const res = await fetch("/api/admin/overview-sync", { cache: "no-store" });
         if (!res.ok) return;
@@ -403,9 +430,9 @@ export default function AdminOverviewAndOpenSpacePage() {
           setExecData((prev) => ({
             allLeaves: (json.allLeaves && json.allLeaves.length > 0) ? json.allLeaves : prev.allLeaves,
             allVouchers: (json.allVouchers && json.allVouchers.length > 0) ? json.allVouchers : prev.allVouchers,
-            projects: (json.projects && json.projects.length > 0) ? json.projects : prev.projects,
-            invoices: (json.invoices && json.invoices.length > 0) ? json.invoices : prev.invoices,
-            receipts: (json.receipts && json.receipts.length > 0) ? json.receipts : prev.receipts,
+            projects: [...(json.projects || []), ...localProjects, ...prev.projects].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.project_code && x.project_code === v.project_code)) === i),
+            invoices: [...(json.invoices || []), ...localInvoices, ...prev.invoices].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.invoice_no && x.invoice_no === v.invoice_no)) === i),
+            receipts: [...(json.receipts || []), ...localReceipts, ...prev.receipts].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.receipt_no && x.receipt_no === v.receipt_no)) === i),
             payroll: (json.payroll && json.payroll.length > 0) ? json.payroll : prev.payroll,
             inquiries: (json.inquiries && json.inquiries.length > 0) ? json.inquiries : prev.inquiries,
           }));
