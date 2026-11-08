@@ -41,7 +41,8 @@ import { AdminPagination } from "@/components/admin/admin-pagination";
 import { resolveAuthenticatedStaff,
   isExecutiveDirector,
   VOUCHER_CATEGORIES,
-  STUDIO_SERVICE_CATEGORIES,, getVoucherStageMeta } from "@/utils/resolve-current-staff";
+  STUDIO_SERVICE_CATEGORIES,
+  getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import { triggerPushNotification } from "@/utils/push-notifications";
 
 const STUDIO_DEPARTMENTS = [
