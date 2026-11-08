@@ -38,12 +38,10 @@ import {
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
 import { AdminPagination } from "@/components/admin/admin-pagination";
-import {
-  resolveAuthenticatedStaff,
+import { resolveAuthenticatedStaff,
   isExecutiveDirector,
   VOUCHER_CATEGORIES,
-  STUDIO_SERVICE_CATEGORIES,
-} from "@/utils/resolve-current-staff";
+  STUDIO_SERVICE_CATEGORIES,, getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import { triggerPushNotification } from "@/utils/push-notifications";
 
 const STUDIO_DEPARTMENTS = [
@@ -1233,23 +1231,35 @@ export default function AdminOverviewAndOpenSpacePage() {
     const totalBilledVolume = totalInflow + receivablesPipeline;
 
     // Outflow (Approved/Cleared Vouchers + Direct Expenses + Disbursed Payroll)
-    const clearedVouchers = vouchersInWindow.filter((v) => {
-      const st = String(v?.status || "approved").toLowerCase();
-      return !["rejected", "declined", "cancelled"].includes(st);
-    });
+    const disbursedVouchersAndExpenses = vouchersInWindow.filter((v) => getVoucherStageMeta(v).isDisbursedOutflow);
+    const awaitingDisbursementVouchers = vouchersInWindow.filter(
+      (v) => getVoucherStageMeta(v).stage === "approved_waiting"
+    );
     const pendingVouchers = vouchersInWindow.filter(
-      (v) => String(v?.status || "").toLowerCase() === "pending"
+      (v) => getVoucherStageMeta(v).stage === "pending"
     );
 
-    const voucherOutflow = clearedVouchers
-      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
-      .reduce((acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost), 0);
+    const voucherOutflow = disbursedVouchersAndExpenses.reduce(
+      (acc, v) => acc + toNum(v?.amount || v?.total_amount || v?.cost),
+      0
+    );
 
     const disbursedPayroll = payrollInWindow.filter((p) =>
-      ["approved", "disbursed", "paid", "cleared"].includes(String(p?.status || "").toLowerCase())
+      ["disbursed", "paid", "completed", "cleared", "approved"].includes(
+        String(p?.status || p?.payment_status || "").toLowerCase()
+      )
     );
     const payrollOutflow = disbursedPayroll.reduce(
-      (acc, p) => acc + Math.max(toNum(p?.net_pay), toNum(p?.gross_pay), toNum(p?.amount), toNum(p?.salary)),
+      (acc, p) =>
+        acc +
+        Math.max(
+          toNum(p?.net_pay),
+          toNum(p?.amount_paid),
+          toNum(p?.paid_salary),
+          toNum(p?.salary),
+          toNum(p?.gross_pay),
+          toNum(p?.amount)
+        ),
       0
     );
 
@@ -1367,8 +1377,7 @@ export default function AdminOverviewAndOpenSpacePage() {
       });
     }
 
-    clearedVouchers
-      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
+    disbursedVouchersAndExpenses
       .forEach((v) => {
         const val = toNum(v?.amount || v?.total_amount || v?.cost);
         if (val > 0) {
@@ -1460,8 +1469,7 @@ export default function AdminOverviewAndOpenSpacePage() {
 
     // Outflow Distribution Donut (Sorted by actual spend)
     const catMap: Record<string, number> = {};
-    clearedVouchers
-      .filter((v) => ["approved", "disbursed", "paid", "cleared", "recorded"].includes(String(v?.status || "approved").toLowerCase()))
+    disbursedVouchersAndExpenses
       .forEach((v) => {
         const c = v.category || "Operations";
         catMap[c] = (catMap[c] || 0) + toNum(v?.amount || v?.total_amount || v?.cost);
@@ -1752,7 +1760,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                     ₦{execAnalytics.totalOutflow.toLocaleString()}
                   </p>
                   <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                    Vouchers: ₦{execAnalytics.voucherOutflow.toLocaleString()} • Payroll: ₦{execAnalytics.payrollOutflow.toLocaleString()}
+                    Expenses & Disbursed Vouchers: ₦{execAnalytics.voucherOutflow.toLocaleString()} • Salaries Paid: ₦{execAnalytics.payrollOutflow.toLocaleString()}
                   </p>
                 </div>
 

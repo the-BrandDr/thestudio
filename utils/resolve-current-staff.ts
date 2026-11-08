@@ -175,3 +175,73 @@ export const STUDIO_SERVICE_CATEGORIES = [
   "Stage, Lighting & LED Screen Rental",
   "Brand Strategy & Consultation",
 ];
+
+export function getVoucherStageMeta(v: any): {
+  stage: "pending" | "approved_waiting" | "disbursed" | "rejected";
+  label: string;
+  badgeClass: string;
+  isDisbursedOutflow: boolean;
+} {
+  const codeStr = String(v?.voucher_no || v?.voucher_code || "");
+  const isDirect =
+    String(v?.staff_code || "") === "FIN-DIRECT" || codeStr.startsWith("LV-EXP");
+
+  if (isDirect) {
+    return {
+      stage: "disbursed",
+      label: "DIRECT EXPENSE • PAID",
+      badgeClass: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+      isDisbursedOutflow: true,
+    };
+  }
+
+  const rawStatus = String(v?.status || "pending").toLowerCase();
+  const finStatus = String(v?.finance_status || "").toLowerCase();
+  const opsStatus = String(v?.ops_status || "").toLowerCase();
+  const stratStatus = String(v?.strategist_status || "").toLowerCase();
+
+  if (
+    rawStatus === "rejected" ||
+    rawStatus === "declined" ||
+    finStatus === "rejected" ||
+    opsStatus === "rejected" ||
+    stratStatus === "rejected"
+  ) {
+    return {
+      stage: "rejected",
+      label: "REJECTED",
+      badgeClass: "bg-red-500/15 text-red-400 border border-red-500/30",
+      isDisbursedOutflow: false,
+    };
+  }
+
+  if (rawStatus === "disbursed" || rawStatus === "paid" || finStatus === "disbursed") {
+    return {
+      stage: "disbursed",
+      label: "DISBURSED",
+      badgeClass: "bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/40",
+      isDisbursedOutflow: true,
+    };
+  }
+
+  if (
+    rawStatus === "approved" ||
+    finStatus === "approved" ||
+    stratStatus === "approved" ||
+    opsStatus === "approved"
+  ) {
+    return {
+      stage: "approved_waiting",
+      label: "APPROVED • AWAITING DISBURSEMENT",
+      badgeClass: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
+      isDisbursedOutflow: false,
+    };
+  }
+
+  return {
+    stage: "pending",
+    label: "PENDING APPROVAL",
+    badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+    isDisbursedOutflow: false,
+  };
+}

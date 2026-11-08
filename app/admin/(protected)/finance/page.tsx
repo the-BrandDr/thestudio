@@ -1,7 +1,7 @@
 "use client";
 
 import { AdminPagination } from "@/components/admin/admin-pagination";
-import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES, VOUCHER_CATEGORIES } from "@/utils/resolve-current-staff";
+import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES, VOUCHER_CATEGORIES, getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
 import { triggerPushNotification } from "@/utils/push-notifications";
@@ -170,6 +170,43 @@ export default function EnterpriseFinanceSuite() {
   const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
   const [expenseNotice, setExpenseNotice] = React.useState("");
 
+  const handleDisburseVoucherInFinance = async (voucher: any, nextStatus: "approved" | "disbursed") => {
+    try {
+      const res = await fetch("/api/admin/vouchers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: voucher.id,
+          status: nextStatus,
+          finance_status: nextStatus,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.data && typeof setVouchers === "function") {
+        setVouchers((prev: any[]) => prev.map((v: any) => (v.id === voucher.id ? json.data : v)));
+      }
+    } catch (_) {}
+  };
+
+  // Sync vouchers from /api/admin/vouchers on mount so Direct Expenses & Staff Vouchers are always loaded
+  React.useEffect(() => {
+    fetch("/api/admin/vouchers", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json?.data && Array.isArray(json.data) && typeof setVouchers === "function") {
+          setVouchers((prev: any[]) => {
+            const map = new Map<string, any>();
+            for (const row of [...json.data, ...(prev || [])]) {
+              if (row && row.id && !map.has(String(row.id))) map.set(String(row.id), row);
+            }
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch(() => {});
+  }, [activeTab]);
+
+
     const handleRecordDirectExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!directExpenseForm.title || !directExpenseForm.amount) return;
@@ -196,7 +233,7 @@ export default function EnterpriseFinanceSuite() {
         directExpenseForm.notes ||
         `Direct studio expense paid to ${directExpenseForm.vendor_name || "Vendor"}`,
       amount: Number(directExpenseForm.amount || 0),
-      status: "approved",
+      status: "disbursed",
       ops_status: "approved",
       finance_status: "approved",
       strategist_status: "approved",
@@ -1365,7 +1402,6 @@ export default function EnterpriseFinanceSuite() {
           </div>
         </div>
       )}
-              <AdminPagination currentPage={projectsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setProjectsPage} itemLabel="projects" />
 
       {/* TAB 3: BILLING */}
       {activeTab === "billing" && (
@@ -1890,22 +1926,20 @@ export default function EnterpriseFinanceSuite() {
                       const codeStr = v.voucher_no || v.voucher_code || "";
                       const isDirect =
                         String(v.staff_code || "") === "FIN-DIRECT" || String(codeStr).startsWith("LV-EXP");
+                      const stageMeta = getVoucherStageMeta(v);
                       return (
                         <div
                           key={v.id}
-                          className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex items-center justify-between gap-4"
+                          className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                         >
                           <div className="space-y-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-bold ${
-                                  isDirect
-                                    ? "bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-primary)]"
-                                    : "bg-[#c7cb2d]/15 text-[#c7cb2d]"
-                                }`}
-                              >
-                                {isDirect ? "DIRECT EXPENSE" : `VOUCHER (${codeStr})`}
+                              <span className={`px-2 py-0.5 rounded-full font-bold ${stageMeta.badgeClass}`}>
+                                {stageMeta.label}
                               </span>
+                              {!isDirect && codeStr && (
+                                <span className="text-[var(--text-dim)]">{codeStr}</span>
+                              )}
                               <span className="text-[var(--text-muted)]">{v.category}</span>
                             </div>
                             <h4 className="font-display text-sm font-bold truncate">{v.title}</h4>
@@ -1913,13 +1947,37 @@ export default function EnterpriseFinanceSuite() {
                               {v.staff_name} • {v.payment_method || "Bank Transfer"}
                             </p>
                           </div>
-                          <div className="text-right shrink-0">
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
                             <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
                               -₦{Number(v.amount || 0).toLocaleString()}
                             </span>
-                            <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                              {v.status}
-                            </span>
+                            {!isDirect && stageMeta.stage === "pending" && (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDisburseVoucherInFinance(v, "approved")}
+                                  className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-mono font-bold hover:bg-sky-500/30 cursor-pointer transition"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
+                                  className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
+                                >
+                                  Disburse
+                                </button>
+                              </div>
+                            )}
+                            {!isDirect && stageMeta.stage === "approved_waiting" && (
+                              <button
+                                type="button"
+                                onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
+                                className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
+                              >
+                                Mark Disbursed
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1929,16 +1987,8 @@ export default function EnterpriseFinanceSuite() {
                         No expenses recorded in this filter yet.
                       </p>
                     )}
+              <AdminPagination currentPage={expensesPage} totalItems={filteredExp.length} pageSize={6} onPageChange={setExpensesPage} itemLabel="expenses" />
                   </div>
-                  <AdminPagination
-                    currentPage={pageIdx}
-                    totalItems={filteredExp.length}
-                    pageSize={6}
-                    onPageChange={(p) => {
-                      if (typeof setExpensesPage === "function") setExpensesPage(p);
-                    }}
-                    itemLabel="expenses"
-                  />
                 </>
               );
             })()}
