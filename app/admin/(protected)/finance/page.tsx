@@ -1443,12 +1443,14 @@ export default function EnterpriseFinanceSuite() {
                   </div>
                 );
               })}
+              {(activeTab === "sales" || activeTab === "projects" || activeTab === "sales") && (
+                <AdminPagination currentPage={projectsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setProjectsPage} itemLabel="projects" />
+              )}
               {filteredProjects.length === 0 && <p className="text-xs text-[var(--text-muted)] py-8 text-center">No projects in this filter.</p>}
             </div>
           </div>
         </div>
       )}
-              <AdminPagination currentPage={projectsPage} totalItems={filteredProjects.length} pageSize={6} onPageChange={setProjectsPage} itemLabel="projects" />
 
       {/* TAB 3: BILLING */}
       {activeTab === "billing" && (
@@ -1685,7 +1687,7 @@ export default function EnterpriseFinanceSuite() {
                   </div>
                 );
               })}
-              <AdminPagination currentPage={invoicesPage} totalItems={invoices.length} pageSize={6} onPageChange={setInvoicesPage} itemLabel="invoices" />
+              {(activeTab === "billing" || activeTab === "invoices") && (<AdminPagination currentPage={invoicesPage} totalItems={invoices.length} pageSize={6} onPageChange={setInvoicesPage} itemLabel="invoices" />)}
             </div>
           </div>
         </div>
@@ -1796,7 +1798,7 @@ export default function EnterpriseFinanceSuite() {
                   </div>
                 </div>
               ))}
-              <AdminPagination currentPage={receiptsPage} totalItems={receipts.length} pageSize={6} onPageChange={setReceiptsPage} itemLabel="receipts" />
+              {activeTab === "receipts" && (<AdminPagination currentPage={receiptsPage} totalItems={receipts.length} pageSize={6} onPageChange={setReceiptsPage} itemLabel="receipts" />)}
             </div>
           </div>
         </div>
@@ -2077,7 +2079,7 @@ export default function EnterpriseFinanceSuite() {
                       </p>
                     )}
                   </div>
-                  <AdminPagination currentPage={expensesPage} totalItems={filteredExp.length} pageSize={6} onPageChange={setExpensesPage} itemLabel="expenses" />
+                  {activeTab === "expenses" && (<AdminPagination currentPage={expensesPage} totalItems={filteredExp.length} pageSize={6} onPageChange={setExpensesPage} itemLabel="expenses" />)}
                 </>
               );
             })()}
