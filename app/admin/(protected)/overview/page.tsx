@@ -1754,7 +1754,7 @@ export default function AdminOverviewAndOpenSpacePage() {
 
                 <div className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-1">
                   <div className="flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)]">
-                    <span>Filtered Outflow</span>
+                    <span>Outflow</span>
                     <TrendingDown className="w-4 h-4 text-amber-400" />
                   </div>
                   <p className="font-display text-2xl font-bold text-[var(--text-primary)]">

@@ -170,16 +170,56 @@ export default function EnterpriseFinanceSuite() {
   const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
   const [expenseNotice, setExpenseNotice] = React.useState("");
 
-  const handleDisburseVoucherInFinance = async (voucher: any, nextStatus: "approved" | "disbursed") => {
+    const handleDisburseVoucherInFinance = async (
+    voucher: any,
+    action: "approve_ops" | "approve_fin" | "approve_exec" | "approve_all" | "disbursed" | "pending"
+  ) => {
     try {
+      let updates: Record<string, any> = {};
+      if (action === "approve_ops") updates = { ops_status: "approved" };
+      else if (action === "approve_fin") updates = { finance_status: "approved" };
+      else if (action === "approve_exec") updates = { strategist_status: "approved" };
+      else if (action === "approve_all") {
+        updates = {
+          ops_status: "approved",
+          finance_status: "approved",
+          strategist_status: "approved",
+          status: "approved",
+        };
+      } else if (action === "disbursed") {
+        updates = {
+          ops_status: "approved",
+          finance_status: "approved",
+          strategist_status: "approved",
+          status: "disbursed",
+        };
+      } else if (action === "pending") {
+        updates = {
+          ops_status: "pending",
+          finance_status: "pending",
+          strategist_status: "pending",
+          status: "pending",
+        };
+      }
+
+      // Check if all 3 stages are now approved after a single stage click
+      const nextOps = updates.ops_status || voucher.ops_status || "pending";
+      const nextFin = updates.finance_status || voucher.finance_status || "pending";
+      const nextExec = updates.strategist_status || voucher.strategist_status || "pending";
+      if (
+        action !== "disbursed" &&
+        action !== "pending" &&
+        nextOps === "approved" &&
+        nextFin === "approved" &&
+        nextExec === "approved"
+      ) {
+        updates.status = "approved";
+      }
+
       const res = await fetch("/api/admin/vouchers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: voucher.id,
-          status: nextStatus,
-          finance_status: nextStatus,
-        }),
+        body: JSON.stringify({ id: voucher.id, ...updates }),
       });
       const json = await res.json();
       if (res.ok && json.data && typeof setVouchers === "function") {
@@ -1130,9 +1170,16 @@ export default function EnterpriseFinanceSuite() {
                 <span>Expenses Paid</span>
                 <ArrowDownRight className="w-4 h-4 text-red-400" />
               </div>
-              <p className="text-2xl font-display font-bold">₦{paidVouchersTotal.toLocaleString()}</p>
+              <p className="text-2xl font-display font-bold">₦{(
+                  (vouchers || [])
+                    .filter((v: any) => getVoucherStageMeta(v).isDisbursedOutflow)
+                    .reduce((s: number, v: any) => s + Number(String(v.amount || 0).replace(/[^0-9.-]+/g, "")), 0) +
+                  (typeof payroll !== "undefined" ? payroll : [])
+                    .filter((p: any) => ["disbursed", "paid", "completed"].includes(String(p.status || p.payment_status || "").toLowerCase()))
+                    .reduce((s: number, p: any) => s + Number(String(p.net_pay ?? p.amount_paid ?? p.salary ?? p.gross_pay ?? 0).replace(/[^0-9.-]+/g, "")), 0)
+                ).toLocaleString()}</p>
               <p className="text-[10px] font-mono text-[var(--text-dim)] pt-1">
-                {vouchers.filter(v => v.status === "paid").length} cleared vouchers
+                {(vouchers || []).filter((v: any) => getVoucherStageMeta(v).isDisbursedOutflow).length} cleared expense(s) & payroll
               </p>
             </div>
 
@@ -1932,7 +1979,7 @@ export default function EnterpriseFinanceSuite() {
                           key={v.id}
                           className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                         >
-                          <div className="space-y-1 min-w-0">
+                          <div className="space-y-1.5 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
                               <span className={`px-2 py-0.5 rounded-full font-bold ${stageMeta.badgeClass}`}>
                                 {stageMeta.label}
@@ -1946,37 +1993,72 @@ export default function EnterpriseFinanceSuite() {
                             <p className="text-xs text-[var(--text-muted)] truncate">
                               {v.staff_name} • {v.payment_method || "Bank Transfer"}
                             </p>
+                            {!isDirect && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px] font-mono">
+                                <span className={`px-2 py-0.5 rounded ${v.ops_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
+                                  Ops: {(v.ops_status || "pending").toUpperCase()}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded ${v.finance_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
+                                  Finance: {(v.finance_status || "pending").toUpperCase()}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded ${v.strategist_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
+                                  Exec: {(v.strategist_status || "pending").toUpperCase()}
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
                             <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
                               -₦{Number(v.amount || 0).toLocaleString()}
                             </span>
-                            {!isDirect && stageMeta.stage === "pending" && (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDisburseVoucherInFinance(v, "approved")}
-                                  className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-mono font-bold hover:bg-sky-500/30 cursor-pointer transition"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
-                                  className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
-                                >
-                                  Disburse
-                                </button>
+                            {!isDirect && (
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                {v.ops_status !== "approved" && stageMeta.stage === "pending" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_ops")}
+                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                  >
+                                    + Ops
+                                  </button>
+                                )}
+                                {v.finance_status !== "approved" && stageMeta.stage === "pending" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_fin")}
+                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                  >
+                                    + Finance
+                                  </button>
+                                )}
+                                {v.strategist_status !== "approved" && stageMeta.stage === "pending" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_exec")}
+                                    className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
+                                  >
+                                    + Exec
+                                  </button>
+                                )}
+                                {stageMeta.stage === "pending" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_all")}
+                                    className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-mono font-bold hover:bg-sky-500/30 cursor-pointer transition"
+                                  >
+                                    Approve All
+                                  </button>
+                                )}
+                                {stageMeta.stage !== "disbursed" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
+                                    className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
+                                  >
+                                    Mark Disbursed
+                                  </button>
+                                )}
                               </div>
-                            )}
-                            {!isDirect && stageMeta.stage === "approved_waiting" && (
-                              <button
-                                type="button"
-                                onClick={() => handleDisburseVoucherInFinance(v, "disbursed")}
-                                className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono font-bold hover:brightness-110 cursor-pointer transition"
-                              >
-                                Mark Disbursed
-                              </button>
                             )}
                           </div>
                         </div>

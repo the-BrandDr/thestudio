@@ -181,10 +181,13 @@ export function getVoucherStageMeta(v: any): {
   label: string;
   badgeClass: string;
   isDisbursedOutflow: boolean;
+  approvalSummary: string;
 } {
   const codeStr = String(v?.voucher_no || v?.voucher_code || "");
   const isDirect =
-    String(v?.staff_code || "") === "FIN-DIRECT" || codeStr.startsWith("LV-EXP");
+    String(v?.staff_code || "") === "FIN-DIRECT" ||
+    codeStr.startsWith("LV-EXP") ||
+    String(v?.staff_name || "").startsWith("[DIRECT]");
 
   if (isDirect) {
     return {
@@ -192,19 +195,22 @@ export function getVoucherStageMeta(v: any): {
       label: "DIRECT EXPENSE • PAID",
       badgeClass: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
       isDisbursedOutflow: true,
+      approvalSummary: "Direct Finance Entry",
     };
   }
 
   const rawStatus = String(v?.status || "pending").toLowerCase();
-  const finStatus = String(v?.finance_status || "").toLowerCase();
-  const opsStatus = String(v?.ops_status || "").toLowerCase();
-  const stratStatus = String(v?.strategist_status || "").toLowerCase();
+  const opsStatus = String(v?.ops_status || "pending").toLowerCase();
+  const finStatus = String(v?.finance_status || "pending").toLowerCase();
+  const stratStatus = String(v?.strategist_status || "pending").toLowerCase();
+
+  const approvalSummary = `Ops: ${opsStatus.toUpperCase()} • Fin: ${finStatus.toUpperCase()} • Exec: ${stratStatus.toUpperCase()}`;
 
   if (
     rawStatus === "rejected" ||
     rawStatus === "declined" ||
-    finStatus === "rejected" ||
     opsStatus === "rejected" ||
+    finStatus === "rejected" ||
     stratStatus === "rejected"
   ) {
     return {
@@ -212,36 +218,45 @@ export function getVoucherStageMeta(v: any): {
       label: "REJECTED",
       badgeClass: "bg-red-500/15 text-red-400 border border-red-500/30",
       isDisbursedOutflow: false,
+      approvalSummary,
     };
   }
 
-  if (rawStatus === "disbursed" || rawStatus === "paid" || finStatus === "disbursed") {
+  if (rawStatus === "disbursed" || rawStatus === "paid") {
     return {
       stage: "disbursed",
       label: "DISBURSED",
       badgeClass: "bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/40",
       isDisbursedOutflow: true,
+      approvalSummary,
     };
   }
 
-  if (
-    rawStatus === "approved" ||
-    finStatus === "approved" ||
-    stratStatus === "approved" ||
-    opsStatus === "approved"
-  ) {
+  // Require ALL 3 sign-offs (Ops AND Finance AND Exec) OR explicit final status === "approved"
+  const allThreeApproved =
+    opsStatus === "approved" && finStatus === "approved" && stratStatus === "approved";
+
+  if (allThreeApproved || rawStatus === "approved") {
     return {
       stage: "approved_waiting",
       label: "APPROVED • AWAITING DISBURSEMENT",
       badgeClass: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
       isDisbursedOutflow: false,
+      approvalSummary,
     };
   }
 
+  // Count how many have approved so far (e.g. 1/3, 2/3)
+  const approvedCount =
+    (opsStatus === "approved" ? 1 : 0) +
+    (finStatus === "approved" ? 1 : 0) +
+    (stratStatus === "approved" ? 1 : 0);
+
   return {
     stage: "pending",
-    label: "PENDING APPROVAL",
+    label: approvedCount > 0 ? `PENDING APPROVAL (${approvedCount}/3 SIGNED)` : "PENDING APPROVAL",
     badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
     isDisbursedOutflow: false,
+    approvalSummary,
   };
 }
