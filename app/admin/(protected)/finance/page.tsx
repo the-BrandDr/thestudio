@@ -1178,7 +1178,17 @@ export default function EnterpriseFinanceSuite() {
                 <Landmark className="w-4 h-4 text-[#c7cb2d]" />
               </div>
               <p className="text-2xl font-display font-bold text-[#c7cb2d]">
-                ₦{(totalInflow - paidVouchersTotal).toLocaleString()}
+                ₦{(
+                  Number(totalInflow || 0) -
+                  (
+                    (vouchers || [])
+                      .filter((v: any) => getVoucherStageMeta(v).isDisbursedOutflow)
+                      .reduce((s: number, v: any) => s + Number(String(v.amount || 0).replace(/[^0-9.-]+/g, "")), 0) +
+                    (typeof payroll !== "undefined" ? payroll : [])
+                      .filter((p: any) => ["disbursed", "paid", "completed"].includes(String(p.status || p.payment_status || "").toLowerCase()))
+                      .reduce((s: number, p: any) => s + Number(String(p.net_pay ?? p.amount_paid ?? p.salary ?? p.gross_pay ?? 0).replace(/[^0-9.-]+/g, "")), 0)
+                  )
+                ).toLocaleString()}
               </p>
               <p className="text-[10px] font-mono text-[var(--text-dim)] pt-1">Available operating cash</p>
             </div>
