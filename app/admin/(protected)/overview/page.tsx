@@ -149,14 +149,35 @@ export default function AdminOverviewAndOpenSpacePage() {
     receipts: any[];
     payroll: any[];
     inquiries: any[];
-  }>({
-    allLeaves: [],
-    allVouchers: [],
-    projects: [],
-    invoices: [],
-    receipts: [],
-    payroll: [],
-    inquiries: [],
+  }>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = window.sessionStorage.getItem("lavie_exec_data_cache_v1");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === "object") {
+            return {
+              allLeaves: parsed.allLeaves || [],
+              allVouchers: parsed.allVouchers || [],
+              projects: parsed.projects || [],
+              invoices: parsed.invoices || [],
+              receipts: parsed.receipts || [],
+              payroll: parsed.payroll || [],
+              inquiries: parsed.inquiries || [],
+            };
+          }
+        }
+      } catch (_) {}
+    }
+    return {
+      allLeaves: [],
+      allVouchers: [],
+      projects: [],
+      invoices: [],
+      receipts: [],
+      payroll: [],
+      inquiries: [],
+    };
   });
 
   // Leave form
@@ -376,14 +397,35 @@ export default function AdminOverviewAndOpenSpacePage() {
         const allMergedPayroll = mergeUniqueRows(tPayrollRecords, tStaffPayroll);
         const allMergedInquiries = mergeUniqueRows(tInquiries, tContactMessages, tClientQuotes);
 
-        setExecData({
-          allLeaves: leaveData || [],
-          allVouchers: allMergedVouchers,
-          projects: allMergedProjects,
-          invoices: allMergedInvoices,
-          receipts: allMergedReceipts,
-          payroll: allMergedPayroll,
-          inquiries: allMergedInquiries,
+        // Also pull from /api/admin/overview-sync as a backup source, then merge non-destructively
+        let apiBackup: any = {};
+        try {
+          const apiRes = await fetch("/api/admin/overview-sync", { cache: "no-store" });
+          if (apiRes.ok) apiBackup = await apiRes.json();
+        } catch (_) {}
+
+        setExecData((prev) => {
+          const pickBest = (...candidates: any[][]) => {
+            const merged = mergeUniqueRows(...candidates);
+            return merged;
+          };
+
+          const nextState = {
+            allLeaves: pickBest(leaveData || [], apiBackup.allLeaves || [], prev.allLeaves || []),
+            allVouchers: pickBest(allMergedVouchers, apiBackup.allVouchers || [], prev.allVouchers || []),
+            projects: pickBest(allMergedProjects, apiBackup.projects || [], prev.projects || []),
+            invoices: pickBest(allMergedInvoices, apiBackup.invoices || [], prev.invoices || []),
+            receipts: pickBest(allMergedReceipts, apiBackup.receipts || [], prev.receipts || []),
+            payroll: pickBest(allMergedPayroll, apiBackup.payroll || [], prev.payroll || []),
+            inquiries: pickBest(allMergedInquiries, apiBackup.inquiries || [], prev.inquiries || []),
+          };
+
+          if (typeof window !== "undefined") {
+            try {
+              window.sessionStorage.setItem("lavie_exec_data_cache_v1", JSON.stringify(nextState));
+            } catch (_) {}
+          }
+          return nextState;
         });
       }
     }
@@ -392,61 +434,15 @@ export default function AdminOverviewAndOpenSpacePage() {
   }, [supabase]);
 
   
-  React.useEffect(() => {
-    let active = true;
-    async function syncExecutiveFinanceData() {
-    // Also read any localStorage keys used by Finance Desk if present
-    let localProjects: any[] = [];
-    let localInvoices: any[] = [];
-    let localReceipts: any[] = [];
-    let localVouchers: any[] = [];
-    if (typeof window !== "undefined") {
-      const tryParseKey = (k: string) => {
-        try {
-          const raw = window.localStorage.getItem(k);
-          if (!raw) return [];
-          const parsed = JSON.parse(raw);
-          return Array.isArray(parsed) ? parsed : [];
-        } catch (_) {
-          return [];
-        }
-      };
-      for (const k of ["lavie_project_status_overrides"]) {
-        const rows = tryParseKey(k);
-        if (rows.length === 0) continue;
-        const kl = k.toLowerCase();
-        if (kl.includes("project") || kl.includes("sale")) localProjects.push(...rows);
-        else if (kl.includes("invoice") || kl.includes("bill")) localInvoices.push(...rows);
-        else if (kl.includes("receipt")) localReceipts.push(...rows);
-        else if (kl.includes("voucher") || kl.includes("expense")) localVouchers.push(...rows);
-      }
-    }
-
-      try {
-        const res = await fetch("/api/admin/overview-sync", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = await res.json();
-        if (active && json && !json.error) {
-          setExecData((prev) => ({
-            allLeaves: (json.allLeaves && json.allLeaves.length > 0) ? json.allLeaves : prev.allLeaves,
-            allVouchers: (json.allVouchers && json.allVouchers.length > 0) ? json.allVouchers : prev.allVouchers,
-            projects: [...(json.projects || []), ...localProjects, ...prev.projects].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.project_code && x.project_code === v.project_code)) === i),
-            invoices: [...(json.invoices || []), ...localInvoices, ...prev.invoices].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.invoice_no && x.invoice_no === v.invoice_no)) === i),
-            receipts: [...(json.receipts || []), ...localReceipts, ...prev.receipts].filter((v, i, a) => v && a.findIndex((x) => (x.id && x.id === v.id) || (x.receipt_no && x.receipt_no === v.receipt_no)) === i),
-            payroll: (json.payroll && json.payroll.length > 0) ? json.payroll : prev.payroll,
-            inquiries: (json.inquiries && json.inquiries.length > 0) ? json.inquiries : prev.inquiries,
-          }));
-        }
-      } catch (_) {}
-    }
-    syncExecutiveFinanceData();
-    return () => {
-      active = false;
-    };
-  }, [activeTab]);
+  
 
   React.useEffect(() => {
     loadOpenSpace();
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        loadOpenSpace();
+      }
+    });
     const ch = supabase
       .channel("open-space-vouchers-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "expense_vouchers" }, () => {
@@ -464,6 +460,7 @@ export default function AdminOverviewAndOpenSpacePage() {
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
+      authListener?.subscription?.unsubscribe();
     };
   }, [loadOpenSpace, supabase]);
 
@@ -1538,7 +1535,7 @@ export default function AdminOverviewAndOpenSpacePage() {
               {me?.staff_id || "STAFF"}
             </span>
             <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-dim)]">
-              {me?.job_title || "Team Member"} • {me?.department || "Lavie Studios"}
+              {me?.job_title || "Team Member"} 
             </span>
           </div>
           <h1 className="font-display text-2xl font-bold">
