@@ -88,27 +88,26 @@ export default function EnterpriseFinanceSuite() {
     }
   }, []);
 
-    const handleUpdateProjectStatus = async (project: any, nextStatus: "ongoing" | "pending" | "completed") => {
+      const handleUpdateProjectStatus = async (rowItem: any, nextStatus: "ongoing" | "pending" | "completed") => {
     const supabaseClient = createClient();
-    const targetId = project?.id;
+    const targetId = rowItem?.id;
+    const targetCode = rowItem?.project_code || rowItem?.code || rowItem?.invoice_no;
 
-    // Optimistically update local projects state
-    if (typeof setProjects === "function") {
-      setProjects((prev: any[]) =>
-        prev.map((p: any) =>
-          p.id === targetId || p.project_code === project.project_code
-            ? { ...p, status: nextStatus, project_status: nextStatus }
-            : p
-        )
-      );
-    }
+    // 1. Update local state arrays immediately so the UI & filter tabs (ALL / ONGOING / PENDING / COMPLETED) react live
+    setProjects((prev: any[]) => prev.map((x: any) => (x.id === targetId || (targetCode && (x.project_code === targetCode || x.code === targetCode)) ? { ...x, status: nextStatus, project_status: nextStatus } : x)));
+    
+    setInvoices((prev: any[]) => prev.map((x: any) => (x.id === targetId ? { ...x, project_status: nextStatus } : x)));
 
-    // Persist to Supabase across the project table (and invoice table if it's a synced paid invoice)
-    const candidateTables = ["finance_projects","studio_projects","client_invoices"];
-    for (const tbl of candidateTables) {
-      if (targetId) {
-        await supabaseClient.from(tbl).update({ status: nextStatus }).eq("id", targetId);
-      }
+    // 2. Persist status update to Supabase across all project/sales tables
+    const tablesToTry = ["finance_projects", "projects", "sales_records", "client_projects", "client_invoices", "finance_invoices", "invoices"];
+    for (const tbl of tablesToTry) {
+      try {
+        if (targetId) {
+          await supabaseClient.from(tbl).update({ status: nextStatus }).eq("id", targetId);
+        } else if (targetCode) {
+          await supabaseClient.from(tbl).update({ status: nextStatus }).eq("project_code", targetCode);
+        }
+      } catch (_) {}
     }
   };
 
@@ -137,6 +136,7 @@ export default function EnterpriseFinanceSuite() {
     notes: "",
   });
   const [expenseFilterCategory, setExpenseFilterCategory] = React.useState("All Categories");
+  const [expenseNotice, setExpenseNotice] = React.useState("");
 
     const handleRecordDirectExpense = async (e: React.FormEvent) => {
     e.preventDefault();
