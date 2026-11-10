@@ -51,6 +51,7 @@ import {
   VoucherActionModals,
   filterVouchersList,
   cleanVoucherNotes,
+  RaisedVouchersWorkspacePanel,
 } from "@/components/admin/voucher-suite-enhancements";
 
 const STUDIO_DEPARTMENTS = [
@@ -120,10 +121,6 @@ async function compressImage(file: File, maxW = 1200, quality = 0.78): Promise<{
 }
 
 export default function AdminOverviewAndOpenSpacePage() {
-  const [hasHydrated, setHasHydrated] = React.useState(false);
-  React.useEffect(() => {
-    setHasHydrated(true);
-  }, []);
   const [wsVoucherFilters, setWsVoucherFilters] = React.useState({
     category: "ALL",
     status: "ALL",
@@ -3105,129 +3102,134 @@ export default function AdminOverviewAndOpenSpacePage() {
           </form>
 
           <div className="lg:col-span-7 space-y-3 max-h-[560px] overflow-y-auto pr-1">
-              <VoucherSummaryAndFilterBar
-                vouchers={myVouchers || []}
-                filters={wsVoucherFilters}
-                setFilters={setWsVoucherFilters}
-                currentUser={me}
-              />
             {myVouchers.slice((voucherPage - 1) * 5, voucherPage * 5).map((v) => {
               const vComments = Array.isArray(v.comments) ? v.comments : [];
               return (
-                <div
-                    key={v.id}
-                    className="p-4 sm:p-5 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d]/40 transition space-y-3"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-[#c7cb2d]">
-                          <span>{v.voucher_no || v.voucher_code || `LV-VCH-${String(v.id || "").slice(0, 5).toUpperCase()}`}</span>
-                          <span>•</span>
-                          <span>{v.category || "Operations"}</span>
-                          {v.staff_name && (
-                            <>
-                              <span>•</span>
-                              <span className="text-[var(--text-muted)]">
-                                Raised by {String(v.staff_name).replace(/^\[DIRECT\]\s*/, "")} ({v.staff_code || "LS-STAFF"})
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <h4 className="font-display text-sm sm:text-base font-bold text-[var(--text-primary)]">
-                          {v.title}
-                        </h4>
-                        <p className="text-[11px] font-mono text-[var(--text-dim)]">
-                          {v.created_at
-                            ? new Date(v.created_at).toLocaleDateString("en-NG", {
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric",
-                              })
-                            : "Recent"}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col items-end gap-2 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm sm:text-base font-bold text-[#c7cb2d]">
-                            ₦{Number(v.amount || 0).toLocaleString()}
-                          </span>
-                          <VoucherRowActionsMenu
-                            voucher={v}
-                            onViewEdit={(item) => {
-                              setActiveWsVoucher(item);
-                              setWsVoucherModalMode("edit");
-                            }}
-                            onOpenComments={(item) => {
-                              setActiveWsVoucher(item);
-                              setWsVoucherModalMode("comments");
-                            }}
-                            onReuse={(item) => {
-                              setVoucherForm((prev: any) => ({
-                                ...prev,
-                                title: item.title || "",
-                                category: item.category || VOUCHER_CATEGORIES[0],
-                                amount: String(item.amount || ""),
-                                payment_method: item.payment_method || "Bank Transfer",
-                                notes: cleanVoucherNotes(item),
-                              }));
-                            }}
-                          />
-                        </div>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono uppercase font-bold ${getVoucherStageMeta(v).badgeClass}`}>
-                          {getVoucherStageMeta(v).label}
-                        </span>
-                      </div>
+                <div key={v.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-mono text-[#c7cb2d]">
+                        {v.voucher_no || v.voucher_code} • {v.category}
+                      </span>
+                      <h3 className="font-display text-sm font-bold">{v.title}</h3>
+                      {v.description && <p className="text-xs text-[var(--text-muted)]">{v.description}</p>}
                     </div>
-
-                    {/* Sequential 3-Level Approval Progress Bar: Level 1 (CEO) -> Level 2 (Head of Ops) -> Level 3 (Finance) */}
-                    <div className="pt-2 border-t border-[var(--border-subtle)]/40 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
-                        <span className={`px-2 py-0.5 rounded ${v.strategist_status === "approved" ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" : v.strategist_status === "rejected" ? "bg-red-500/15 text-red-400 border border-red-500/30" : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"}`}>
-                          L1 CEO: {(v.strategist_status || "pending").toUpperCase()}
-                        </span>
-                        <span className="text-[var(--text-dim)]">→</span>
-                        <span className={`px-2 py-0.5 rounded ${v.ops_status === "approved" ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" : v.ops_status === "rejected" ? "bg-red-500/15 text-red-400 border border-red-500/30" : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"}`}>
-                          L2 Head of Ops: {(v.ops_status || "pending").toUpperCase()}
-                        </span>
-                        <span className="text-[var(--text-dim)]">→</span>
-                        <span className={`px-2 py-0.5 rounded ${v.finance_status === "approved" ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" : v.finance_status === "rejected" ? "bg-red-500/15 text-red-400 border border-red-500/30" : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"}`}>
-                          L3 Finance: {(v.finance_status || "pending").toUpperCase()}
-                        </span>
-                      </div>
-
-                      {/* Role-Specific Accept / Reject / Mark Disbursed Buttons */}
-                      <VoucherLevelActionButtons
-                        voucher={v}
-                        currentUser={me}
-                        onVoucherUpdated={(updated) => {
-                          setMyVouchers((prev: any[]) =>
-                            prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
-                          );
-                          setExecData((prev: any) => ({
-                            ...prev,
-                            allVouchers: (prev.allVouchers || []).map((item: any) =>
-                              item.id === updated.id ? { ...item, ...updated } : item
-                            ),
-                          }));
-                        }}
-                      />
-                    </div>
-
-                    {v.proof_url && (
-                      <div className="pt-1">
-                        <a
-                          href={v.proof_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-mono text-[#c7cb2d] underline hover:opacity-80"
-                        >
-                          View Attached Proof ({v.proof_name || "Receipt Image"})
-                        </a>
-                      </div>
-                    )}
+                    <div className="lg:col-span-7">
+              <RaisedVouchersWorkspacePanel
+                vouchers={
+                  Array.isArray(execData?.allVouchers) && execData.allVouchers.length > 0
+                    ? execData.allVouchers
+                    : myVouchers || []
+                }
+                currentUser={me}
+                onUpdateVoucher={(updated) => {
+                  setMyVouchers((prev: any[]) =>
+                    prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
+                  );
+                  setExecData((prev: any) => ({
+                    ...prev,
+                    allVouchers: (prev.allVouchers || []).map((item: any) =>
+                      item.id === updated.id ? { ...item, ...updated } : item
+                    ),
+                  }));
+                }}
+                onReuseVoucher={(item) => {
+                  setVoucherForm((prev: any) => ({
+                    ...prev,
+                    title: item.title || "",
+                    category: item.category || "Marketing & Advertising",
+                    amount: String(item.amount || ""),
+                    payment_method: item.payment_method || "Bank Transfer",
+                    notes: cleanVoucherNotes(item),
+                  }));
+                }}
+              />
+            </div>
                   </div>
-                ))}
+
+                  {v.attachment_url && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewProofUrl(v.attachment_url)}
+                      className="text-[11px] font-mono text-[#c7cb2d] underline cursor-pointer"
+                    >
+                      View Attached Proof ({v.attachment_name || "Image"})
+                    </button>
+                  )}
+
+                  <div className="pt-2 border-t border-[var(--border-subtle)]/40 space-y-2">
+                    {vComments.map((c: any, i: number) => (
+                      <div key={i} className="px-3 py-1.5 rounded-xl bg-[var(--bg-main)] text-xs">
+                        <span className="font-mono text-[10px] text-[#c7cb2d] font-bold">{c.author}: </span>
+                        <span>{c.text}</span>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <input
+                        value={voucherCommentInputs[v.id] || ""}
+                        onChange={(e) => setVoucherCommentInputs((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                        placeholder="Write a comment & press Enter..."
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddVoucherComment(v);
+                          }
+                        }}
+                        className="flex-1 bg-[var(--bg-main)] rounded-xl px-3 py-1.5 text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddVoucherComment(v)}
+                        className="px-3 py-1.5 rounded-xl bg-[#c7cb2d] text-black text-[11px] font-bold cursor-pointer"
+                      >
+                        Post
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {myVouchers.length === 0 && (
+              <div className="p-8 rounded-3xl bg-[var(--bg-card)] text-center text-xs text-[var(--text-muted)]">
+                You have not submitted any expense vouchers yet.
+              </div>
+            )}
+            <AdminPagination
+              currentPage={voucherPage}
+              totalItems={myVouchers.length}
+              pageSize={5}
+              onPageChange={setVoucherPage}
+              itemLabel="vouchers"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB 4: REQUEST PROMOTION (100% PRESERVED)
+      ===================================================================== */}
+      {activeTab === "promotion" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <form
+            onSubmit={handleSubmitPromoRequest}
+            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
+          >
+            <h2 className="font-display text-lg font-bold">Request Promotion / Step Upgrade</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                  Requested Level
+                </label>
+                <select
+                  value={promoReqForm.desired_level}
+                  onChange={(e) => setPromoReqForm({ ...promoReqForm, desired_level: e.target.value })}
+                  className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
+                >
+                  {HIERARCHY_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>

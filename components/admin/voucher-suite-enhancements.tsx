@@ -1348,3 +1348,251 @@ export function VoucherActionModals({
     </div>
   );
 }
+
+export function RaisedVouchersWorkspacePanel({
+  vouchers,
+  currentUser,
+  onUpdateVoucher,
+  onReuseVoucher,
+}: {
+  vouchers: any[];
+  currentUser?: any;
+  onUpdateVoucher: (updated: any) => void;
+  onReuseVoucher: (v: any) => void;
+}) {
+  const [filters, setFilters] = React.useState<FilterState>({
+    category: "ALL",
+    status: "ALL",
+    startDate: "",
+    endDate: "",
+    search: "",
+    onlyNeedsMyAttention: false,
+  });
+  const [page, setPage] = React.useState(1);
+  const [activeVoucher, setActiveVoucher] = React.useState<any | null>(null);
+  const [modalMode, setModalMode] = React.useState<"comments" | "edit" | null>(null);
+
+  const pageSize = 6;
+  const filtered = React.useMemo(
+    () => filterVouchersList(vouchers || [], filters, currentUser),
+    [vouchers, filters, currentUser]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  return (
+    <div className="space-y-4">
+      <VoucherSummaryAndFilterBar
+        vouchers={vouchers || []}
+        filters={filters}
+        setFilters={(val) => {
+          setFilters(val);
+          setPage(1);
+        }}
+        currentUser={currentUser}
+      />
+
+      {paginated.length === 0 ? (
+        <div className="p-10 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-center space-y-2">
+          <p className="text-sm font-bold text-[var(--text-primary)]">
+            No vouchers match your current filter
+          </p>
+          <p className="text-xs text-[var(--text-muted)]">
+            Try clearing the search query or switching Status to ALL.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {paginated.map((v: any) => {
+            const meta = getVoucherStageMeta(v);
+            const commentsCount = extractVoucherComments(v).length;
+            return (
+              <div
+                key={v.id}
+                className="p-4 sm:p-5 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d]/40 transition space-y-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-[#c7cb2d]">
+                      <span>
+                        {v.voucher_no ||
+                          v.voucher_code ||
+                          `LV-VCH-${String(v.id || "").slice(0, 5).toUpperCase()}`}
+                      </span>
+                      <span>•</span>
+                      <span>{v.category || "Operations"}</span>
+                      {v.staff_name && (
+                        <>
+                          <span>•</span>
+                          <span className="text-[var(--text-muted)]">
+                            {String(v.staff_name).replace(/^\[DIRECT\]\s*/, "")} (
+                            {v.staff_code || "LS-STAFF"})
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <h4 className="font-display text-sm sm:text-base font-bold text-[var(--text-primary)]">
+                      {v.title}
+                    </h4>
+                    <p className="text-[11px] font-mono text-[var(--text-dim)]">
+                      {v.created_at
+                        ? new Date(v.created_at).toLocaleDateString("en-NG", {
+                            day: "numeric",
+                            month: "long",
+                            year: "numeric",
+                          })
+                        : "Recent"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm sm:text-base font-bold text-[#c7cb2d]">
+                        ₦{Number(v.amount || 0).toLocaleString()}
+                      </span>
+                      <VoucherRowActionsMenu
+                        voucher={v}
+                        onViewEdit={(item) => {
+                          setActiveVoucher(item);
+                          setModalMode("edit");
+                        }}
+                        onOpenComments={(item) => {
+                          setActiveVoucher(item);
+                          setModalMode("comments");
+                        }}
+                        onReuse={(item) => onReuseVoucher(item)}
+                      />
+                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono uppercase font-bold ${meta.badgeClass}`}
+                    >
+                      {meta.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sequential 3-Level Approval Pipeline + Role-Scoped Accept/Reject Buttons */}
+                <div className="pt-2.5 border-t border-[var(--border-subtle)]/40 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                    <span
+                      className={`px-2 py-0.5 rounded ${
+                        v.strategist_status === "approved"
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          : v.strategist_status === "rejected"
+                          ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                          : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"
+                      }`}
+                    >
+                      L1 CEO: {(v.strategist_status || "pending").toUpperCase()}
+                    </span>
+                    <span className="text-[var(--text-dim)]">→</span>
+                    <span
+                      className={`px-2 py-0.5 rounded ${
+                        v.ops_status === "approved"
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          : v.ops_status === "rejected"
+                          ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                          : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"
+                      }`}
+                    >
+                      L2 Head of Ops: {(v.ops_status || "pending").toUpperCase()}
+                    </span>
+                    <span className="text-[var(--text-dim)]">→</span>
+                    <span
+                      className={`px-2 py-0.5 rounded ${
+                        v.finance_status === "approved"
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          : v.finance_status === "rejected"
+                          ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                          : "bg-[var(--bg-main)] text-[var(--text-dim)] border border-[var(--border-subtle)]/50"
+                      }`}
+                    >
+                      L3 Finance: {(v.finance_status || "pending").toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveVoucher(v);
+                        setModalMode("comments");
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[var(--bg-main)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d] text-[10px] font-mono text-[var(--text-muted)] hover:text-white flex items-center gap-1 cursor-pointer transition"
+                    >
+                      <MessageSquare className="w-3 h-3 text-sky-400" />
+                      <span>Comments ({commentsCount})</span>
+                    </button>
+
+                    <VoucherLevelActionButtons
+                      voucher={v}
+                      currentUser={currentUser}
+                      onVoucherUpdated={onUpdateVoucher}
+                    />
+                  </div>
+                </div>
+
+                {(v.proof_url || v.receipt_url) && (
+                  <div className="pt-1">
+                    <a
+                      href={v.proof_url || v.receipt_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-mono text-[#c7cb2d] underline hover:opacity-80"
+                    >
+                      View Attached Proof ({v.proof_name || "Receipt Image"})
+                    </a>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination Bar */}
+      {filtered.length > 0 && (
+        <div className="pt-2 flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
+          <span>
+            Showing {(currentPage - 1) * pageSize + 1}–
+            {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} vouchers
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer"
+            >
+              ‹ Prev
+            </button>
+            <span className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold">
+              {currentPage}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer"
+            >
+              Next ›
+            </button>
+          </div>
+        </div>
+      )}
+
+      <VoucherActionModals
+        activeVoucher={activeVoucher}
+        modalMode={modalMode}
+        currentUser={currentUser}
+        onClose={() => {
+          setActiveVoucher(null);
+          setModalMode(null);
+        }}
+        onVoucherUpdated={onUpdateVoucher}
+      />
+    </div>
+  );
+}
