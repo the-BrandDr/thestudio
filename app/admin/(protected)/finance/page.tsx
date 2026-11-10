@@ -45,7 +45,7 @@ function computePayeWithRelief(monthlyGross: number, monthlyRelief: number = 0):
   return { paye, net };
 }
 
-export default function EnterpriseFinanceSuite() {
+export default function EnterpriseFinanceSuite({ scopedMode }: { scopedMode?: "sales" | "billing" } = {}) {
   const supabase = createClient();
   const [execViewOnly, setExecViewOnly] = React.useState(false);
   React.useEffect(() => {
@@ -68,6 +68,11 @@ export default function EnterpriseFinanceSuite() {
     });
   }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<any>("overview");
+  // Sync scopedMode to activeTab when embedded in Inquiries Desk for Support Staff
+  React.useEffect(() => {
+    if (scopedMode === "sales") setActiveTab("projects" as any);
+    else if (scopedMode === "billing") setActiveTab("billing" as any);
+  }, [scopedMode]);
 
   // Pagination states for Finance lists
   const [projectsPage, setProjectsPage] = React.useState(1);
@@ -1101,6 +1106,17 @@ export default function EnterpriseFinanceSuite() {
   };
 
   return (
+    <div data-scoped-mode={scopedMode || ""} className={scopedMode ? "scoped-finance-embed" : ""}>
+      {scopedMode && (
+        <style>{`
+          .scoped-finance-embed > div > header,
+          .scoped-finance-embed > div > nav,
+          .scoped-finance-embed [data-finance-header="true"],
+          .scoped-finance-embed [data-finance-nav="true"] {
+            display: none !important;
+          }
+        `}</style>
+      )}
     <div className="space-y-5">
       <div className="bg-[var(--bg-card)] px-3 py-2 rounded-2xl border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <div className="flex flex-wrap items-center gap-1">
@@ -2244,6 +2260,7 @@ export default function EnterpriseFinanceSuite() {
       {printDoc && (
         <OfficialDocumentModal type={printDoc.type} data={printDoc.data} onClose={() => setPrintDoc(null)} />
       )}
+    </div>
     </div>
   );
 }

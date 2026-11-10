@@ -1,5 +1,6 @@
 "use client";
 
+import EnterpriseFinanceSuite from "../finance/page";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 
@@ -73,7 +74,7 @@ export default function AdminInquiriesPage() {
     link.click();
     document.body.removeChild(link);
   };
-  const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "feedbacks" | "newsletter" | "activity">("inquiries");
+  const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "feedbacks" | "newsletter" | "activity" | "sales" | "billing">("inquiries");
   const [inquiries, setInquiries] = React.useState<any[]>([]);
   const [quotes, setQuotes] = React.useState<any[]>([]);
   const [activityLogs, setActivityLogs] = React.useState<any[]>([]);
@@ -261,6 +262,28 @@ export default function AdminInquiriesPage() {
             }`}
           >
             Quotes ({quotes.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView("sales")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition cursor-pointer ${
+              activeView === "sales"
+                ? "bg-white text-black font-bold"
+                : "text-[var(--text-muted)] hover:text-white"
+            }`}
+          >
+            Record Sales
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView("billing")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition cursor-pointer ${
+              activeView === "billing"
+                ? "bg-white text-black font-bold"
+                : "text-[var(--text-muted)] hover:text-white"
+            }`}
+          >
+            Billing & Invoices
           </button>
             <button
               type="button"
@@ -451,7 +474,19 @@ export default function AdminInquiriesPage() {
       )}
 
       {/* VIEW 2: GENERATED QUOTES */}
-      {activeView === "quotes" && (
+      {activeView === "sales" && (
+          <div className="pt-2">
+            <EnterpriseFinanceSuite scopedMode="sales" />
+          </div>
+        )}
+
+        {activeView === "billing" && (
+          <div className="pt-2">
+            <EnterpriseFinanceSuite scopedMode="billing" />
+          </div>
+        )}
+
+        {activeView === "quotes" && (
         <div className="space-y-4">
           <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
             <div>
