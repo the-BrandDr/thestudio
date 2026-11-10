@@ -394,7 +394,7 @@ export function VoucherRowActionsMenu({
         {commentsCount > 0 && (<span className="px-1.5 py-0.2 rounded-full bg-[#c7cb2d] text-black text-[9px] font-bold">{commentsCount}</span>)}
       </button>
       {open && (
-        <div className="absolute right-0 mt-1.5 w-52 rounded-2xl bg-[#141414] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-40 text-xs">
+        <div className="absolute right-0 top-full mt-1 w-52 rounded-2xl bg-[#1a1a1a] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-50 text-xs">
           <button type="button" onClick={() => { setOpen(false); onViewEdit(voucher); }} className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition">
             <Edit3 className="w-3.5 h-3.5 text-[#c7cb2d]" /><span>View/Edit Voucher</span>
           </button>

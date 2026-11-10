@@ -54,6 +54,7 @@ function computePayeWithRelief(monthlyGross: number, monthlyRelief: number = 0):
 }
 
 export default function EnterpriseFinanceSuite() {
+  const scopedMode = false;
   const supabase = createClient();
   const [execViewOnly, setExecViewOnly] = React.useState(false);
   React.useEffect(() => {
