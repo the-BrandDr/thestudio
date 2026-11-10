@@ -132,6 +132,7 @@ export default function AdminOverviewAndOpenSpacePage() {
   const [wsVoucherModalMode, setWsVoucherModalMode] = React.useState<"comments" | "edit" | null>(null);
   const supabase = createClient();
   const [activeTab, setActiveTab] = React.useState<"overview" | "chat" | "leave" | "vouchers" | "promotion">("overview");
+  const [showRaiseVoucherModal, setShowRaiseVoucherModal] = React.useState(false);
   const [me, setMe] = React.useState<any | null>(null);
   const [staffColleagues, setStaffColleagues] = React.useState<any[]>([]);
   const [myLeaves, setMyLeaves] = React.useState<any[]>([]);
@@ -166,36 +167,36 @@ export default function AdminOverviewAndOpenSpacePage() {
     receipts: any[];
     payroll: any[];
     inquiries: any[];
-  }>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const cached = window.sessionStorage.getItem("lavie_exec_data_cache_v1");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed && typeof parsed === "object") {
-            return {
-              allLeaves: parsed.allLeaves || [],
-              allVouchers: parsed.allVouchers || [],
-              projects: parsed.projects || [],
-              invoices: parsed.invoices || [],
-              receipts: parsed.receipts || [],
-              payroll: parsed.payroll || [],
-              inquiries: parsed.inquiries || [],
-            };
-          }
-        }
-      } catch (_) {}
-    }
-    return {
-      allLeaves: [],
-      allVouchers: [],
-      projects: [],
-      invoices: [],
-      receipts: [],
-      payroll: [],
-      inquiries: [],
-    };
+  }>({
+    allLeaves: [],
+    allVouchers: [],
+    projects: [],
+    invoices: [],
+    receipts: [],
+    payroll: [],
+    inquiries: [],
   });
+
+  // Hydrate cached executive dataset inside useEffect so Server and Client initial HTML match 100%
+  React.useEffect(() => {
+    try {
+      const cached = window.sessionStorage.getItem("lavie_exec_data_cache_v1");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === "object") {
+          setExecData((prev) => ({
+            allLeaves: prev.allLeaves.length ? prev.allLeaves : parsed.allLeaves || [],
+            allVouchers: prev.allVouchers.length ? prev.allVouchers : parsed.allVouchers || [],
+            projects: prev.projects.length ? prev.projects : parsed.projects || [],
+            invoices: prev.invoices.length ? prev.invoices : parsed.invoices || [],
+            receipts: prev.receipts.length ? prev.receipts : parsed.receipts || [],
+            payroll: prev.payroll.length ? prev.payroll : parsed.payroll || [],
+            inquiries: prev.inquiries.length ? prev.inquiries : parsed.inquiries || [],
+          }));
+        }
+      }
+    } catch (_) {}
+  }, []);
 
   // Leave form
   const [leaveForm, setLeaveForm] = React.useState({
@@ -687,6 +688,7 @@ export default function AdminOverviewAndOpenSpacePage() {
       }
 
       setVoucherNotice(`✅ Voucher ${vNo} saved to database!`);
+      setShowRaiseVoucherModal(false);
       setTimeout(() => setVoucherNotice(""), 5000);
 
       setVoucherForm((prev) => ({
@@ -2964,242 +2966,205 @@ export default function AdminOverviewAndOpenSpacePage() {
           TAB 3: MY EXPENSE VOUCHERS (100% PRESERVED)
       ===================================================================== */}
       {activeTab === "vouchers" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <form
-            onSubmit={handleCreateVoucher}
-            className="lg:col-span-5 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4"
-          >
-            <h2 className="font-display text-lg font-bold">Raise Expense Voucher</h2>
-            <input
-              required
-              value={voucherForm.title}
-              onChange={(e) => setVoucherForm({ ...voucherForm, title: e.target.value })}
-              placeholder="Voucher Title *"
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2.5 text-xs"
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <input
-                value={voucherForm.project_ref}
-                onChange={(e) => setVoucherForm({ ...voucherForm, project_ref: e.target.value })}
-                placeholder="Project Ref (Optional)"
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              />
-              <select
-                value={voucherForm.category}
-                onChange={(e) => setVoucherForm({ ...voucherForm, category: e.target.value })}
-                className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-              >
-                {VOUCHER_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div className="space-y-4">
+          <RaisedVouchersWorkspacePanel
+            vouchers={myVouchers || []}
+            currentUser={me}
+            onOpenCreateModal={() => setShowRaiseVoucherModal(true)}
+            onUpdateVoucher={(updated) => {
+              setMyVouchers((prev: any[]) =>
+                prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
+              );
+              setExecData((prev: any) => ({
+                ...prev,
+                allVouchers: (prev.allVouchers || []).map((item: any) =>
+                  item.id === updated.id ? { ...item, ...updated } : item
+                ),
+              }));
+            }}
+            onReuseVoucher={(item) => {
+              setVoucherForm((prev: any) => ({
+                ...prev,
+                title: item.title || "",
+                project_ref: item.project_ref || "",
+                category: item.category || VOUCHER_CATEGORIES[0],
+                payment_method: item.payment_method || "Bank Transfer",
+                description: cleanVoucherNotes(item),
+              }));
+              if (Array.isArray(item.line_items) && item.line_items.length > 0) {
+                setVoucherItems(item.line_items);
+              } else {
+                setVoucherItems([{ item: item.title || "Item", qty: 1, unitPrice: Number(item.amount || 0) }]);
+              }
+              setShowRaiseVoucherModal(true);
+            }}
+          />
 
-            <div className="space-y-2">
-              {voucherItems.map((row, idx) => (
-                <div key={idx} className="grid grid-cols-6 gap-2">
-                  <input
-                    placeholder="Item description"
-                    value={row.item}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].item = e.target.value;
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-3 bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Qty"
-                    value={row.qty}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].qty = Number(e.target.value);
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-1 bg-[var(--bg-main)] rounded-xl px-2 py-2 text-xs font-mono"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Unit ₦"
-                    value={row.unitPrice}
-                    onChange={(e) => {
-                      const next = [...voucherItems];
-                      next[idx].unitPrice = Number(e.target.value);
-                      setVoucherItems(next);
-                    }}
-                    className="col-span-2 bg-[var(--bg-main)] rounded-xl px-2 py-2 text-xs font-mono"
-                  />
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setVoucherItems([...voucherItems, { item: "", qty: 1, unitPrice: 0 }])}
-                className="text-[11px] font-mono text-[#c7cb2d] flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3 h-3" /> Add Item
-              </button>
-            </div>
-
-            <textarea
-              rows={2}
-              value={voucherForm.description}
-              onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })}
-              placeholder="Notes or payout account breakdown..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
-
-            <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                  Receipt / Image Proof (Optional)
-                </span>
-                <label className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:border-[#c7cb2d]">
-                  <ImageIcon className="w-3.5 h-3.5 text-[#c7cb2d]" /> Attach Image
-                  <input type="file" accept="image/*,application/pdf" onChange={handleVoucherAttachment} className="hidden" />
-                </label>
-              </div>
-              {voucherForm.attachment_data && (
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-xs font-mono text-[#c7cb2d] truncate">{voucherForm.attachment_name}</span>
+          {/* Modal Form for Raising a New Voucher (Only shown when "+ Create New Voucher" or "Re-use" is clicked) */}
+          {showRaiseVoucherModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="w-full max-w-xl rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-2xl p-6 space-y-4 my-8 max-h-[92vh] overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-[var(--border-subtle)]/60 pb-3">
+                  <div>
+                    <h2 className="font-display text-lg font-bold">Raise Expense Voucher</h2>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      Submitted vouchers route to the Finance Desk for executive approval & disbursement
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setVoucherForm({ ...voucherForm, attachment_data: "", attachment_name: "" })}
-                    className="text-xs text-red-400 cursor-pointer"
+                    onClick={() => setShowRaiseVoucherModal(false)}
+                    className="p-1.5 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-white cursor-pointer"
                   >
-                    Remove
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
-              )}
-            </div>
 
-            <input
-              value={voucherForm.initial_comment}
-              onChange={(e) => setVoucherForm({ ...voucherForm, initial_comment: e.target.value })}
-              placeholder="Add an initial comment (Optional)..."
-              className="w-full bg-[var(--bg-main)] rounded-xl px-3.5 py-2 text-xs"
-            />
-
-            {voucherNotice && (
-              <p className="text-xs font-mono font-bold text-[#c7cb2d]">{voucherNotice}</p>
-            )}
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-xs font-mono font-bold text-[#c7cb2d]">
-                Total: ₦{computedVoucherTotal.toLocaleString()}
-              </span>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-6 py-2.5 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase cursor-pointer"
-              >
-                Submit Voucher
-              </button>
-            </div>
-          </form>
-
-          <div className="lg:col-span-7 space-y-3 max-h-[560px] overflow-y-auto pr-1">
-            {myVouchers.slice((voucherPage - 1) * 5, voucherPage * 5).map((v) => {
-              const vComments = Array.isArray(v.comments) ? v.comments : [];
-              return (
-                <div key={v.id} className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] font-mono text-[#c7cb2d]">
-                        {v.voucher_no || v.voucher_code} • {v.category}
-                      </span>
-                      <h3 className="font-display text-sm font-bold">{v.title}</h3>
-                      {v.description && <p className="text-xs text-[var(--text-muted)]">{v.description}</p>}
-                    </div>
-                    <div className="lg:col-span-7">
-              <RaisedVouchersWorkspacePanel
-                vouchers={
-                  Array.isArray(execData?.allVouchers) && execData.allVouchers.length > 0
-                    ? execData.allVouchers
-                    : myVouchers || []
-                }
-                currentUser={me}
-                onUpdateVoucher={(updated) => {
-                  setMyVouchers((prev: any[]) =>
-                    prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
-                  );
-                  setExecData((prev: any) => ({
-                    ...prev,
-                    allVouchers: (prev.allVouchers || []).map((item: any) =>
-                      item.id === updated.id ? { ...item, ...updated } : item
-                    ),
-                  }));
-                }}
-                onReuseVoucher={(item) => {
-                  setVoucherForm((prev: any) => ({
-                    ...prev,
-                    title: item.title || "",
-                    category: item.category || "Marketing & Advertising",
-                    amount: String(item.amount || ""),
-                    payment_method: item.payment_method || "Bank Transfer",
-                    notes: cleanVoucherNotes(item),
-                  }));
-                }}
-              />
-            </div>
+                <form onSubmit={handleCreateVoucher} className="space-y-4">
+                  <input
+                    required
+                    value={voucherForm.title}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, title: e.target.value })}
+                    placeholder="Voucher Title / Particular *"
+                    className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs"
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <input
+                      value={voucherForm.project_ref}
+                      onChange={(e) => setVoucherForm({ ...voucherForm, project_ref: e.target.value })}
+                      placeholder="Project Ref (Optional)"
+                      className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3 py-2 text-xs"
+                    />
+                    <select
+                      value={voucherForm.category}
+                      onChange={(e) => setVoucherForm({ ...voucherForm, category: e.target.value })}
+                      className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3 py-2 text-xs"
+                    >
+                      {VOUCHER_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  {v.attachment_url && (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewProofUrl(v.attachment_url)}
-                      className="text-[11px] font-mono text-[#c7cb2d] underline cursor-pointer"
-                    >
-                      View Attached Proof ({v.attachment_name || "Image"})
-                    </button>
-                  )}
-
-                  <div className="pt-2 border-t border-[var(--border-subtle)]/40 space-y-2">
-                    {vComments.map((c: any, i: number) => (
-                      <div key={i} className="px-3 py-1.5 rounded-xl bg-[var(--bg-main)] text-xs">
-                        <span className="font-mono text-[10px] text-[#c7cb2d] font-bold">{c.author}: </span>
-                        <span>{c.text}</span>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                      Line Items Breakdown
+                    </label>
+                    {voucherItems.map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-6 gap-2">
+                        <input
+                          placeholder="Item description"
+                          value={row.item}
+                          onChange={(e) => {
+                            const next = [...voucherItems];
+                            next[idx].item = e.target.value;
+                            setVoucherItems(next);
+                          }}
+                          className="col-span-3 bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3 py-2 text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Qty"
+                          value={row.qty}
+                          onChange={(e) => {
+                            const next = [...voucherItems];
+                            next[idx].qty = Number(e.target.value);
+                            setVoucherItems(next);
+                          }}
+                          className="col-span-1 bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-2 py-2 text-xs font-mono"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Unit ₦"
+                          value={row.unitPrice}
+                          onChange={(e) => {
+                            const next = [...voucherItems];
+                            next[idx].unitPrice = Number(e.target.value);
+                            setVoucherItems(next);
+                          }}
+                          className="col-span-2 bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-2 py-2 text-xs font-mono"
+                        />
                       </div>
                     ))}
-                    <div className="flex gap-2">
-                      <input
-                        value={voucherCommentInputs[v.id] || ""}
-                        onChange={(e) => setVoucherCommentInputs((prev) => ({ ...prev, [v.id]: e.target.value }))}
-                        placeholder="Write a comment & press Enter..."
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddVoucherComment(v);
-                          }
-                        }}
-                        className="flex-1 bg-[var(--bg-main)] rounded-xl px-3 py-1.5 text-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleAddVoucherComment(v)}
-                        className="px-3 py-1.5 rounded-xl bg-[#c7cb2d] text-black text-[11px] font-bold cursor-pointer"
-                      >
-                        Post
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVoucherItems([...voucherItems, { item: "", qty: 1, unitPrice: 0 }])}
+                      className="text-[11px] font-mono text-[#c7cb2d] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Add Item
+                    </button>
                   </div>
-                </div>
-              );
-            })}
-            {myVouchers.length === 0 && (
-              <div className="p-8 rounded-3xl bg-[var(--bg-card)] text-center text-xs text-[var(--text-muted)]">
-                You have not submitted any expense vouchers yet.
+
+                  <textarea
+                    rows={2}
+                    value={voucherForm.description}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })}
+                    placeholder="Notes or payout account breakdown..."
+                    className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+                  />
+
+                  <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                        Receipt / Image Proof (Optional)
+                      </span>
+                      <label className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:border-[#c7cb2d]">
+                        <ImageIcon className="w-3.5 h-3.5 text-[#c7cb2d]" /> Attach Image
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={handleVoucherAttachment}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    {voucherForm.attachment_data && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-xs font-mono text-[#c7cb2d] truncate">
+                          {voucherForm.attachment_name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVoucherForm({ ...voucherForm, attachment_data: "", attachment_name: "" })
+                          }
+                          className="text-xs text-red-400 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    value={voucherForm.initial_comment}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, initial_comment: e.target.value })}
+                    placeholder="Add an initial comment (Optional)..."
+                    className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2 text-xs"
+                  />
+
+                  {voucherNotice && (
+                    <p className="text-xs font-mono font-bold text-[#c7cb2d]">{voucherNotice}</p>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)]/40">
+                    <span className="text-sm font-mono font-bold text-[#c7cb2d]">
+                      Total: ₦{computedVoucherTotal.toLocaleString()}
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="px-6 py-2.5 rounded-full bg-[#c7cb2d] text-black font-bold text-xs uppercase cursor-pointer hover:brightness-110 transition"
+                    >
+                      {saving ? "Submitting..." : "Submit Voucher"}
+                    </button>
+                  </div>
+                </form>
               </div>
-            )}
-            <AdminPagination
-              currentPage={voucherPage}
-              totalItems={myVouchers.length}
-              pageSize={5}
-              onPageChange={setVoucherPage}
-              itemLabel="vouchers"
-            />
-          </div>
+            </div>
+          )}
         </div>
       )}
 

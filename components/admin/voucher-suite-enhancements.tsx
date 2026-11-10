@@ -1073,11 +1073,15 @@ export function RaisedVouchersWorkspacePanel({
   currentUser,
   onUpdateVoucher,
   onVoucherCreated,
+  onOpenCreateModal,
+  onReuseVoucher,
 }: {
   vouchers: any[];
   currentUser?: any;
   onUpdateVoucher: (updated: any) => void;
   onVoucherCreated?: (created: any) => void;
+  onOpenCreateModal?: () => void;
+  onReuseVoucher?: (v: any) => void;
 }) {
   const [filters, setFilters] = React.useState<FilterState>({
     category: "ALL",
@@ -1187,7 +1191,7 @@ export function RaisedVouchersWorkspacePanel({
         </div>
         <button
           type="button"
-          onClick={() => setCreateOpen(true)}
+          onClick={() => (onOpenCreateModal ? onOpenCreateModal() : setCreateOpen(true))}
           className="px-4 py-2.5 rounded-full bg-[#c7cb2d] text-black font-bold text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 hover:brightness-110 transition cursor-pointer shadow-lg"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -1300,6 +1304,11 @@ export function RaisedVouchersWorkspacePanel({
                             setModalMode("comments");
                           }}
                           onReuse={(item) => {
+                            if (onReuseVoucher) {
+                              onReuseVoucher(item);
+                              if (onOpenCreateModal) onOpenCreateModal();
+                              return;
+                            }
                             setNewForm({
                               title: item.title || "",
                               category: item.category || VOUCHER_CATEGORIES[0],
