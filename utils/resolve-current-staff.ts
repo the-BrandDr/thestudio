@@ -176,8 +176,54 @@ export const STUDIO_SERVICE_CATEGORIES = [
   "Brand Strategy & Consultation",
 ];
 
+export type ApprovalRoleTier = "level1_ceo" | "level2_ops" | "level3_finance" | "staff";
+
+export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
+  if (!staff) return "staff";
+  const code = String(staff.staff_id || staff.staff_code || "").toUpperCase().trim();
+  const role = String(staff.role || staff.designation || staff.position || "").toLowerCase();
+  const dept = String(staff.department || "").toLowerCase();
+
+  if (
+    code === "LS-01" ||
+    code === "LS-1" ||
+    role.includes("ceo") ||
+    role.includes("chief executive") ||
+    role.includes("founder") ||
+    role.includes("managing director") ||
+    role.includes("strategist") ||
+    dept.includes("executive")
+  ) {
+    return "level1_ceo";
+  }
+
+  if (
+    role.includes("finance") ||
+    role.includes("account") ||
+    role.includes("treasur") ||
+    dept.includes("finance") ||
+    dept.includes("accounting")
+  ) {
+    return "level3_finance";
+  }
+
+  if (
+    role.includes("operation") ||
+    role.includes("head of ops") ||
+    role.includes("ops") ||
+    role.includes("manager") ||
+    dept.includes("operation")
+  ) {
+    return "level2_ops";
+  }
+
+  return "staff";
+}
+
 export function getVoucherStageMeta(v: any): {
   stage: "pending" | "approved_waiting" | "disbursed" | "rejected";
+  currentLevel: 1 | 2 | 3 | 4 | 0;
+  requiredApproverTier: ApprovalRoleTier | null;
   label: string;
   badgeClass: string;
   isDisbursedOutflow: boolean;
@@ -195,6 +241,8 @@ export function getVoucherStageMeta(v: any): {
   if (isDirect) {
     return {
       stage: "disbursed",
+      currentLevel: 4,
+      requiredApproverTier: null,
       label: "DIRECT EXPENSE • PAID",
       badgeClass: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
       isDisbursedOutflow: true,
@@ -206,22 +254,32 @@ export function getVoucherStageMeta(v: any): {
   }
 
   const rawStatus = String(v?.status || "pending").toLowerCase();
-  const opsStatus = String(v?.ops_status || "pending").toLowerCase();
-  const finStatus = String(v?.finance_status || "pending").toLowerCase();
-  const stratStatus = String(v?.strategist_status || "pending").toLowerCase();
+  const lvl1Ceo = String(v?.strategist_status || "pending").toLowerCase();
+  const lvl2Ops = String(v?.ops_status || "pending").toLowerCase();
+  const lvl3Fin = String(v?.finance_status || "pending").toLowerCase();
 
-  const approvalSummary = `Ops: ${opsStatus.toUpperCase()} • Fin: ${finStatus.toUpperCase()} • Exec: ${stratStatus.toUpperCase()}`;
+  const approvalSummary = "L1 CEO: " + lvl1Ceo.toUpperCase() + " → L2 Ops: " + lvl2Ops.toUpperCase() + " → L3 Fin: " + lvl3Fin.toUpperCase();
 
   if (
     rawStatus === "rejected" ||
     rawStatus === "declined" ||
-    opsStatus === "rejected" ||
-    finStatus === "rejected" ||
-    stratStatus === "rejected"
+    lvl1Ceo === "rejected" ||
+    lvl2Ops === "rejected" ||
+    lvl3Fin === "rejected"
   ) {
+    const rejectedBy =
+      lvl1Ceo === "rejected"
+        ? "CEO (Level 1)"
+        : lvl2Ops === "rejected"
+        ? "Head of Ops (Level 2)"
+        : lvl3Fin === "rejected"
+        ? "Head of Finance (Level 3)"
+        : "Executive";
     return {
       stage: "rejected",
-      label: "REJECTED",
+      currentLevel: 0,
+      requiredApproverTier: null,
+      label: "REJECTED BY " + rejectedBy.toUpperCase(),
       badgeClass: "bg-red-500/15 text-red-400 border border-red-500/30",
       isDisbursedOutflow: false,
       isDirectExpense: false,
@@ -234,7 +292,9 @@ export function getVoucherStageMeta(v: any): {
   if (rawStatus === "disbursed" || rawStatus === "paid") {
     return {
       stage: "disbursed",
-      label: "DISBURSED",
+      currentLevel: 4,
+      requiredApproverTier: null,
+      label: "DISBURSED • PAID",
       badgeClass: "bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/40",
       isDisbursedOutflow: true,
       isDirectExpense: false,
@@ -244,38 +304,62 @@ export function getVoucherStageMeta(v: any): {
     };
   }
 
-  // Strictly require ALL 3 approval levels (Ops + Finance + Exec) to be "approved"
-  const allThreeApproved =
-    opsStatus === "approved" && finStatus === "approved" && stratStatus === "approved";
-
-  if (allThreeApproved) {
+  if (lvl1Ceo !== "approved") {
     return {
-      stage: "approved_waiting",
-      label: "APPROVED • AWAITING DISBURSEMENT",
-      badgeClass: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
+      stage: "pending",
+      currentLevel: 1,
+      requiredApproverTier: "level1_ceo",
+      label: "LEVEL 1/3 • AWAITING CEO APPROVAL",
+      badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
       isDisbursedOutflow: false,
       isDirectExpense: false,
       isDisbursedVoucher: false,
-      canDisburse: true,
+      canDisburse: false,
       approvalSummary,
     };
   }
 
-  const approvedCount =
-    (opsStatus === "approved" ? 1 : 0) +
-    (finStatus === "approved" ? 1 : 0) +
-    (stratStatus === "approved" ? 1 : 0);
+  if (lvl2Ops !== "approved") {
+    return {
+      stage: "pending",
+      currentLevel: 2,
+      requiredApproverTier: "level2_ops",
+      label: "LEVEL 2/3 • AWAITING HEAD OF OPS",
+      badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+      isDisbursedOutflow: false,
+      isDirectExpense: false,
+      isDisbursedVoucher: false,
+      canDisburse: false,
+      approvalSummary,
+    };
+  }
+
+  if (lvl3Fin !== "approved") {
+    return {
+      stage: "pending",
+      currentLevel: 3,
+      requiredApproverTier: "level3_finance",
+      label: "LEVEL 3/3 • AWAITING HEAD OF FINANCE",
+      badgeClass: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
+      isDisbursedOutflow: false,
+      isDirectExpense: false,
+      isDisbursedVoucher: false,
+      canDisburse: false,
+      approvalSummary,
+    };
+  }
 
   return {
-    stage: "pending",
-    label: approvedCount > 0 ? `PENDING APPROVAL (${approvedCount}/3 SIGNED)` : "PENDING APPROVAL",
-    badgeClass: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+    stage: "approved_waiting",
+    currentLevel: 3,
+    requiredApproverTier: "level3_finance",
+    label: "APPROVED (3/3) • READY FOR DISBURSEMENT",
+    badgeClass: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
     isDisbursedOutflow: false,
     isDirectExpense: false,
     isDisbursedVoucher: false,
-    canDisburse: false,
+    canDisburse: true,
     approvalSummary,
   };
 }
-
 export const resolveCurrentStaff = resolveAuthenticatedStaff;

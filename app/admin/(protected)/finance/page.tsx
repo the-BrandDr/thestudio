@@ -4,6 +4,7 @@ import { AdminPagination } from "@/components/admin/admin-pagination";
 import {
   VoucherSummaryAndFilterBar,
   VoucherRowActionsMenu,
+  VoucherLevelActionButtons,
   VoucherActionModals,
   filterVouchersList,
   cleanVoucherNotes,
@@ -2069,58 +2070,17 @@ export default function EnterpriseFinanceSuite() {
                               />
                             </div>
                             {!isDirect && (
-                              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                {v.ops_status !== "approved" && stageMeta.stage === "pending" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_ops")}
-                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
-                                  >
-                                    + Ops
-                                  </button>
-                                )}
-                                {v.finance_status !== "approved" && stageMeta.stage === "pending" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_fin")}
-                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
-                                  >
-                                    + Finance
-                                  </button>
-                                )}
-                                {v.strategist_status !== "approved" && stageMeta.stage === "pending" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDisburseVoucherInFinance(v, "approve_exec")}
-                                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px] font-mono hover:border-[#c7cb2d] cursor-pointer transition"
-                                  >
-                                    + Exec
-                                  </button>
-                                )}
-                                {stageMeta.stage !== "disbursed" && (
-                                  <button
-                                    type="button"
-                                    disabled={!stageMeta.canDisburse}
-                                    onClick={() => {
-                                      if (stageMeta.canDisburse) {
-                                        handleDisburseVoucherInFinance(v, "disbursed");
-                                      }
-                                    }}
-                                    title={
-                                      stageMeta.canDisburse
-                                        ? "Disburse approved voucher"
-                                        : "Requires Ops, Finance & Executive approval first"
-                                    }
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition ${
-                                      stageMeta.canDisburse
-                                        ? "bg-[#c7cb2d] text-black hover:brightness-110 cursor-pointer"
-                                        : "bg-[var(--bg-card)] border border-[var(--border-subtle)]/50 text-[var(--text-dim)] opacity-45 cursor-not-allowed"
-                                    }`}
-                                  >
-                                    Mark Disbursed
-                                  </button>
-                                )}
-                              </div>
+                              <VoucherLevelActionButtons
+                                voucher={v}
+                                pageContext="finance_desk"
+                                onVoucherUpdated={(updated) => {
+                                  if (typeof setVouchers === "function") {
+                                    setVouchers((prev: any[]) =>
+                                      prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
+                                    );
+                                  }
+                                }}
+                              />
                             )}
                           </div>
                         </div>

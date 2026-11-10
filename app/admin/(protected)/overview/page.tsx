@@ -47,6 +47,7 @@ import { triggerPushNotification } from "@/utils/push-notifications";
 import {
   VoucherSummaryAndFilterBar,
   VoucherRowActionsMenu,
+  VoucherLevelActionButtons,
   VoucherActionModals,
   filterVouchersList,
   cleanVoucherNotes,
@@ -119,6 +120,15 @@ async function compressImage(file: File, maxW = 1200, quality = 0.78): Promise<{
 }
 
 export default function AdminOverviewAndOpenSpacePage() {
+  const [wsVoucherFilters, setWsVoucherFilters] = React.useState({
+    category: "ALL",
+    status: "ALL",
+    startDate: "",
+    endDate: "",
+    search: "",
+  });
+  const [activeWsVoucher, setActiveWsVoucher] = React.useState<any | null>(null);
+  const [wsVoucherModalMode, setWsVoucherModalMode] = React.useState<"comments" | "edit" | null>(null);
   const supabase = createClient();
   const [activeTab, setActiveTab] = React.useState<"overview" | "chat" | "leave" | "vouchers" | "promotion">("overview");
   const [me, setMe] = React.useState<any | null>(null);
