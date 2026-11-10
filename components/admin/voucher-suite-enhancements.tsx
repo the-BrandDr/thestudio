@@ -48,14 +48,6 @@ export function extractVoucherComments(v: any): VoucherComment[] {
       if (Array.isArray(parsed)) return parsed;
     } catch (_) {}
   }
-  if (typeof window !== "undefined" && v.id) {
-    try {
-      const local = JSON.parse(
-        window.localStorage.getItem(`lavie_vch_comments_${v.id}`) || "[]"
-      );
-      if (Array.isArray(local)) return local;
-    } catch (_) {}
-  }
   return [];
 }
 
