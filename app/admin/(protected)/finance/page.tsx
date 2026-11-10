@@ -1,6 +1,13 @@
 "use client";
 
 import { AdminPagination } from "@/components/admin/admin-pagination";
+import {
+  VoucherSummaryAndFilterBar,
+  VoucherRowActionsMenu,
+  VoucherActionModals,
+  filterVouchersList,
+  cleanVoucherNotes,
+} from "@/components/admin/voucher-suite-enhancements";
 import { resolveAuthenticatedStaff, isExecutiveDirector, STUDIO_SERVICE_CATEGORIES, VOUCHER_CATEGORIES, getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -74,6 +81,15 @@ export default function EnterpriseFinanceSuite() {
   const [invoicesPage, setInvoicesPage] = React.useState(1);
   const [receiptsPage, setReceiptsPage] = React.useState(1);
   const [expensesPage, setExpensesPage] = React.useState(1);
+  const [voucherFilters, setVoucherFilters] = React.useState({
+    category: "ALL",
+    status: "ALL",
+    startDate: "",
+    endDate: "",
+    search: "",
+  });
+  const [activeVoucherModal, setActiveVoucherModal] = React.useState<any | null>(null);
+  const [voucherModalMode, setVoucherModalMode] = React.useState<"comments" | "edit" | null>(null);
   const [payrollPage, setPayrollPage] = React.useState(1);
   const [newProjectStatus, setNewProjectStatus] = React.useState<"ongoing" | "pending" | "completed">("ongoing");
 
@@ -1974,6 +1990,7 @@ export default function EnterpriseFinanceSuite() {
                 ))}
               </select>
             </div>
+                  <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={voucherFilters} setFilters={setVoucherFilters} />
 
             {(() => {
               const filteredExp = (vouchers || []).filter((v: any) =>
@@ -2023,9 +2040,34 @@ export default function EnterpriseFinanceSuite() {
                             )}
                           </div>
                           <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
-                            <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
                               -₦{Number(v.amount || 0).toLocaleString()}
                             </span>
+                              <VoucherRowActionsMenu
+                                voucher={v}
+                                onViewEdit={(item) => {
+                                  setActiveVoucherModal(item);
+                                  setVoucherModalMode("edit");
+                                }}
+                                onOpenComments={(item) => {
+                                  setActiveVoucherModal(item);
+                                  setVoucherModalMode("comments");
+                                }}
+                                onReuse={(item) => {
+                                  setDirectExpForm({
+                                    title: item.title || "",
+                                    category: item.category || VOUCHER_CATEGORIES[0],
+                                    amount: String(item.amount || ""),
+                                    date: new Date().toISOString().slice(0, 10),
+                                    vendor: String(item.staff_name || "").replace(/^\[DIRECT\]\s*/, ""),
+                                    payment_method: item.payment_method || "Bank Transfer",
+                                    project_ref: "",
+                                    notes: cleanVoucherNotes(item),
+                                  });
+                                }}
+                              />
+                            </div>
                             {!isDirect && (
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
                                 {v.ops_status !== "approved" && stageMeta.stage === "pending" && (
@@ -2256,6 +2298,21 @@ export default function EnterpriseFinanceSuite() {
         <OfficialDocumentModal type={printDoc.type} data={printDoc.data} onClose={() => setPrintDoc(null)} />
       )}
     </div>
+      <VoucherActionModals
+        activeVoucher={activeVoucherModal}
+        modalMode={voucherModalMode}
+        onClose={() => {
+          setActiveVoucherModal(null);
+          setVoucherModalMode(null);
+        }}
+        onVoucherUpdated={(updated) => {
+          if (typeof setVouchers === "function") {
+            setVouchers((prev: any[]) =>
+              prev.map((v: any) => (v.id === updated.id ? { ...v, ...updated } : v))
+            );
+          }
+        }}
+      />
     </div>
   );
 }

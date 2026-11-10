@@ -44,6 +44,13 @@ import { resolveAuthenticatedStaff,
   STUDIO_SERVICE_CATEGORIES,
   getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import { triggerPushNotification } from "@/utils/push-notifications";
+import {
+  VoucherSummaryAndFilterBar,
+  VoucherRowActionsMenu,
+  VoucherActionModals,
+  filterVouchersList,
+  cleanVoucherNotes,
+} from "@/components/admin/voucher-suite-enhancements";
 
 const STUDIO_DEPARTMENTS = [
   "Executive & Board Governance",
@@ -3284,6 +3291,26 @@ export default function AdminOverviewAndOpenSpacePage() {
           <img src={previewProofUrl} alt="Proof" className="max-h-[85vh] max-w-4xl rounded-2xl object-contain" />
         </div>
       )}
+      <VoucherActionModals
+        activeVoucher={activeWsVoucher}
+        modalMode={wsVoucherModalMode}
+        currentUser={me}
+        onClose={() => {
+          setActiveWsVoucher(null);
+          setWsVoucherModalMode(null);
+        }}
+        onVoucherUpdated={(updated) => {
+          setMyVouchers((prev: any[]) =>
+            prev.map((v: any) => (v.id === updated.id ? { ...v, ...updated } : v))
+          );
+          setExecData((prev: any) => ({
+            ...prev,
+            allVouchers: (prev.allVouchers || []).map((v: any) =>
+              v.id === updated.id ? { ...v, ...updated } : v
+            ),
+          }));
+        }}
+      />
     </div>
   );
 }

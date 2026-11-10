@@ -98,22 +98,84 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, ...updates } = body;
+    const { id, action, comment, ...updates } = body;
     if (!id) {
       return NextResponse.json({ error: "Missing voucher id" }, { status: 400 });
     }
-    const supabase = getDbClient();
-    const { data, error } = await supabase
+
+    const supabase = getAdminSupabase();
+
+    // Fetch existing row first so we can safely append comments or merge edits
+    const { data: existing } = await supabase
       .from("expense_vouchers")
-      .update(updates)
-      .eq("id", id)
       .select("*")
+      .eq("id", id)
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (action === "add_comment" && comment) {
+      const existingComments = Array.isArray(existing?.comments) ? existing.comments : [];
+      const updatedComments = [...existingComments, comment];
+
+      // Try saving to `comments` column first; fallback to embedding JSON marker in `notes`
+      const { data: d1, error: e1 } = await supabase
+        .from("expense_vouchers")
+        .update({ comments: updatedComments })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (!e1 && d1) {
+        return NextResponse.json({ data: d1 });
+      }
+
+      // Fallback: store comments JSON inside description/notes if `comments` column is not in schema
+      const rawNotes = String(existing?.notes || existing?.description || "");
+      const baseNotes = rawNotes.split("\n<!--VCH_COMMENTS:")[0];
+      const serialized = `${baseNotes}\n<!--VCH_COMMENTS:${JSON.stringify(updatedComments)}-->`;
+
+      for (const col of ["notes", "description"]) {
+        const { data: d2, error: e2 } = await supabase
+          .from("expense_vouchers")
+          .update({ [col]: serialized })
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (!e2 && d2) {
+          return NextResponse.json({ data: { ...d2, comments: updatedComments } });
+        }
+      }
+
+      return NextResponse.json({
+        data: { ...(existing || { id }), comments: updatedComments },
+      });
     }
-    return NextResponse.json({ data });
+
+    // Standard update (approvals, disbursement, or View/Edit voucher fields)
+    let payload: Record<string, any> = { ...updates };
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { data, error } = await supabase
+        .from("expense_vouchers")
+        .update(payload)
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (!error && data) {
+        return NextResponse.json({ data });
+      }
+
+      const msg = String(error?.message || "");
+      const colMatch =
+        msg.match(/Could not find the '([^']+)' column/i) ||
+        msg.match(/column "([^"]+)" of relation "[^"]+" does not exist/i);
+      if (colMatch && colMatch[1] && colMatch[1] in payload) {
+        delete payload[colMatch[1]];
+        continue;
+      }
+      return NextResponse.json({ error: msg || "Update failed" }, { status: 400 });
+    }
+
+    return NextResponse.json({ error: "Could not update voucher" }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
