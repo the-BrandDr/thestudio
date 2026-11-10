@@ -45,7 +45,7 @@ function computePayeWithRelief(monthlyGross: number, monthlyRelief: number = 0):
   return { paye, net };
 }
 
-export default function EnterpriseFinanceSuite({ scopedMode }: { scopedMode?: "sales" | "billing" } = {}) {
+export default function EnterpriseFinanceSuite() {
   const supabase = createClient();
   const [execViewOnly, setExecViewOnly] = React.useState(false);
   React.useEffect(() => {
@@ -68,11 +68,6 @@ export default function EnterpriseFinanceSuite({ scopedMode }: { scopedMode?: "s
     });
   }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<any>("overview");
-  // Sync scopedMode to activeTab when embedded in Inquiries Desk for Support Staff
-  React.useEffect(() => {
-    if (scopedMode === "sales") setActiveTab("projects" as any);
-    else if (scopedMode === "billing") setActiveTab("billing" as any);
-  }, [scopedMode]);
 
   // Pagination states for Finance lists
   const [projectsPage, setProjectsPage] = React.useState(1);

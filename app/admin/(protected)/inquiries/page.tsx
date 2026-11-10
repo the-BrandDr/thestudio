@@ -1,6 +1,7 @@
 "use client";
 
-import EnterpriseFinanceSuite from "../finance/page";
+import { CommercialActionModals } from "@/components/admin/commercial-action-modals";
+import { logStaffActivity } from "@/utils/staff-activity-logger";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
 
@@ -23,6 +24,35 @@ export default function AdminInquiriesPage() {
     setInqPageMap((prev) => ({ ...prev, [key]: page }));
   const supabase = createClient();
   const [subscribers, setSubscribers] = React.useState<any[]>([]);
+  const [commercialModal, setCommercialModal] = React.useState<"sale" | "invoice" | null>(null);
+  const [portalActivities, setPortalActivities] = React.useState<any[]>([]);
+
+  const loadPortalActivities = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/activity", { cache: "no-store" });
+      const json = await res.json();
+      const serverRows = Array.isArray(json?.data) ? json.data : [];
+      let localRows: any[] = [];
+      if (typeof window !== "undefined") {
+        try {
+          localRows = JSON.parse(window.localStorage.getItem("lavie_staff_activity_logs") || "[]");
+        } catch (_) {}
+      }
+      const merged = [...localRows, ...serverRows];
+      merged.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      setPortalActivities(merged);
+      try { setActivityLogs(merged); } catch (_) {}
+    } catch (_) {}
+  }, []);
+
+  React.useEffect(() => {
+    loadPortalActivities();
+    const onNewLog = () => loadPortalActivities();
+    if (typeof window !== "undefined") {
+      window.addEventListener("lavie-activity-logged", onNewLog);
+      return () => window.removeEventListener("lavie-activity-logged", onNewLog);
+    }
+  }, [loadPortalActivities]);
   const [canManageNewsletter, setCanManageNewsletter] = React.useState(true);
 
   React.useEffect(() => {
@@ -263,28 +293,6 @@ export default function AdminInquiriesPage() {
           >
             Quotes ({quotes.length})
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveView("sales")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition cursor-pointer ${
-              activeView === "sales"
-                ? "bg-white text-black font-bold"
-                : "text-[var(--text-muted)] hover:text-white"
-            }`}
-          >
-            Record Sales
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView("billing")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition cursor-pointer ${
-              activeView === "billing"
-                ? "bg-white text-black font-bold"
-                : "text-[var(--text-muted)] hover:text-white"
-            }`}
-          >
-            Billing & Invoices
-          </button>
             <button
               type="button"
               onClick={() => setActiveView("feedbacks" as any)}
@@ -474,17 +482,6 @@ export default function AdminInquiriesPage() {
       )}
 
       {/* VIEW 2: GENERATED QUOTES */}
-      {activeView === "sales" && (
-          <div className="pt-2">
-            <EnterpriseFinanceSuite scopedMode="sales" />
-          </div>
-        )}
-
-        {activeView === "billing" && (
-          <div className="pt-2">
-            <EnterpriseFinanceSuite scopedMode="billing" />
-          </div>
-        )}
 
         {activeView === "quotes" && (
         <div className="space-y-4">
@@ -495,13 +492,29 @@ export default function AdminInquiriesPage() {
                 Create official quotes for walk-in/direct corporate clients or from website inquiries.
               </p>
             </div>
-            <button
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCommercialModal("sale")}
+                  className="px-4 py-2 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] hover:border-[#c7cb2d] text-white text-[11px] font-mono uppercase font-bold transition cursor-pointer"
+                >
+                  + Record Project Sale
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommercialModal("invoice")}
+                  className="px-4 py-2 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] hover:border-[#c7cb2d] text-white text-[11px] font-mono uppercase font-bold transition cursor-pointer"
+                >
+                  + Generate Invoice
+                </button>
+                <button
               type="button"
               onClick={openStandaloneQuoteBuilder}
               className="px-4 py-2 rounded-2xl bg-[#c7cb2d] text-black text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 transition"
             >
               + Generate Client Quote
             </button>
+              </div>
           </div>
           <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
           {quotes.slice(((inqPageMap["quotes"] || 1) - 1) * 8, (inqPageMap["quotes"] || 1) * 8).map((qt) => (
@@ -706,6 +719,11 @@ export default function AdminInquiriesPage() {
           onClose={() => setPrintQuote(null)}
         />
       )}
+      <CommercialActionModals
+        openModal={commercialModal}
+        onClose={() => setCommercialModal(null)}
+        onSuccess={() => loadPortalActivities()}
+      />
     </div>
   );
 }

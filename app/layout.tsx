@@ -20,15 +20,16 @@ export const metadata = {
   },
   description:
     "Premier creative branding, corporate identity, event scenography, custom craft fabrication, and advertising agency.",
-    icons: {
+      manifest: "/site.webmanifest",
+  icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/apple-icon.png", type: "image/png" },
+      { url: "/favicon.ico", sizes: "48x48", type: "image/x-icon" },
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
     shortcut: ["/favicon.ico"],
     apple: [
-      { url: "/apple-icon.png", type: "image/png" },
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
     ],
   },
 };
