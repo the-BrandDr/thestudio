@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
-import { STUDIO_SERVICE_CATEGORIES, resolveCurrentStaff } from "@/utils/resolve-current-staff";
+import { STUDIO_SERVICE_CATEGORIES, resolveAuthenticatedStaff } from "@/utils/resolve-current-staff";
 import { logStaffActivity } from "@/utils/staff-activity-logger";
 import { X, Plus, Trash2, CheckCircle2, FileText, Briefcase } from "lucide-react";
 
@@ -51,7 +51,7 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
   >([{ description: "", quantity: 1, unit_price: 0 }]);
 
   React.useEffect(() => {
-    resolveCurrentStaff(supabase).then((s) => setMe(s)).catch(() => {});
+    resolveAuthenticatedStaff(supabase).then((s) => setMe(s)).catch(() => {});
   }, []);
 
   if (!openModal) return null;

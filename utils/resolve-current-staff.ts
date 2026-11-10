@@ -277,3 +277,5 @@ export function getVoucherStageMeta(v: any): {
     approvalSummary,
   };
 }
+
+export const resolveCurrentStaff = resolveAuthenticatedStaff;
