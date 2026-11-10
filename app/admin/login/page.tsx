@@ -100,7 +100,7 @@ export default function AdminLoginPage() {
         <div className="flex flex-col items-center text-center space-y-2.5 border-b border-[var(--border-subtle)]/50 pb-4">
           <Link href="/" className="inline-flex items-center gap-2.5 hover:opacity-90 transition">
             <div className="inline-flex items-center gap-2">
-            <img <img src="/logo-light.svg" alt="Lavie Studios" className="h-7 w-auto object-contain mx-auto" /> { (e.currentTarget as HTMLImageElement).src = "/logo.png"; }} />
+            <img src="/logo-light.svg" alt="Lavie Studios" className="h-7 w-auto object-contain mx-auto" /> { (e.currentTarget as HTMLImageElement).src = "/logo.png"; }} />
           </div>
           </Link>
           <div className="space-y-0.5">
