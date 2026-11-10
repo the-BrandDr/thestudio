@@ -94,14 +94,14 @@ export default function AdminLoginPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)] flex items-center justify-center px-4 py-8 relative overflow-hidden">
-      {/* Encapsulated Single Compact Bordered Card */}
       <div className="w-full max-w-[380px] relative z-10 p-6 sm:p-7 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/80 shadow-2xl space-y-5">
-        {/* Compact Brand Logo & Title Header Inside Card */}
         <div className="flex flex-col items-center text-center space-y-2.5 border-b border-[var(--border-subtle)]/50 pb-4">
           <Link href="/" className="inline-flex items-center gap-2.5 hover:opacity-90 transition">
-            <div className="inline-flex items-center gap-2">
-            <img src="/logo-light.svg" alt="Lavie Studios" className="h-7 w-auto object-contain mx-auto" /> { (e.currentTarget as HTMLImageElement).src = "/logo.png"; }} />
-          </div>
+            <img
+              src="/logo-light.svg"
+              alt="Lavie Studios"
+              className="h-7 w-auto object-contain mx-auto"
+            />
           </Link>
           <div className="space-y-0.5">
             <h1 className="font-display text-lg font-bold tracking-tight">
@@ -113,7 +113,6 @@ export default function AdminLoginPage() {
           </div>
         </div>
 
-        {/* Mode Switcher Tabs: Staff ID vs Email */}
         <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
           <button
             type="button"
@@ -147,7 +146,6 @@ export default function AdminLoginPage() {
           </button>
         </div>
 
-        {/* Compact Login Form */}
         <form onSubmit={handleLogin} className="space-y-3.5">
           {loginMode === "staff_id" ? (
             <div>
@@ -241,7 +239,6 @@ export default function AdminLoginPage() {
           </button>
         </form>
 
-        {/* Footer Link Inside the Bordered Card */}
         <div className="pt-2 border-t border-[var(--border-subtle)]/40 text-center">
           <Link
             href="/"
