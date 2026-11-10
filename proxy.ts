@@ -29,7 +29,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null }, error: null }));
   const pathname = request.nextUrl.pathname;
   const hasErrorParam = request.nextUrl.searchParams.has("error");
 
