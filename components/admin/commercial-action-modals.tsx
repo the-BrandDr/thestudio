@@ -18,7 +18,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
   const [submitting, setSubmitting] = React.useState(false);
   const [notice, setNotice] = React.useState("");
 
-  // Exact "Record Project" form state matching Finance Desk
   const [projectForm, setProjectForm] = React.useState({
     project_title: "",
     service_category: STUDIO_SERVICE_CATEGORIES[0] || "Stage, Lighting & LED Screen Rental",
@@ -31,7 +30,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
     status: "ongoing" as "ongoing" | "pending" | "completed",
   });
 
-  // Exact "Create Official Invoice" form state matching Finance Desk
   const [invoiceForm, setInvoiceForm] = React.useState({
     client_name: "",
     organization: "",
@@ -51,12 +49,26 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
   >([{ description: "", quantity: 1, unit_price: 0 }]);
 
   React.useEffect(() => {
-    resolveAuthenticatedStaff(supabase).then((s) => setMe(s)).catch(() => {});
+    let active = true;
+    (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+        const user = authData?.user;
+        const resolved = await Promise.resolve(
+          (resolveAuthenticatedStaff as any)(user?.email || "", user?.user_metadata || {})
+        );
+        if (active && resolved) {
+          setMe(resolved);
+        }
+      } catch (_) {}
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (!openModal) return null;
 
-  // Resilient multi-table insert helper (matches Finance Desk persistence)
   const insertWithColumnFallback = async (tableName: string, initialPayload: Record<string, any>) => {
     let payload = { ...initialPayload };
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -75,7 +87,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
     return { data: null, error: new Error("Insert retries exceeded") };
   };
 
-  // Submit handler for Record Project Sale (Exact Finance Form logic)
   const handleRecordProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectForm.project_title.trim()) return;
@@ -118,7 +129,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
         if (data && !savedRecord) savedRecord = data;
       }
 
-      // If amount_paid > 0, also auto-generate the corresponding official receipt in receipts table (just like Finance Desk)
       if (paidVal > 0) {
         const rctCode = `LS/RCT/${Math.floor(1000 + Math.random() * 9000)}`;
         const rctPayload = {
@@ -161,7 +171,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
     }
   };
 
-  // Calculations for Invoice Modal
   const subtotal = lineItems.reduce(
     (sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0),
     0
@@ -171,7 +180,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
   const vatAmount = invoiceForm.include_vat ? Math.round(taxableAmount * 0.075) : 0;
   const grandTotal = taxableAmount + vatAmount;
 
-  // Submit handler for Create Official Invoice (Exact Finance Billing Form logic)
   const handleCreateInvoiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.client_name.trim() && !invoiceForm.organization.trim()) return;
@@ -269,7 +277,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
         </div>
 
         {openModal === "sale" ? (
-          /* EXACT FINANCE "RECORD PROJECT" FORM */
           <form onSubmit={handleRecordProjectSubmit} className="space-y-3.5">
             <div>
               <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
@@ -287,7 +294,7 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
 
             <div>
               <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
-                SERVICE CATEGORY *
+                SERVICE CATEGORY
               </label>
               <select
                 value={projectForm.service_category}
@@ -391,7 +398,7 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
 
             <div>
               <label className="block text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)] mb-1">
-                PROJECT STATUS *
+                PROJECT STATUS
               </label>
               <select
                 value={projectForm.status}
@@ -431,7 +438,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
             </button>
           </form>
         ) : (
-          /* EXACT FINANCE "CREATE OFFICIAL INVOICE" FORM */
           <form onSubmit={handleCreateInvoiceSubmit} className="space-y-3.5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -524,7 +530,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
               </div>
             </div>
 
-            {/* Line Items Builder */}
             <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-dim)]">
@@ -604,7 +609,6 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
               </div>
             </div>
 
-            {/* VAT Toggle & Live Total */}
             <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 flex flex-wrap items-center justify-between gap-3">
               <label className="inline-flex items-center gap-2 text-xs font-mono cursor-pointer">
                 <input
