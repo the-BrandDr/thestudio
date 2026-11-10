@@ -16,14 +16,16 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata = {
   title: 'Lavie Studios | Event Branding & Experience Design',
   description: 'We build immersive spatial experiences that make live events unforgettable.',
-  icons: {
-    icon: '/icon.svg',
-    shortcut: '/icon.svg',
-    apple: '/apple-icon.png',
-    other: {
-      rel: 'apple-touch-icon-precomposed',
-      url: '/apple-icon.png',
-    },
+    icons: {
+    icon: [
+      { url: "/icon.svg?v=3", type: "image/svg+xml" },
+      { url: "/apple-icon.png?v=3", type: "image/png", sizes: "180x180" },
+    ],
+    shortcut: ["/icon.svg?v=3"],
+    apple: [
+      { url: "/apple-icon.png?v=3", sizes: "180x180", type: "image/png" },
+    ],
+  },
   },
 };
 
