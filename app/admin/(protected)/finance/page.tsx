@@ -2026,9 +2026,7 @@ export default function EnterpriseFinanceSuite() {
                             <p className="text-xs text-[var(--text-muted)] truncate">
                               {v.staff_name} • {v.payment_method || "Bank Transfer"}
                             </p>
-                            {!isDirect && (
-                              
-                            )}
+                            
                           </div>
                           <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
                             <div className="flex items-center gap-2">
