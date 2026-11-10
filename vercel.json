@@ -1,0 +1,4 @@
+{
+  "installCommand": "unset npm_config_cache_dir && npm install",
+  "buildCommand": "unset npm_config_cache_dir && npm run build"
+}
