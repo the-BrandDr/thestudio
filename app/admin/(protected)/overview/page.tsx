@@ -1746,14 +1746,12 @@ export default function AdminOverviewAndOpenSpacePage() {
                     />
                   </div>
 
-                  <Link
-                    href="/admin/finance"
+                  <Link suppressHydrationWarning href="/admin/finance"
                     className="px-3.5 py-1.5 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] text-xs font-semibold hover:border-[#c7cb2d] flex items-center gap-1"
                   >
                     Finance Desk <ArrowUpRight className="w-3.5 h-3.5 text-[#c7cb2d]" />
                   </Link>
-                  <Link
-                    href="/admin/hr"
+                  <Link suppressHydrationWarning href="/admin/hr"
                     className="px-3.5 py-1.5 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] text-xs font-semibold hover:border-[#c7cb2d] flex items-center gap-1"
                   >
                     HR Queue ({execAnalytics.pendingLeavesCount + execAnalytics.pendingVouchersCount}){" "}

@@ -1537,7 +1537,7 @@ export default function HRAndWorkspaceSuite() {
               icon: Award,
             },
             { id: "leave", label: `Leave Approvals (${leaveList.length})`, icon: Calendar },
-            { id: "vouchers", label: `Voucher Approvals (${voucherList.length})`, icon: Receipt },
+            )`, icon: Receipt },
             ].map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;

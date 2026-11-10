@@ -1991,7 +1991,7 @@ export default function EnterpriseFinanceSuite() {
                 ))}
               </select>
             </div>
-                  <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={voucherFilters} setFilters={setVoucherFilters} />
+                  <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={voucherFilters} setFilters={setVoucherFilters} showAttentionFilter={true} />
 
             {(() => {
               const filteredExp = (vouchers || []).filter((v: any) =>
@@ -2027,17 +2027,7 @@ export default function EnterpriseFinanceSuite() {
                               {v.staff_name} • {v.payment_method || "Bank Transfer"}
                             </p>
                             {!isDirect && (
-                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px] font-mono">
-                                <span className={`px-2 py-0.5 rounded ${v.ops_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
-                                  Ops: {(v.ops_status || "pending").toUpperCase()}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded ${v.finance_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
-                                  Finance: {(v.finance_status || "pending").toUpperCase()}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded ${v.strategist_status === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--bg-card)] text-[var(--text-dim)]"}`}>
-                                  Exec: {(v.strategist_status || "pending").toUpperCase()}
-                                </span>
-                              </div>
+                              
                             )}
                           </div>
                           <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
