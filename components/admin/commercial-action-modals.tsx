@@ -218,7 +218,7 @@ export function CommercialActionModals({ openModal, onClose, onSuccess }: Commer
         amount_paid: 0,
         status: "unpaid",
         due_date: invoiceForm.due_date,
-        notes: invoiceForm.notes.trim(),
+        notes: invoiceForm.notes.trim() + "\n<!--CREATOR:" + staffIdentity.code + "|" + staffIdentity.name + "-->",
         issued_by_name: me?.full_name || "Support Staff",
         issued_by_code: me?.staff_id || "LS-STAFF",
       };

@@ -1,9 +1,9 @@
 "use client";
 
 import { CommercialActionModals } from "@/components/admin/commercial-action-modals";
-import { logStaffActivity } from "@/utils/staff-activity-logger";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
+import { getStaffApprovalLevel } from "@/utils/resolve-current-staff";
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -19,8 +19,6 @@ import {
   Link2,
   CheckCircle2,
   Share2,
-  Receipt,
-  CreditCard,
   ArrowRight,
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
@@ -33,16 +31,12 @@ export default function AdminInquiriesPage() {
     receipts: 1,
     feedbacks: 1,
     newsletter: 1,
-    activity: 1,
   });
   const setSectionPage = (key: string, page: number) =>
     setInqPageMap((prev) => ({ ...prev, [key]: page }));
 
   const supabase = createClient();
-  const [subscribers, setSubscribers] = React.useState<any[]>([]);
   const [commercialModal, setCommercialModal] = React.useState<"sale" | "invoice" | null>(null);
-  const [portalActivities, setPortalActivities] = React.useState<any[]>([]);
-  const [activityLogs, setActivityLogs] = React.useState<any[]>([]);
   const [toastMsg, setToastMsg] = React.useState("");
 
   const showToast = (msg: string) => {
@@ -50,77 +44,8 @@ export default function AdminInquiriesPage() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
-  const loadPortalActivities = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/activity", { cache: "no-store" });
-      const json = await res.json();
-      const serverRows = Array.isArray(json?.data) ? json.data : [];
-      let localRows: any[] = [];
-      if (typeof window !== "undefined") {
-        try {
-          localRows = JSON.parse(window.localStorage.getItem("lavie_staff_activity_logs") || "[]");
-        } catch (_) {}
-      }
-      const merged = [...localRows, ...serverRows];
-      merged.sort(
-        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-      );
-      setPortalActivities(merged);
-      try {
-        setActivityLogs(merged);
-      } catch (_) {}
-    } catch (_) {}
-  }, []);
-
-  React.useEffect(() => {
-    loadPortalActivities();
-    const onNewLog = () => loadPortalActivities();
-    if (typeof window !== "undefined") {
-      window.addEventListener("lavie-activity-logged", onNewLog);
-      window.addEventListener("lavie:activity-updated", onNewLog);
-      return () => {
-        window.removeEventListener("lavie-activity-logged", onNewLog);
-        window.removeEventListener("lavie:activity-updated", onNewLog);
-      };
-    }
-  }, [loadPortalActivities]);
-
-  const [canManageNewsletter, setCanManageNewsletter] = React.useState(true);
-
-  React.useEffect(() => {
-    async function loadNewsletterAndAccess() {
-      const { data: subData } = await supabase
-        .from("newsletter_subscribers")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (subData) setSubscribers(subData);
-
-      const { data: authData } = await supabase.auth.getUser();
-      const email = authData?.user?.email?.toLowerCase();
-      if (email && email !== "hipheholluhayegboyin@gmail.com") {
-        const { data: prof } = await supabase
-          .from("staff_profiles")
-          .select("*")
-          .eq("email", email)
-          .maybeSingle();
-        if (prof) {
-          const perms: string[] = prof.permissions || [prof.role];
-          const allowed =
-            prof.staff_id === "LS-01" ||
-            prof.role === "super_admin" ||
-            perms.includes("super_admin") ||
-            perms.includes("chief_strategist") ||
-            perms.includes("newsletter") ||
-            perms.includes("inquiries");
-          setCanManageNewsletter(allowed);
-        }
-      }
-    }
-    loadNewsletterAndAccess();
-  }, [supabase]);
-
   const [activeView, setActiveView] = React.useState<
-    "inquiries" | "quotes" | "invoices" | "receipts" | "feedbacks" | "newsletter" | "activity"
+    "inquiries" | "quotes" | "invoices" | "receipts" | "feedbacks" | "newsletter"
   >("inquiries");
 
   const [inquiries, setInquiries] = React.useState<any[]>([]);
@@ -131,7 +56,6 @@ export default function AdminInquiriesPage() {
   const [staffList, setStaffList] = React.useState<any[]>([]);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
 
-  // Inquiry Management Drawer
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editForm, setEditForm] = React.useState({
     status: "new",
@@ -140,7 +64,6 @@ export default function AdminInquiriesPage() {
   });
   const [saving, setSaving] = React.useState(false);
 
-  // Quote Generator Modal
   const [quoteModal, setQuoteModal] = React.useState<any | null>(null);
   const [quoteItems, setQuoteItems] = React.useState<
     Array<{ description: string; qty: number; unitPrice: number }>
@@ -149,7 +72,13 @@ export default function AdminInquiriesPage() {
   const [quoteVatRate, setQuoteVatRate] = React.useState(7.5);
   const [quoteNotes, setQuoteNotes] = React.useState("");
 
-  // Receive Payment / Issue Client Receipt Modal
+  const [paystackModal, setPaystackModal] = React.useState<{
+    invoice: any;
+    reference: string;
+    amountNaira: number;
+    tier: "deposit_70" | "full_100";
+  } | null>(null);
+
   const [receiptModal, setReceiptModal] = React.useState<{
     invoice?: any | null;
     client_name: string;
@@ -162,7 +91,6 @@ export default function AdminInquiriesPage() {
     payment_method: string;
   } | null>(null);
 
-  // Printable Document Modal (Quote, Invoice, or Receipt)
   const [printDoc, setPrintDoc] = React.useState<{
     type: "quote" | "invoice" | "receipt";
     data: any;
@@ -178,47 +106,119 @@ export default function AdminInquiriesPage() {
       { data: qtData },
       { data: invData },
       { data: rctData },
-      { data: logData },
     ] = await Promise.all([
       supabase.from("contact_messages").select("*").order("created_at", { ascending: false }),
-      supabase.from("staff_profiles").select("id, first_name, last_name, staff_id, status, email"),
+      supabase
+        .from("staff_profiles")
+        .select("id, first_name, last_name, staff_id, status, email, role, department, job_title, permissions"),
       supabase.from("client_quotes").select("*").order("created_at", { ascending: false }),
-      supabase.from("invoices").select("*").order("created_at", { ascending: false }),
+      supabase.from("client_invoices").select("*").order("created_at", { ascending: false }),
       supabase.from("payment_receipts").select("*").order("created_at", { ascending: false }),
-      supabase.from("staff_activity_logs").select("*").order("created_at", { ascending: false }).limit(60),
     ]);
 
     if (inqData) setInquiries(inqData);
     if (staffData) {
       setStaffList(staffData.filter((s) => s.status === "active"));
+      const email = user?.email?.toLowerCase();
       const me =
-        staffData.find((s) => s.id === user?.id || s.email?.toLowerCase() === user?.email?.toLowerCase()) ||
-        staffData[0];
+        staffData.find(
+          (s) => s.id === user?.id || (email && s.email?.toLowerCase() === email)
+        ) || null;
       setCurrentUser(me);
     }
     if (qtData) setQuotes(qtData);
     if (invData) setInvoices(invData);
     if (rctData) setReceipts(rctData);
-    if (logData && logData.length > 0) {
-      setActivityLogs((prev) => {
-        const map = new Map();
-        for (const item of [...logData, ...prev]) {
-          if (item) map.set(item.id || JSON.stringify(item), item);
-        }
-        return Array.from(map.values());
-      });
-    }
   }, [supabase]);
 
   React.useEffect(() => {
     loadData();
   }, [loadData]);
 
+  // Role & staff ownership filtering: Finance has access to all; other staff see only what they created
+  const isFinanceUser = React.useMemo(() => {
+    if (!currentUser) return false;
+    const tier = getStaffApprovalLevel(currentUser);
+    if (tier === "level3_finance") return true;
+    const dept = String(currentUser.department || "").toLowerCase();
+    const role = String(currentUser.role || currentUser.job_title || "").toLowerCase();
+    const perms = Array.isArray(currentUser.permissions)
+      ? currentUser.permissions.map((p: any) => String(p).toLowerCase())
+      : [];
+    return (
+      dept.includes("finance") ||
+      role.includes("finance") ||
+      perms.includes("finance") ||
+      perms.includes("head_of_finance")
+    );
+  }, [currentUser]);
+
+  const isCreatedByMe = React.useCallback(
+    (record: any) => {
+      if (!record) return false;
+      if (isFinanceUser) return true;
+      if (!currentUser) return false;
+
+      const myCode = String(currentUser.staff_id || "").toLowerCase().trim();
+      const myFirst = String(currentUser.first_name || "").toLowerCase().trim();
+      const myLast = String(currentUser.last_name || "").toLowerCase().trim();
+      const myFull = (myFirst + " " + myLast).trim();
+
+      const haystack = [
+        record.prepared_by,
+        record.issued_by,
+        record.created_by,
+        record.staff_code,
+        record.staff_name,
+        record.through_person,
+        record.notes,
+        record.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (myCode && haystack.includes(myCode)) return true;
+      if (myFull && myFull.length > 2 && haystack.includes(myFull)) return true;
+      if (myFirst && myFirst.length > 2 && haystack.includes(myFirst)) return true;
+      return false;
+    },
+    [currentUser, isFinanceUser]
+  );
+
+  const visibleQuotes = React.useMemo(
+    () => (isFinanceUser ? quotes : quotes.filter((q) => isCreatedByMe(q))),
+    [quotes, isFinanceUser, isCreatedByMe]
+  );
+
+  const visibleInvoices = React.useMemo(
+    () => (isFinanceUser ? invoices : invoices.filter((inv) => isCreatedByMe(inv))),
+    [invoices, isFinanceUser, isCreatedByMe]
+  );
+
+  const visibleInvoiceIds = React.useMemo(
+    () => new Set(visibleInvoices.map((i) => i.id)),
+    [visibleInvoices]
+  );
+
+  const visibleReceipts = React.useMemo(
+    () =>
+      isFinanceUser
+        ? receipts
+        : receipts.filter(
+            (r) => isCreatedByMe(r) || (r.invoice_id && visibleInvoiceIds.has(r.invoice_id))
+          ),
+    [receipts, isFinanceUser, isCreatedByMe, visibleInvoiceIds]
+  );
+
+  const cleanCreatorTag = (text?: string) =>
+    String(text || "").replace(/<!--CREATOR:[\s\S]*?-->/g, "").trim();
+
   const recordStaffAction = async (action: string, targetRef: string) => {
     if (!currentUser) return;
     await supabase.from("staff_activity_logs").insert({
-      staff_code: currentUser.staff_id || "LS-01",
-      staff_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      staff_code: currentUser.staff_id || "LS-STAFF",
+      staff_name: currentUser.first_name + " " + currentUser.last_name,
       module: "Inquiries, Quotes & Billing",
       action,
       target_ref: targetRef,
@@ -227,7 +227,7 @@ export default function AdminInquiriesPage() {
 
   const updateStatusQuick = async (msg: any, status: string) => {
     const actor = currentUser
-      ? `${currentUser.first_name} ${currentUser.last_name}`.trim()
+      ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
       : "Studio Desk";
     await supabase
       .from("contact_messages")
@@ -237,7 +237,7 @@ export default function AdminInquiriesPage() {
         responded_at: new Date().toISOString(),
       })
       .eq("id", msg.id);
-    await recordStaffAction(`Marked inquiry as ${status}`, msg.name);
+    await recordStaffAction("Marked inquiry as " + status, msg.name);
     loadData();
   };
 
@@ -245,7 +245,7 @@ export default function AdminInquiriesPage() {
     if (!editingId) return;
     setSaving(true);
     const actor = currentUser
-      ? `${currentUser.first_name} ${currentUser.last_name}`.trim()
+      ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
       : "Studio Desk";
     await supabase
       .from("contact_messages")
@@ -304,7 +304,7 @@ export default function AdminInquiriesPage() {
     setSaving(true);
     const qNo = "QT-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
     const actor = currentUser
-      ? `${currentUser.first_name} ${currentUser.last_name}`.trim()
+      ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
       : "Studio Desk";
 
     const { data: created } = await supabase
@@ -341,29 +341,35 @@ export default function AdminInquiriesPage() {
         .eq("id", quoteModal.id);
     }
 
-    await recordStaffAction("Generated Client Quote", `${qNo} for ${quoteModal.name}`);
+    await recordStaffAction("Generated Client Quote", qNo + " for " + quoteModal.name);
     setSaving(false);
     setQuoteModal(null);
     await loadData();
     if (created) setPrintDoc({ type: "quote", data: created });
   };
 
-  // Convert a Quote directly into an Official Invoice with Paystack Payment Link
   const handleConvertQuoteToInvoice = async (qt: any) => {
     setSaving(true);
     try {
       const now = new Date();
-      const mmYY = String(now.getMonth() + 1).padStart(2, "0") + String(now.getFullYear()).slice(-2);
+      const mmYY =
+        String(now.getMonth() + 1).padStart(2, "0") + String(now.getFullYear()).slice(-2);
       const seq = String(invoices.length + 1).padStart(2, "0");
-      const invNo = `LS/INV/${mmYY}/${seq}`;
+      const invNo = "LS/BRANDS/" + mmYY + "/" + seq;
+      const actor = currentUser
+        ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
+        : qt.prepared_by || "Studio Desk";
+
+      const creatorTag = "<!--CREATOR:" + (currentUser?.staff_id || "") + "|" + actor + "-->";
 
       const { data: createdInv, error } = await supabase
-        .from("invoices")
+        .from("client_invoices")
         .insert({
           invoice_no: invNo,
           client_name: qt.client_name,
           client_company: qt.client_company || qt.client_name,
           client_email: qt.client_email || "",
+          through_person: actor,
           project_title: qt.project_title,
           line_items: qt.line_items || [],
           subtotal: Number(qt.subtotal || qt.total_amount || 0),
@@ -374,37 +380,39 @@ export default function AdminInquiriesPage() {
           total_amount: Number(qt.total_amount || 0),
           amount_paid: 0,
           status: "unpaid",
-          notes: qt.notes || "70% advance deposit or 100% full settlement via Paystack.",
+          notes: cleanCreatorTag(qt.notes || "70% advance deposit or 100% full settlement.") + "\n" + creatorTag,
         })
         .select()
         .single();
 
       if (error) {
-        alert(error.message || "Could not create invoice from quote.");
+        showToast(error.message || "Could not create invoice from quote.");
       } else if (createdInv) {
         const origin =
           typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-        const payLink = `${origin}/pay/${createdInv.id}`;
-        await supabase.from("invoices").update({ payment_link: payLink }).eq("id", createdInv.id);
-        await recordStaffAction("Converted Quote to Invoice", `${qt.quote_no} -> ${invNo}`);
+        const payLink = origin + "/pay/" + createdInv.id;
+        await supabase
+          .from("client_invoices")
+          .update({ payment_link: payLink })
+          .eq("id", createdInv.id);
+        await recordStaffAction("Converted Quote to Invoice", qt.quote_no + " -> " + invNo);
         await loadData();
         setActiveView("invoices");
-        showToast(`Created Invoice ${invNo} with Paystack link!`);
+        showToast("Created Invoice " + invNo + " with Paystack link!");
       }
     } finally {
       setSaving(false);
     }
   };
 
-  // Generate Official Payment Receipt for Client (from Invoice or Standalone)
   const handleIssueReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!receiptModal || Number(receiptModal.amount_received) <= 0) return;
     setSaving(true);
     try {
-      const rctNo = `LS/RCT/${new Date().getFullYear()}/${Math.floor(1000 + Math.random() * 9000)}`;
+      const rctNo = "LS/RCT/" + new Date().getFullYear() + "/" + Math.floor(1000 + Math.random() * 9000);
       const actor = currentUser
-        ? `${currentUser.first_name} ${currentUser.last_name}`.trim()
+        ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
         : "Studio Desk";
 
       const totalContract = Number(receiptModal.total_contract_amount || 0);
@@ -415,7 +423,7 @@ export default function AdminInquiriesPage() {
 
       if (receiptModal.invoice?.id) {
         await supabase
-          .from("invoices")
+          .from("client_invoices")
           .update({
             amount_paid: newTotalPaid,
             status: balanceRemaining <= 0 ? "paid" : "partially_paid",
@@ -455,58 +463,62 @@ export default function AdminInquiriesPage() {
         .select()
         .single();
 
-      await recordStaffAction("Issued Official Receipt", `${rctNo} for ${receiptModal.client_name}`);
+      await recordStaffAction("Issued Official Receipt", rctNo + " for " + receiptModal.client_name);
       setReceiptModal(null);
       await loadData();
-      showToast(`Receipt ${rctNo} generated!`);
+      showToast("Receipt " + rctNo + " generated!");
       if (newReceipt) setPrintDoc({ type: "receipt", data: newReceipt });
     } finally {
       setSaving(false);
     }
   };
 
-  // Confirm Paystack Payment directly from Inquiries -> Invoices tab
-  const handleConfirmPaystackOnInquiries = async (inv: any) => {
+  const openConfirmPaystackModal = (inv: any) => {
     const totalAmt = Number(inv.total_amount || 0);
     const paidSoFar = Number(inv.amount_paid || 0);
     const bal = Math.max(0, totalAmt - paidSoFar);
     const seventyAmt = Math.round(totalAmt * 0.7);
+    const defaultTier = paidSoFar === 0 ? "deposit_70" : "full_100";
 
-    const refInput = window.prompt(
-      `Enter Paystack Reference for ${inv.invoice_no}:`,
-      `PS-MANUAL-${Date.now().toString().slice(-6)}`
-    );
-    if (!refInput) return;
+    setPaystackModal({
+      invoice: inv,
+      reference: "PS-" + (inv.invoice_no?.replace(/[^A-Z0-9]/gi, "") || "INV") + "-" + Date.now().toString().slice(-5),
+      amountNaira: defaultTier === "deposit_70" ? seventyAmt : bal,
+      tier: defaultTier,
+    });
+  };
 
-    const amtChoice = window.prompt(
-      `Confirm amount paid via Paystack (₦):\n• 70% Deposit: ${seventyAmt}\n• Full Balance: ${bal}`,
-      String(paidSoFar === 0 ? seventyAmt : bal)
-    );
-    if (!amtChoice) return;
-    const parsedAmt = Number(String(amtChoice).replace(/[^0-9.]/g, ""));
-    if (!parsedAmt || parsedAmt <= 0) return;
+  const handleConfirmPaystackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paystackModal || !paystackModal.invoice) return;
+    const { invoice: inv, reference, amountNaira, tier } = paystackModal;
+    if (!reference.trim() || Number(amountNaira) <= 0) return;
 
     setSaving(true);
     try {
+      const actor = currentUser
+        ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
+        : "Studio Desk";
+
       const res = await fetch("/api/paystack/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invoiceId: inv.id,
-          reference: refInput.trim(),
-          amountNaira: parsedAmt,
-          paymentOption: parsedAmt === seventyAmt ? "deposit_70" : "full_100",
+          reference: reference.trim(),
+          amountNaira: Number(amountNaira),
+          paymentOption: tier,
+          actorName: actor,
         }),
       });
       const json = await res.json();
       if (!res.ok || !json?.ok) {
-        alert(json?.error || "Could not verify payment.");
+        showToast(json?.error || "Could not verify payment.");
       } else {
+        setPaystackModal(null);
         await loadData();
         showToast(
-          `Confirmed ₦${parsedAmt.toLocaleString()}! Balance Due: ₦${Number(
-            json.balanceRemaining || 0
-          ).toLocaleString()}`
+          "Confirmed ₦" + Number(amountNaira).toLocaleString() + "! Balance Due: ₦" + Number(json.balanceRemaining || 0).toLocaleString()
         );
         if (json.receipt) setPrintDoc({ type: "receipt", data: json.receipt });
       }
@@ -518,7 +530,7 @@ export default function AdminInquiriesPage() {
   const copyPaystackLink = (inv: any) => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-    const payUrl = `${origin}/pay/${inv.id}`;
+    const payUrl = origin + "/pay/" + inv.id;
     navigator.clipboard.writeText(payUrl);
     showToast("Paystack Payment Link (70% / 100%) copied to clipboard!");
   };
@@ -526,13 +538,19 @@ export default function AdminInquiriesPage() {
   const sharePaystackLinkWhatsApp = (inv: any) => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-    const payUrl = `${origin}/pay/${inv.id}`;
+    const payUrl = origin + "/pay/" + inv.id;
     const total = Number(inv.total_amount || 0);
     const paid = Number(inv.amount_paid || 0);
     const bal = Math.max(0, total - paid);
     const seventy = Math.round(total * 0.7);
-    const text = `Hello ${inv.client_company || inv.client_name}, here is your official Lavie Studios invoice (${inv.invoice_no}) for "${inv.project_title}".\n\n• Invoice Total: ₦${total.toLocaleString()}\n• 70% Advance Option: ₦${seventy.toLocaleString()}\n• Balance Due: ₦${bal.toLocaleString()}\n\nPay securely via Paystack (70% deposit or 100% full payment): ${payUrl}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    const text =
+      "Hello " + (inv.client_company || inv.client_name) +
+      ", here is your official Lavie Studios invoice (" + inv.invoice_no + ") for \"" + inv.project_title + "\".\n\n" +
+      "• Invoice Total: ₦" + total.toLocaleString() + "\n" +
+      "• 70% Advance Option: ₦" + seventy.toLocaleString() + "\n" +
+      "• Balance Due: ₦" + bal.toLocaleString() + "\n\n" +
+      "Pay securely via Paystack (70% deposit or 100% full payment): " + payUrl;
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
   };
 
   const filtered = inquiries.filter((i) => filter === "all" || (i.status || "new") === filter);
@@ -550,10 +568,10 @@ export default function AdminInquiriesPage() {
       <div className="bg-[var(--bg-card)] px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2 border border-[var(--border-subtle)]/60 print:hidden">
         <div className="flex flex-wrap items-center gap-1.5">
           {[
-            { id: "inquiries", label: `Inquiries (${inquiries.length})` },
-            { id: "quotes", label: `Quotes (${quotes.length})` },
-            { id: "invoices", label: `Invoices (${invoices.length})` },
-            { id: "receipts", label: `Receipts (${receipts.length})` },
+            { id: "inquiries", label: "Inquiries (" + inquiries.length + ")" },
+            { id: "quotes", label: "Quotes (" + visibleQuotes.length + ")" },
+            { id: "invoices", label: "Invoices (" + visibleInvoices.length + ")" },
+            { id: "receipts", label: "Receipts (" + visibleReceipts.length + ")" },
             { id: "feedbacks", label: "Feedbacks" },
             { id: "newsletter", label: "Newsletter" },
           ].map((tab) => (
@@ -561,11 +579,12 @@ export default function AdminInquiriesPage() {
               key={tab.id}
               type="button"
               onClick={() => setActiveView(tab.id as any)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                activeView === tab.id
+              className={
+                "px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer " +
+                (activeView === tab.id
                   ? "bg-[#c7cb2d] text-black"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]")
+              }
             >
               {tab.label}
             </button>
@@ -573,6 +592,9 @@ export default function AdminInquiriesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          <span className="px-2.5 py-1 rounded-full bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)]">
+            {isFinanceUser ? "Finance View: All Studio Records" : "My Records (" + (currentUser?.first_name || "Staff") + ")"}
+          </span>
           <button
             type="button"
             onClick={openStandaloneQuoteBuilder}
@@ -617,9 +639,10 @@ export default function AdminInquiriesPage() {
               <button
                 key={st}
                 onClick={() => setFilter(st)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono uppercase cursor-pointer ${
-                  filter === st ? "bg-[#c7cb2d] text-black font-bold" : "text-[var(--text-muted)]"
-                }`}
+                className={
+                  "px-2.5 py-1 rounded-lg text-[10px] font-mono uppercase cursor-pointer " +
+                  (filter === st ? "bg-[#c7cb2d] text-black font-bold" : "text-[var(--text-muted)]")
+                }
               >
                 {st.replace("_", " ")}
               </button>
@@ -627,7 +650,7 @@ export default function AdminInquiriesPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <div className={`space-y-3 ${editingId ? "lg:col-span-7" : "lg:col-span-12"}`}>
+            <div className={"space-y-3 " + (editingId ? "lg:col-span-7" : "lg:col-span-12")}>
               {filtered.map((msg) => (
                 <div
                   key={msg.id}
@@ -638,7 +661,7 @@ export default function AdminInquiriesPage() {
                       <h3 className="text-sm font-bold flex items-center gap-2">
                         {msg.name}
                         <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded bg-[var(--bg-main)] text-[var(--text-dim)]">
-                          {msg.email} {msg.phone ? `• ${msg.phone}` : ""}
+                          {msg.email} {msg.phone ? "• " + msg.phone : ""}
                         </span>
                       </h3>
                       {msg.subject && (
@@ -660,11 +683,12 @@ export default function AdminInquiriesPage() {
                         <button
                           key={st}
                           onClick={() => updateStatusQuick(msg, st)}
-                          className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase cursor-pointer ${
-                            (msg.status || "new") === st
+                          className={
+                            "px-2 py-0.5 rounded text-[9px] font-mono uppercase cursor-pointer " +
+                            ((msg.status || "new") === st
                               ? "bg-[#c7cb2d] text-black font-bold"
-                              : "bg-[var(--bg-main)] text-[var(--text-muted)]"
-                          }`}
+                              : "bg-[var(--bg-main)] text-[var(--text-muted)]")
+                          }
                         >
                           {st.replace("_", " ")}
                         </button>
@@ -679,7 +703,7 @@ export default function AdminInquiriesPage() {
                         <FileText className="w-3 h-3" /> Generate Quote
                       </button>
                       <a
-                        href={`mailto:${msg.email}?subject=Re: ${msg.subject || "Lavie Studios Proposal"}`}
+                        href={"mailto:" + msg.email + "?subject=Re: " + (msg.subject || "Lavie Studios Proposal")}
                         onClick={() => updateStatusQuick(msg, "in_review")}
                         className="px-3 py-1 rounded-lg bg-[var(--bg-main)] text-[10px] font-mono uppercase flex items-center gap-1"
                       >
@@ -726,7 +750,7 @@ export default function AdminInquiriesPage() {
                       {staffList.map((s) => (
                         <option
                           key={s.id}
-                          value={`${s.first_name} ${s.last_name} (${s.staff_id})`}
+                          value={s.first_name + " " + s.last_name + " (" + s.staff_id + ")"}
                         >
                           {s.first_name} {s.last_name} ({s.staff_id})
                         </option>
@@ -764,10 +788,12 @@ export default function AdminInquiriesPage() {
           <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-bold">
-                Client Commercial Quotes ({quotes.length})
+                {isFinanceUser ? "All Client Commercial Quotes" : "My Generated Quotes"} ({visibleQuotes.length})
               </h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Prepare official quotes and convert approved quotes into invoices with Paystack links in 1 click.
+                {isFinanceUser
+                  ? "Finance View: Showing all quotes across the studio."
+                  : "Showing quotes prepared by you. Convert any approved quote into an invoice in 1 click."}
               </p>
             </div>
             <button
@@ -780,7 +806,7 @@ export default function AdminInquiriesPage() {
           </div>
 
           <div className="space-y-3">
-            {quotes
+            {visibleQuotes
               .slice(((inqPageMap["quotes"] || 1) - 1) * 8, (inqPageMap["quotes"] || 1) * 8)
               .map((qt) => (
                 <div
@@ -824,15 +850,15 @@ export default function AdminInquiriesPage() {
                   </div>
                 </div>
               ))}
-            {quotes.length === 0 && (
+            {visibleQuotes.length === 0 && (
               <p className="text-xs text-[var(--text-muted)] py-8 text-center">
-                No quotes generated yet.
+                No quotes created by you yet. Click "+ Generate Client Quote" above to create one.
               </p>
             )}
           </div>
           <AdminPagination
             currentPage={inqPageMap["quotes"] || 1}
-            totalItems={quotes.length}
+            totalItems={visibleQuotes.length}
             pageSize={8}
             onPageChange={(p) => setSectionPage("quotes", p)}
             itemLabel="quotes"
@@ -846,10 +872,12 @@ export default function AdminInquiriesPage() {
           <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-bold">
-                Client Invoices & Paystack Payment Links ({invoices.length})
+                {isFinanceUser ? "All Studio Invoices" : "My Created Invoices"} ({visibleInvoices.length})
               </h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Share Paystack payment links (70% deposit or 100% full payment), confirm payments, and generate official client receipts.
+                {isFinanceUser
+                  ? "Finance View: Full access to all studio invoices, Paystack links, and receipts."
+                  : "Showing invoices generated by you. Copy or share Paystack payment links (70% deposit or 100% full) and issue receipts."}
               </p>
             </div>
             <button
@@ -862,7 +890,7 @@ export default function AdminInquiriesPage() {
           </div>
 
           <div className="space-y-3">
-            {invoices
+            {visibleInvoices
               .slice(((inqPageMap["invoices"] || 1) - 1) * 8, (inqPageMap["invoices"] || 1) * 8)
               .map((inv) => {
                 const paid = Number(
@@ -908,13 +936,14 @@ export default function AdminInquiriesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[var(--border-subtle)]/50">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span
-                          className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
-                            bal <= 0
+                          className={
+                            "px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold " +
+                            (bal <= 0
                               ? "bg-emerald-500/20 text-emerald-300"
                               : paid > 0
                               ? "bg-amber-500/20 text-amber-300"
-                              : "bg-[var(--bg-main)] text-[#c7cb2d]"
-                          }`}
+                              : "bg-[var(--bg-main)] text-[#c7cb2d]")
+                          }
                         >
                           {bal <= 0 ? "PAID" : paid > 0 ? "PARTIALLY PAID" : inv.status || "UNPAID"}
                         </span>
@@ -936,7 +965,7 @@ export default function AdminInquiriesPage() {
                         </button>
 
                         <a
-                          href={`/pay/${inv.id}`}
+                          href={"/pay/" + inv.id}
                           target="_blank"
                           rel="noreferrer"
                           className="px-2 py-1 rounded-lg bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d]"
@@ -950,7 +979,7 @@ export default function AdminInquiriesPage() {
                           <>
                             <button
                               type="button"
-                              onClick={() => handleConfirmPaystackOnInquiries(inv)}
+                              onClick={() => openConfirmPaystackModal(inv)}
                               className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] font-mono uppercase cursor-pointer hover:bg-emerald-500 hover:text-black transition"
                             >
                               Confirm Paystack
@@ -978,7 +1007,12 @@ export default function AdminInquiriesPage() {
                         )}
                         <button
                           type="button"
-                          onClick={() => setPrintDoc({ type: "invoice", data: inv })}
+                          onClick={() =>
+                            setPrintDoc({
+                              type: "invoice",
+                              data: { ...inv, notes: cleanCreatorTag(inv.notes) },
+                            })
+                          }
                           className="px-2.5 py-1 rounded-lg bg-[var(--bg-main)] text-[10px] font-mono uppercase flex items-center gap-1 cursor-pointer"
                         >
                           <Printer className="w-3 h-3" /> Official PDF
@@ -988,15 +1022,15 @@ export default function AdminInquiriesPage() {
                   </div>
                 );
               })}
-            {invoices.length === 0 && (
+            {visibleInvoices.length === 0 && (
               <p className="text-xs text-[var(--text-muted)] py-8 text-center">
-                No invoices created yet.
+                No invoices created by you yet. Click "+ Create New Invoice" or convert a Quote to an Invoice.
               </p>
             )}
           </div>
           <AdminPagination
             currentPage={inqPageMap["invoices"] || 1}
-            totalItems={invoices.length}
+            totalItems={visibleInvoices.length}
             pageSize={8}
             onPageChange={(p) => setSectionPage("invoices", p)}
             itemLabel="invoices"
@@ -1010,10 +1044,12 @@ export default function AdminInquiriesPage() {
           <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-bold">
-                Official Client Payment Receipts ({receipts.length})
+                {isFinanceUser ? "All Official Payment Receipts" : "My Client Payment Receipts"} ({visibleReceipts.length})
               </h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Generate and download official payment receipts for clients.
+                {isFinanceUser
+                  ? "Finance View: Showing all payment receipts across the studio."
+                  : "Showing payment receipts issued by you or for your invoices."}
               </p>
             </div>
             <button
@@ -1038,7 +1074,7 @@ export default function AdminInquiriesPage() {
           </div>
 
           <div className="space-y-3">
-            {receipts
+            {visibleReceipts
               .slice(((inqPageMap["receipts"] || 1) - 1) * 8, (inqPageMap["receipts"] || 1) * 8)
               .map((rct) => (
                 <div
@@ -1063,7 +1099,7 @@ export default function AdminInquiriesPage() {
                   </div>
 
                   <div className="sm:col-span-5 flex flex-wrap sm:justify-end items-center gap-3">
-                    <div className=" sm:text-right font-mono">
+                    <div className="sm:text-right font-mono">
                       <p className="text-sm font-bold text-[#c7cb2d]">
                         Received: ₦{Number(rct.amount_received || 0).toLocaleString()}
                       </p>
@@ -1082,15 +1118,15 @@ export default function AdminInquiriesPage() {
                   </div>
                 </div>
               ))}
-            {receipts.length === 0 && (
+            {visibleReceipts.length === 0 && (
               <p className="text-xs text-[var(--text-muted)] py-8 text-center">
-                No payment receipts issued yet.
+                No payment receipts issued by you yet.
               </p>
             )}
           </div>
           <AdminPagination
             currentPage={inqPageMap["receipts"] || 1}
-            totalItems={receipts.length}
+            totalItems={visibleReceipts.length}
             pageSize={8}
             onPageChange={(p) => setSectionPage("receipts", p)}
             itemLabel="receipts"
@@ -1112,6 +1148,171 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
+      {/* MODAL: CUSTOM STUDIO PAYSTACK CONFIRMATION */}
+      {paystackModal && (() => {
+        const inv = paystackModal.invoice;
+        const totalAmt = Number(inv.total_amount || 0);
+        const paidSoFar = Number(inv.amount_paid || 0);
+        const bal = Math.max(0, totalAmt - paidSoFar);
+        const seventyAmt = Math.round(totalAmt * 0.7);
+        const canPickSeventy = paidSoFar === 0 && bal > 0;
+        const projectedBalance = Math.max(0, bal - Number(paystackModal.amountNaira || 0));
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+            <form
+              onSubmit={handleConfirmPaystackSubmit}
+              className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
+                    Paystack Payment Confirmation
+                  </span>
+                  <h3 className="font-display text-base font-bold mt-0.5">
+                    {inv.invoice_no} — {inv.client_company || inv.client_name}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaystackModal(null)}
+                  className="p-1.5 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 grid grid-cols-3 gap-2 text-center font-mono text-xs">
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-dim)]">Invoice Total</p>
+                  <p className="font-bold text-white mt-0.5">₦{totalAmt.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-dim)]">Already Paid</p>
+                  <p className="font-bold text-emerald-400 mt-0.5">₦{paidSoFar.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[#c7cb2d]">Balance Due</p>
+                  <p className="font-bold text-[#c7cb2d] mt-0.5">₦{bal.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {canPickSeventy && (
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                    Select Payment Tier
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPaystackModal({
+                          ...paystackModal,
+                          tier: "deposit_70",
+                          amountNaira: seventyAmt,
+                        })
+                      }
+                      className={
+                        "p-3 rounded-2xl border text-left transition cursor-pointer " +
+                        (paystackModal.tier === "deposit_70"
+                          ? "bg-[#c7cb2d]/15 border-[#c7cb2d] text-white"
+                          : "bg-[var(--bg-main)] border-[var(--border-subtle)]/60 text-[var(--text-muted)]")
+                      }
+                    >
+                      <p className="text-[10px] font-mono uppercase font-bold text-[#c7cb2d]">
+                        70% Advance
+                      </p>
+                      <p className="font-mono text-sm font-bold mt-1">
+                        ₦{seventyAmt.toLocaleString()}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPaystackModal({
+                          ...paystackModal,
+                          tier: "full_100",
+                          amountNaira: bal,
+                        })
+                      }
+                      className={
+                        "p-3 rounded-2xl border text-left transition cursor-pointer " +
+                        (paystackModal.tier === "full_100"
+                          ? "bg-emerald-500/15 border-emerald-500 text-white"
+                          : "bg-[var(--bg-main)] border-[var(--border-subtle)]/60 text-[var(--text-muted)]")
+                      }
+                    >
+                      <p className="text-[10px] font-mono uppercase font-bold text-emerald-400">
+                        100% Full Payment
+                      </p>
+                      <p className="font-mono text-sm font-bold mt-1">
+                        ₦{bal.toLocaleString()}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                  Paystack Transaction Reference *
+                </label>
+                <input
+                  required
+                  value={paystackModal.reference}
+                  onChange={(e) =>
+                    setPaystackModal({ ...paystackModal, reference: e.target.value })
+                  }
+                  placeholder="e.g. LV-LSBRANDS112602-..."
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[#c7cb2d]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] mb-1">
+                  Confirmed Amount Paid (₦) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={paystackModal.amountNaira || ""}
+                  onChange={(e) =>
+                    setPaystackModal({
+                      ...paystackModal,
+                      amountNaira: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-[#c7cb2d] focus:outline-none"
+                />
+                <p className="text-[10px] font-mono text-[var(--text-muted)] mt-1">
+                  Remaining Balance After Confirmation:{" "}
+                  <strong className="text-white">₦{projectedBalance.toLocaleString()}</strong>
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPaystackModal(null)}
+                  className="px-4 py-2 rounded-full bg-[var(--bg-main)] text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer hover:brightness-110 transition"
+                >
+                  {saving ? "Confirming..." : "Confirm & Issue Receipt"}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
+
       {/* MODAL: GENERATE QUOTE */}
       {quoteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
@@ -1126,7 +1327,7 @@ export default function AdminInquiriesPage() {
                 </span>
                 <h3 className="font-display text-base font-bold">
                   {quoteModal.name
-                    ? `Prepare Quote for ${quoteModal.name}`
+                    ? "Prepare Quote for " + quoteModal.name
                     : "Generate New Client Quote"}
                 </h3>
               </div>
@@ -1291,7 +1492,7 @@ export default function AdminInquiriesPage() {
                 </span>
                 <h3 className="font-display text-base font-bold">
                   {receiptModal.invoice
-                    ? `Receive Payment — ${receiptModal.invoice.invoice_no}`
+                    ? "Receive Payment — " + receiptModal.invoice.invoice_no
                     : "Issue Client Payment Receipt"}
                 </h3>
               </div>
@@ -1300,14 +1501,14 @@ export default function AdminInquiriesPage() {
               </button>
             </div>
 
-            {!receiptModal.invoice && invoices.length > 0 && (
+            {!receiptModal.invoice && visibleInvoices.length > 0 && (
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
-                  Link to Existing Invoice (Optional)
+                  Link to Invoice (Optional)
                 </label>
                 <select
                   onChange={(e) => {
-                    const inv = invoices.find((i) => i.id === e.target.value);
+                    const inv = visibleInvoices.find((i) => i.id === e.target.value);
                     if (inv) {
                       const paid = Number(inv.amount_paid || 0);
                       const bal = Math.max(0, Number(inv.total_amount || 0) - paid);
@@ -1327,7 +1528,7 @@ export default function AdminInquiriesPage() {
                   className="w-full bg-[var(--bg-main)] rounded-xl px-3 py-2 text-xs"
                 >
                   <option value="">-- Standalone Receipt (Or Select Invoice) --</option>
-                  {invoices.map((inv) => (
+                  {visibleInvoices.map((inv) => (
                     <option key={inv.id} value={inv.id}>
                       {inv.invoice_no} — {inv.client_company || inv.client_name} (₦
                       {Number(inv.total_amount || 0).toLocaleString()})
@@ -1471,7 +1672,7 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
-      {/* OFFICIAL DOCUMENT MODAL (QUOTE, INVOICE, OR RECEIPT) */}
+      {/* OFFICIAL DOCUMENT MODAL */}
       {printDoc && (
         <OfficialDocumentModal
           type={printDoc.type}
@@ -1485,7 +1686,6 @@ export default function AdminInquiriesPage() {
         onClose={() => setCommercialModal(null)}
         onSuccess={() => {
           loadData();
-          loadPortalActivities();
         }}
       />
     </div>

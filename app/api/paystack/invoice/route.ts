@@ -16,19 +16,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing invoice id" }, { status: 400 });
     }
     const db = getDb();
+
     let { data: invoice } = await db
-      .from("invoices")
+      .from("client_invoices")
       .select("*")
       .eq("id", id)
       .maybeSingle();
 
     if (!invoice) {
       const { data: byNo } = await db
-        .from("invoices")
+        .from("client_invoices")
         .select("*")
         .eq("invoice_no", id)
         .maybeSingle();
       invoice = byNo;
+    }
+
+    if (!invoice) {
+      const { data: fallbackInv } = await db
+        .from("invoices")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      invoice = fallbackInv;
     }
 
     if (!invoice) {

@@ -12,7 +12,7 @@ function getDb() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { invoiceId, reference, amountNaira, paymentOption } = body;
+    const { invoiceId, reference, amountNaira, paymentOption, actorName } = body;
 
     if (!invoiceId || !reference) {
       return NextResponse.json({ error: "Missing invoiceId or reference" }, { status: 400 });
@@ -20,21 +20,20 @@ export async function POST(req: NextRequest) {
 
     const db = getDb();
     const { data: inv } = await db
-      .from("invoices")
+      .from("client_invoices")
       .select("*")
       .eq("id", invoiceId)
       .maybeSingle();
 
     if (!inv) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json({ error: "Invoice not found in client_invoices" }, { status: 404 });
     }
 
-    // Prevent double-crediting the exact same Paystack reference
     const { data: existingReceipt } = await db
       .from("payment_receipts")
       .select("*")
       .eq("invoice_id", inv.id)
-      .ilike("payment_method", `%${reference}%`)
+      .ilike("payment_method", "%" + reference + "%")
       .maybeSingle();
 
     if (existingReceipt) {
@@ -49,15 +48,14 @@ export async function POST(req: NextRequest) {
     let verifiedAmountNaira = Number(amountNaira || 0);
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
 
-    // Verify with Paystack API when PAYSTACK_SECRET_KEY is configured and reference is a live Paystack reference
-    if (secretKey && !String(reference).startsWith("PS-MANUAL-")) {
+    if (secretKey && String(reference).startsWith("LV-")) {
       try {
         const psRes = await fetch(
-          `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+          "https://api.paystack.co/transaction/verify/" + encodeURIComponent(reference),
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${secretKey}`,
+              Authorization: "Bearer " + secretKey,
               "Content-Type": "application/json",
             },
           }
@@ -80,7 +78,7 @@ export async function POST(req: NextRequest) {
     const nextStatus = balanceRemaining <= 0 ? "paid" : "partially_paid";
 
     const { data: updatedInvoice } = await db
-      .from("invoices")
+      .from("client_invoices")
       .update({
         amount_paid: newPaid,
         status: nextStatus,
@@ -99,13 +97,13 @@ export async function POST(req: NextRequest) {
         .eq("id", inv.project_id);
     }
 
-    const rctNo = `LS/RCT/${new Date().getFullYear()}/${Math.floor(1000 + Math.random() * 9000)}`;
+    const rctNo = "LS/RCT/" + new Date().getFullYear() + "/" + Math.floor(1000 + Math.random() * 9000);
     const optionLabel =
       paymentOption === "deposit_70"
         ? "Paystack (70% Deposit"
         : paymentOption === "balance"
         ? "Paystack (Balance Settlement"
-        : "Paystack (100% Full Payment";
+        : "Paystack (Full Payment";
 
     const { data: newReceipt } = await db
       .from("payment_receipts")
@@ -115,7 +113,7 @@ export async function POST(req: NextRequest) {
         project_id: inv.project_id || null,
         reference_code: inv.invoice_no,
         client_name: inv.client_name,
-        client_company: inv.client_company,
+        client_company: inv.client_company || inv.client_name,
         client_email: inv.client_email,
         through_person: inv.through_person || inv.client_name,
         project_title: inv.project_title,
@@ -123,8 +121,8 @@ export async function POST(req: NextRequest) {
         previous_paid: prevPaid,
         amount_received: verifiedAmountNaira,
         balance_remaining: balanceRemaining,
-        payment_method: `${optionLabel} • Ref: ${reference})`,
-        issued_by: "Paystack Checkout",
+        payment_method: optionLabel + " • Ref: " + reference + ")",
+        issued_by: actorName || "Paystack Checkout",
       })
       .select()
       .maybeSingle();

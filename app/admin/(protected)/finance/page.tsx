@@ -817,48 +817,52 @@ export default function EnterpriseFinanceSuite() {
     setSaving(false);
   };
 
-  // --- CONFIRM / VERIFY PAYSTACK PAYMENT DIRECTLY ON FINANCE PAGE ---
-  const handleVerifyPaystackReferenceOnInvoice = async (inv: any) => {
+  // --- CONFIRM / VERIFY PAYSTACK PAYMENT VIA CUSTOM STUDIO MODAL ---
+  const handleVerifyPaystackReferenceOnInvoice = (inv: any) => {
     const totalAmt = Number(inv.total_amount || 0);
     const paidSoFar = Number(inv.amount_paid || 0);
     const bal = Math.max(0, totalAmt - paidSoFar);
     const seventyAmt = Math.round(totalAmt * 0.7);
+    const defaultTier = paidSoFar === 0 ? "deposit_70" : "full_100";
 
-    const refInput = window.prompt(
-      `Enter Paystack Reference (or leave default to confirm online payment for ${inv.invoice_no}):`,
-      `PS-${inv.invoice_no?.replace(/[^A-Z0-9]/gi, "")}-${Date.now().toString().slice(-5)}`
-    );
-    if (!refInput) return;
+    setPaystackModal({
+      invoice: inv,
+      reference: "PS-" + (inv.invoice_no?.replace(/[^A-Z0-9]/gi, "") || "INV") + "-" + Date.now().toString().slice(-5),
+      amountNaira: defaultTier === "deposit_70" ? seventyAmt : bal,
+      tier: defaultTier,
+    });
+  };
 
-    const amtChoice = window.prompt(
-      `Confirm amount paid via Paystack (₦):\n• Type ${seventyAmt} for 70% Deposit\n• Type ${bal} for Full Balance`,
-      String(paidSoFar === 0 ? seventyAmt : bal)
-    );
-    if (!amtChoice) return;
-    const parsedAmt = Number(String(amtChoice).replace(/[^0-9.]/g, ""));
-    if (!parsedAmt || parsedAmt <= 0) return;
+  const handleConfirmPaystackModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paystackModal || !paystackModal.invoice) return;
+    const { invoice: inv, reference, amountNaira, tier } = paystackModal;
+    if (!reference.trim() || Number(amountNaira) <= 0) return;
 
     setSaving(true);
     try {
+      const actor = currentUser
+        ? (currentUser.first_name + " " + currentUser.last_name + " (" + currentUser.staff_id + ")").trim()
+        : "Finance Desk";
       const res = await fetch("/api/paystack/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invoiceId: inv.id,
-          reference: refInput.trim(),
-          amountNaira: parsedAmt,
-          paymentOption: parsedAmt === seventyAmt ? "deposit_70" : "full_100",
+          reference: reference.trim(),
+          amountNaira: Number(amountNaira),
+          paymentOption: tier,
+          actorName: actor,
         }),
       });
       const json = await res.json();
       if (!res.ok || !json?.ok) {
-        alert(json?.error || "Could not verify Paystack payment.");
+        showToast(json?.error || "Could not verify Paystack payment.");
       } else {
+        setPaystackModal(null);
         await loadFinanceData();
         showToast(
-          `Confirmed ₦${parsedAmt.toLocaleString()}! Balance Due: ₦${Number(
-            json.balanceRemaining || 0
-          ).toLocaleString()}`
+          "Confirmed ₦" + Number(amountNaira).toLocaleString() + "! Balance Due: ₦" + Number(json.balanceRemaining || 0).toLocaleString()
         );
         if (json.receipt) setPrintDoc({ type: "receipt", data: json.receipt });
       }
@@ -867,7 +871,7 @@ export default function EnterpriseFinanceSuite() {
     }
   };
 
-    // --- MANUAL RECEIPT CREATION FROM RECEIPTS PANEL ---
+  // --- MANUAL RECEIPT CREATION FROM RECEIPTS PANEL ---
   const handleCreateManualReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -1877,13 +1881,14 @@ export default function EnterpriseFinanceSuite() {
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[var(--border-subtle)]/50">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span
-                                className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
-                                  bal <= 0
+                                className={
+                                  "px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold " +
+                                  (bal <= 0
                                     ? "bg-emerald-500/20 text-emerald-300"
                                     : paid > 0
                                     ? "bg-amber-500/20 text-amber-300"
-                                    : "bg-[var(--bg-card)] text-[#c7cb2d]"
-                                }`}
+                                    : "bg-[var(--bg-card)] text-[#c7cb2d]")
+                                }
                               >
                                 {bal <= 0 ? "PAID" : paid > 0 ? "PARTIALLY PAID" : inv.status || "UNPAID"}
                               </span>
@@ -1892,7 +1897,7 @@ export default function EnterpriseFinanceSuite() {
                                 type="button"
                                 onClick={() => {
                                   const origin = typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-                                  const payUrl = `${origin}/pay/${inv.id}`;
+                                  const payUrl = origin + "/pay/" + inv.id;
                                   navigator.clipboard.writeText(payUrl);
                                   showToast("Paystack Payment Link (70% / 100%) copied!");
                                 }}
@@ -1902,7 +1907,7 @@ export default function EnterpriseFinanceSuite() {
                               </button>
 
                               <a
-                                href={`/pay/${inv.id}`}
+                                href={"/pay/" + inv.id}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="px-2 py-1 rounded-lg bg-[var(--bg-card)] text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d] transition"
