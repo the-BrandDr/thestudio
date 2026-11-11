@@ -1995,14 +1995,78 @@ export default function EnterpriseFinanceSuite() {
                 ))}
               </select>
             </div>
+
+                  {/* Direct Expenses Summary Strip */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 py-1">
+                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+                        Total Direct Outflow (All)
+                      </p>
+                      <p className="font-mono text-base font-bold text-amber-300 mt-0.5">
+                        ₦{totalDirectExpensesAll.toLocaleString()}.00
+                      </p>
+                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                        {allDirectExpensesOnly.length} total direct entries
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/30">
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] truncate">
+                        {activeCatFilter === "All" || activeCatFilter === "ALL" || activeCatFilter === "All Categories"
+                          ? "Filtered Category Spend (All)"
+                          : activeCatFilter}
+                      </p>
+                      <p className="font-mono text-base font-bold text-[#c7cb2d] mt-0.5">
+                        ₦{totalDirectExpensesFiltered.toLocaleString()}.00
+                      </p>
+                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                        {filteredExp.length} matching {filteredExp.length === 1 ? "entry" : "entries"}
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+                        Share of Direct Spend
+                      </p>
+                      <p className="font-display text-base font-bold text-[var(--text-primary)] mt-0.5">
+                        {totalDirectExpensesAll > 0
+                          ? Math.round((totalDirectExpensesFiltered / totalDirectExpensesAll) * 100)
+                          : 0}
+                        %
+                      </p>
+                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                        Of total direct expenses
+                      </p>
+                    </div>
+                  </div>
                   
 
             {(() => {
-              const activeCatFilter = typeof expCategoryFilter === "string" ? expCategoryFilter : "All";
-              const filteredExp = (vouchers || []).filter((v: any) => {
-                if (!getVoucherStageMeta(v).isDirectExpense) return false;
-                return activeCatFilter === "All" ? true : v.category === activeCatFilter;
+              const allDirectExpensesOnly = (vouchers || []).filter((v: any) =>
+                getVoucherStageMeta(v).isDirectExpense
+              );
+              const activeCatFilter = String(expenseFilterCategory || "All").trim();
+              const filteredExp = allDirectExpensesOnly.filter((v: any) => {
+                if (
+                  !activeCatFilter ||
+                  activeCatFilter === "All" ||
+                  activeCatFilter === "ALL" ||
+                  activeCatFilter === "All Categories"
+                ) {
+                  return true;
+                }
+                return String(v.category || "").trim().toLowerCase() === activeCatFilter.toLowerCase();
               });
+              const totalDirectExpensesAll = allDirectExpensesOnly.reduce(
+                (sum: number, item: any) =>
+                  sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
+                0
+              );
+              const totalDirectExpensesFiltered = filteredExp.reduce(
+                (sum: number, item: any) =>
+                  sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
+                0
+              );
               const pageIdx = typeof expensesPage === "number" ? expensesPage : 1;
               const pagedExp = filteredExp.slice((pageIdx - 1) * 6, pageIdx * 6);
               return (
