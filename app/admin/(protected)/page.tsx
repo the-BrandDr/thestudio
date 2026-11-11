@@ -1,6 +1,6 @@
 "use client";
 
-import WhatsAppWorkplaceChat from "@/components/admin/whatsapp-workplace-chat";
+import WhatsAppWorkplaceChat, { computeTotalUnreadChatCount } from "@/components/admin/whatsapp-workplace-chat";
 import * as React from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
@@ -167,6 +167,12 @@ export default function AdminOverviewAndOpenSpacePage() {
   const [myVouchers, setMyVouchers] = React.useState<any[]>([]);
   const [myPromotions, setMyPromotions] = React.useState<any[]>([]);
   const [messages, setMessages] = React.useState<any[]>([]);
+  const [, setChatReadTick] = React.useState(0);
+  React.useEffect(() => {
+    const onReadUpdate = () => setChatReadTick((t) => t + 1);
+    window.addEventListener("lavie:chat-read-updated", onReadUpdate);
+    return () => window.removeEventListener("lavie:chat-read-updated", onReadUpdate);
+  }, []);
   const [caseStudies, setCaseStudies] = React.useState<any[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [voucherNotice, setVoucherNotice] = React.useState("");
@@ -1632,7 +1638,7 @@ export default function AdminOverviewAndOpenSpacePage() {
         <div className="flex flex-wrap gap-1.5">
           {[
             { id: "overview", label: "Overview", icon: LayoutGrid },
-            { id: "chat", label: `Studio Chat (${messages.length})`, icon: MessageSquare },
+            { id: "chat", label: `Studio Chat (${computeTotalUnreadChatCount(messages, me)})`, icon: MessageSquare },
             { id: "leave", label: `Leave (${myLeaves.length})`, icon: Calendar },
             { id: "vouchers", label: `Vouchers (${myVouchers.length})`, icon: Receipt },
             { id: "promotion", label: "Request Promotion", icon: Award },

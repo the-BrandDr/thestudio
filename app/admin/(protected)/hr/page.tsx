@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import FormattedDate from "@/components/admin/formatted-date";
 import PassportCropper from "@/components/admin/passport-cropper";
-import WhatsAppWorkplaceChat from "@/components/admin/whatsapp-workplace-chat";
+import WhatsAppWorkplaceChat, { computeTotalUnreadChatCount } from "@/components/admin/whatsapp-workplace-chat";
 
 const DEPARTMENT_JOB_TITLES: Record<string, string[]> = {
   "Executive & Board Governance": [
@@ -245,6 +245,12 @@ export default function HRAndWorkspaceSuite() {
     "directory" | "onboard" | "leave" | "vouchers" | "promotions" | "salary_matrix" | "chat" | "activity"
   >("directory");
   const [hrActivities, setHrActivities] = React.useState<any[]>([]);
+  const [, setHrChatReadTick] = React.useState(0);
+  React.useEffect(() => {
+    const onRead = () => setHrChatReadTick((t) => t + 1);
+    window.addEventListener("lavie:chat-read-updated", onRead);
+    return () => window.removeEventListener("lavie:chat-read-updated", onRead);
+  }, []);
   const [activitySearch, setActivitySearch] = React.useState("");
   const [activityModuleFilter, setActivityModuleFilter] = React.useState("ALL");
   const [activityPage, setActivityPage] = React.useState(1);
@@ -1641,7 +1647,7 @@ export default function HRAndWorkspaceSuite() {
               icon: Award,
             },
             { id: "leave", label: `Leave Approvals (${leaveList.length})`, icon: Calendar },
-              { id: "chat", label: `Workplace Chat (${messages.length})`, icon: MessageSquare },
+              { id: "chat", label: `Workplace Chat (${computeTotalUnreadChatCount(messages, currentUser)})`, icon: MessageSquare },
               ...((canEditHR || isExecutive) ? [{ id: "activity", label: `Staff Activities (${hrActivities.length})`, icon: Shield }] : []),
             ].map((t) => {
             const Icon = t.icon;
