@@ -3,6 +3,7 @@
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import {
   VoucherSummaryAndFilterBar,
+  FinanceVouchersApprovalPanel,
   VoucherRowActionsMenu,
   VoucherLevelActionButtons,
   VoucherActionModals,
@@ -1138,7 +1139,8 @@ export default function EnterpriseFinanceSuite() {
             { id: "sales", label: "Projects & Sales", icon: Briefcase, badge: unifiedProjects.length },
             { id: "billing", label: "Billing", icon: FileSpreadsheet, badge: invoices.length },
             { id: "receipts", label: "Receipts", icon: Receipt, badge: receipts.length },
-          { id: "expenses", label: "Expenses", icon: TrendingDown },
+          { id: "expenses", label: "Direct Expenses", icon: TrendingDown },
+            { id: "vouchers", label: `Staff Vouchers (${(vouchers || []).filter((v: any) => !getVoucherStageMeta(v).isDirectExpense).length})`, icon: Receipt },
             { id: "payroll", label: "Payroll", icon: Users, badge: payrollList.length },
             { id: "tax", label: "Tax", icon: ShieldAlert, badge: taxList.filter(t => t.status !== "remitted").length },
           ].map((tab) => {
@@ -1975,7 +1977,7 @@ export default function EnterpriseFinanceSuite() {
           {/* OUTFLOW LEDGER */}
           <div className="lg:col-span-7 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-subtle)]/40 pb-3">
-              <h3 className="font-display text-base font-bold">Recorded Expenses & Vouchers</h3>
+              <h3 className="font-display text-base font-bold">Recorded Direct Expenses</h3>
               <select
                 value={expenseFilterCategory}
                 onChange={(e) => {
@@ -1992,7 +1994,7 @@ export default function EnterpriseFinanceSuite() {
                 ))}
               </select>
             </div>
-                  <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={voucherFilters} setFilters={setVoucherFilters} showAttentionFilter={true} />
+                  
 
             {(() => {
               const filteredExp = (vouchers || []).filter((v: any) =>
@@ -2089,7 +2091,34 @@ export default function EnterpriseFinanceSuite() {
         </div>
       )}
 
-      {activeTab === "payroll" && (
+      {activeTab === "vouchers" && (
+          <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60">
+            <FinanceVouchersApprovalPanel
+              vouchers={vouchers || []}
+              currentUser={typeof currentStaff !== "undefined" ? currentStaff : null}
+              onUpdateVoucher={(updated) => {
+                setVouchers((prev: any[]) =>
+                  prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
+                );
+              }}
+              onReuseAsExpense={(item) => {
+                setDirectExpForm({
+                  title: item.title || "",
+                  category: item.category || VOUCHER_CATEGORIES[0],
+                  amount: String(item.amount || ""),
+                  date: new Date().toISOString().slice(0, 10),
+                  vendor: String(item.staff_name || "").replace(/^\[DIRECT\]\s*/, ""),
+                  payment_method: item.payment_method || "Bank Transfer",
+                  project_ref: "",
+                  notes: cleanVoucherNotes(item),
+                });
+                setActiveTab("expenses" as any);
+              }}
+            />
+          </div>
+        )}
+
+        {activeTab === "payroll" && (
         <div className="space-y-4 print:hidden">
           <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
             <h2 className="font-display text-base font-bold">Payroll</h2>

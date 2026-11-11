@@ -9,6 +9,7 @@ import {
   ApprovalRoleTier,
 } from "@/utils/resolve-current-staff";
 import { logStaffActivity } from "@/utils/staff-activity-logger";
+import { triggerPushNotification } from "@/utils/push-notifications";
 import {
   Search,
   MoreHorizontal,
@@ -329,6 +330,39 @@ export function VoucherLevelActionButtons({
         reference_code: voucher.voucher_no || voucher.voucher_code || "",
       });
 
+      // Trigger active Push Notifications to requester & next approver level
+      const vCode = voucher.voucher_no || voucher.voucher_code || "LV-VCH";
+      const amtStr = "₦" + Number(voucher.amount || 0).toLocaleString();
+      if (decision === "disburse") {
+        triggerPushNotification({
+          title: "💸 Voucher Disbursed — " + vCode,
+          message: "Your voucher \"" + voucher.title + "\" (" + amtStr + ") has been disbursed by Finance.",
+          url: "https://studioslavie.com/admin",
+          targetType: voucher.staff_code ? "staff_codes" : "all_staff",
+          staffCodes: voucher.staff_code ? [voucher.staff_code] : undefined,
+        });
+      } else if (decision === "reject") {
+        triggerPushNotification({
+          title: "⚠️ Voucher Rejected — " + vCode,
+          message: "Voucher \"" + voucher.title + "\" was declined: " + rejectionReason,
+          url: "https://studioslavie.com/admin",
+          targetType: voucher.staff_code ? "staff_codes" : "all_staff",
+          staffCodes: voucher.staff_code ? [voucher.staff_code] : undefined,
+        });
+      } else if (decision === "accept") {
+        const nextStageMsg =
+          curLevel === 1
+            ? "Approved by CEO (Level 1). Now awaiting Head of Operations (Level 2)."
+            : curLevel === 2
+            ? "Approved by Head of Ops (Level 2). Now awaiting Head of Finance (Level 3)."
+            : "Approved by Finance (Level 3). Ready for payout disbursement.";
+        triggerPushNotification({
+          title: "✅ Voucher Level " + curLevel + " Approved — " + vCode,
+          message: "\"" + voucher.title + "\" (" + amtStr + "): " + nextStageMsg,
+          url: "https://studioslavie.com/admin/finance?tab=vouchers",
+          targetType: "all_staff",
+        });
+      }
       onVoucherUpdated(updatedRow);
     } catch (_) {
     } finally {
@@ -374,6 +408,7 @@ export function VoucherRowActionsMenu({
   onReuse: (v: any) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [openUpward, setOpenUpward] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const commentsCount = extractVoucherComments(voucher).length;
 
@@ -387,26 +422,65 @@ export function VoucherRowActionsMenu({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  const handleToggle = () => {
+    if (!open && menuRef.current && typeof window !== "undefined") {
+      const rect = menuRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 220);
+    }
+    setOpen((p) => !p);
+  };
+
   return (
-    <div className="relative inline-block" ref={menuRef}>
-      <button type="button" onClick={() => setOpen((p) => !p)} title="Options" className="px-2.5 py-1 rounded-lg bg-[var(--bg-main)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d] text-[var(--text-primary)] flex items-center gap-1 text-xs font-mono cursor-pointer transition">
+    <div className="relative inline-block text-left" ref={menuRef}>
+      <button
+        type="button"
+        onClick={handleToggle}
+        title="Options"
+        className="px-2.5 py-1 rounded-lg bg-[var(--bg-main)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d] text-[var(--text-primary)] flex items-center gap-1 text-xs font-mono cursor-pointer transition"
+      >
         <MoreHorizontal className="w-3.5 h-3.5" />
-        {commentsCount > 0 && (<span className="px-1.5 py-0.2 rounded-full bg-[#c7cb2d] text-black text-[9px] font-bold">{commentsCount}</span>)}
+        {commentsCount > 0 && (
+          <span className="px-1.5 py-0.2 rounded-full bg-[#c7cb2d] text-black text-[9px] font-bold">
+            {commentsCount}
+          </span>
+        )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-52 rounded-2xl bg-[#1a1a1a] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-50 text-xs">
-          <button type="button" onClick={() => { setOpen(false); onViewEdit(voucher); }} className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition">
+        <div
+          className={
+            "absolute right-0 w-52 rounded-2xl bg-[#141414] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-[100] text-xs " +
+            (openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5")
+          }
+        >
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onViewEdit(voucher); }}
+            className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition"
+          >
             <Edit3 className="w-3.5 h-3.5 text-[#c7cb2d]" /><span>View/Edit Voucher</span>
           </button>
-          <button type="button" onClick={() => { setOpen(false); onOpenComments(voucher); }} className="w-full px-3.5 py-2 text-left flex items-center justify-between hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onOpenComments(voucher); }}
+            className="w-full px-3.5 py-2 text-left flex items-center justify-between hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition"
+          >
             <span className="flex items-center gap-2.5"><MessageSquare className="w-3.5 h-3.5 text-sky-400" /><span>Comment</span></span>
             {commentsCount > 0 && (<span className="px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-[10px] font-mono font-bold">{commentsCount}</span>)}
           </button>
-          <button type="button" onClick={() => { setOpen(false); onReuse(voucher); }} className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onReuse(voucher); }}
+            className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition"
+          >
             <Copy className="w-3.5 h-3.5 text-emerald-400" /><span>Re-use</span>
           </button>
           <div className="my-1 border-t border-[var(--border-subtle)]/40" />
-          <button type="button" onClick={() => { setOpen(false); printVoucherOfficialPDF(voucher); }} className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[#c7cb2d] font-medium cursor-pointer transition">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); printVoucherOfficialPDF(voucher); }}
+            className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-white/5 text-[#c7cb2d] font-medium cursor-pointer transition"
+          >
             <Printer className="w-3.5 h-3.5 text-[#c7cb2d]" /><span>Print / Export Voucher PDF</span>
           </button>
         </div>
@@ -550,6 +624,22 @@ export function VoucherActionModals({
       } else {
         onVoucherUpdated({ ...activeVoucher, comments: nextComments });
       }
+      await logStaffActivity({
+        staff_name: resolvedName,
+        staff_code: resolvedCode,
+        department: currentUser?.department || "Studio Operations",
+        action_type: "COMMENTED_VOUCHER",
+        module: "Vouchers",
+        description: "Commented on voucher \"" + (activeVoucher.title || "") + "\": " + newComment.text.slice(0, 80),
+        reference_code: activeVoucher.voucher_no || activeVoucher.voucher_code || "",
+      });
+      triggerPushNotification({
+        title: "💬 New Voucher Comment — " + (activeVoucher.voucher_no || activeVoucher.title),
+        message: resolvedName + " (" + resolvedCode + "): " + newComment.text,
+        url: "https://studioslavie.com/admin/finance?tab=vouchers",
+        targetType: activeVoucher.staff_code && activeVoucher.staff_code !== resolvedCode ? "staff_codes" : "all_staff",
+        staffCodes: activeVoucher.staff_code ? [activeVoucher.staff_code] : undefined,
+      });
     } catch (_) {
       onVoucherUpdated({ ...activeVoucher, comments: nextComments });
     } finally {
@@ -734,8 +824,8 @@ export function RaisedVouchersWorkspacePanel({
         )}
       </div>
       <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={filters} setFilters={(val) => { setFilters(val); setPage(1); }} currentUser={currentUser} showAttentionFilter={false} />
-      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 overflow-visible">
+        <div className="overflow-x-auto overflow-y-visible pb-2">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[var(--border-subtle)]/60 bg-[var(--bg-main)]/60 text-[11px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
@@ -774,6 +864,193 @@ export function RaisedVouchersWorkspacePanel({
         </div>
       </div>
       <VoucherActionModals activeVoucher={activeVoucher} modalMode={modalMode} currentUser={currentUser} onClose={() => { setActiveVoucher(null); setModalMode(null); }} onVoucherUpdated={onUpdateVoucher} />
+    </div>
+  );
+}
+export function FinanceVouchersApprovalPanel({
+  vouchers,
+  currentUser,
+  onUpdateVoucher,
+  onReuseAsExpense,
+}: {
+  vouchers: any[];
+  currentUser?: any;
+  onUpdateVoucher: (updated: any) => void;
+  onReuseAsExpense?: (v: any) => void;
+}) {
+  // Strictly only staff-raised vouchers (exclude direct finance expenses)
+  const staffVouchersOnly = React.useMemo(
+    () => (vouchers || []).filter((v) => !getVoucherStageMeta(v).isDirectExpense),
+    [vouchers]
+  );
+
+  const [filters, setFilters] = React.useState<FilterState>({
+    category: "ALL",
+    status: "ALL",
+    startDate: "",
+    endDate: "",
+    search: "",
+  });
+  const [page, setPage] = React.useState(1);
+  const [activeVoucher, setActiveVoucher] = React.useState<any | null>(null);
+  const [modalMode, setModalMode] = React.useState<"comments" | "edit" | null>(null);
+
+  const pageSize = 8;
+  const filtered = React.useMemo(
+    () => filterVouchersList(staffVouchersOnly, filters, currentUser),
+    [staffVouchersOnly, filters, currentUser]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-bold text-[var(--text-primary)]">
+            Staff Expense Vouchers — Approval & Disbursement Desk
+          </h3>
+          <p className="text-xs text-[var(--text-muted)]">
+            Level 1: CEO → Level 2: Head of Ops → Level 3: Head of Finance → Disburse
+          </p>
+        </div>
+      </div>
+
+      <VoucherSummaryAndFilterBar
+        vouchers={staffVouchersOnly}
+        filters={filters}
+        setFilters={(val) => { setFilters(val); setPage(1); }}
+        currentUser={currentUser}
+        showAttentionFilter={true}
+      />
+
+      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 overflow-visible">
+        <div className="overflow-x-auto overflow-y-visible pb-2">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-[var(--border-subtle)]/60 bg-[var(--bg-main)]/60 text-[11px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+                <th className="py-3.5 px-4">Particular</th>
+                <th className="py-3.5 px-4">Raised By</th>
+                <th className="py-3.5 px-4">Total Price</th>
+                <th className="py-3.5 px-4">Date</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Options</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-subtle)]/40 text-xs">
+              {paginated.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-[var(--text-muted)]">
+                    No staff vouchers match the selected filters.
+                  </td>
+                </tr>
+              ) : (
+                paginated.map((v: any) => {
+                  const meta = getVoucherStageMeta(v);
+                  const curLevel = (meta as any).currentLevel ?? 1;
+                  const dateFormatted = v.created_at
+                    ? new Date(v.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).toUpperCase()
+                    : "RECENT";
+
+                  const statusPrimary = meta.isDisbursedOutflow
+                    ? "PAID"
+                    : meta.stage === "approved_waiting"
+                    ? "APPROVED"
+                    : meta.stage === "rejected"
+                    ? "REJECTED"
+                    : "PENDING (L" + curLevel + "/3)";
+
+                  const statusSub = meta.isDisbursedOutflow
+                    ? "Disbursed"
+                    : meta.stage === "approved_waiting"
+                    ? "Ready to Disburse"
+                    : meta.stage === "rejected"
+                    ? "Declined"
+                    : curLevel === 1
+                    ? "Awaiting CEO"
+                    : curLevel === 2
+                    ? "Awaiting Head of Ops"
+                    : "Awaiting Finance";
+
+                  const statusColor = meta.isDisbursedOutflow
+                    ? "text-emerald-400"
+                    : meta.stage === "approved_waiting"
+                    ? "text-[#c7cb2d]"
+                    : meta.stage === "rejected"
+                    ? "text-red-400"
+                    : "text-amber-300";
+
+                  return (
+                    <tr key={v.id} className="hover:bg-white/[0.02] transition">
+                      <td className="py-3.5 px-4 max-w-xs">
+                        <p className="font-bold text-[var(--text-primary)] uppercase tracking-tight truncate">{v.title}</p>
+                        <p className="text-[10px] font-mono text-[var(--text-dim)] truncate">
+                          {v.voucher_no || v.voucher_code || "LV-VCH"} • {v.category || "Operations"}
+                        </p>
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <p className="font-semibold text-[var(--text-primary)]">{v.staff_name || "Staff"}</p>
+                        <p className="text-[10px] font-mono text-[var(--text-dim)]">{v.staff_code || "LS-STAFF"} • {v.payment_method || "Bank Transfer"}</p>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-[var(--text-primary)] whitespace-nowrap">
+                        ₦{Number(v.amount || 0).toLocaleString()}.00
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                        {dateFormatted}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="leading-tight">
+                          <span className={"font-mono text-[11px] font-bold block " + statusColor}>{statusPrimary}</span>
+                          <span className="text-[10px] text-[var(--text-dim)]">{statusSub}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <VoucherLevelActionButtons
+                            voucher={v}
+                            currentUser={currentUser}
+                            pageContext="finance_desk"
+                            onVoucherUpdated={onUpdateVoucher}
+                          />
+                          <VoucherRowActionsMenu
+                            voucher={v}
+                            onViewEdit={(item) => { setActiveVoucher(item); setModalMode("edit"); }}
+                            onOpenComments={(item) => { setActiveVoucher(item); setModalMode("comments"); }}
+                            onReuse={(item) => { if (onReuseAsExpense) onReuseAsExpense(item); }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between text-xs font-mono text-[var(--text-muted)] pt-1">
+          <span>
+            Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} vouchers
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button type="button" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer">‹ Prev</button>
+            <span className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold">{currentPage}</span>
+            <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer">Next ›</button>
+          </div>
+        </div>
+      )}
+
+      <VoucherActionModals
+        activeVoucher={activeVoucher}
+        modalMode={modalMode}
+        currentUser={currentUser}
+        onClose={() => { setActiveVoucher(null); setModalMode(null); }}
+        onVoucherUpdated={onUpdateVoucher}
+      />
     </div>
   );
 }

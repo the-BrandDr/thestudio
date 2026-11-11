@@ -44,6 +44,7 @@ import { resolveAuthenticatedStaff,
   STUDIO_SERVICE_CATEGORIES,
   getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import { triggerPushNotification } from "@/utils/push-notifications";
+import { logStaffActivity } from "@/utils/staff-activity-logger";
 import {
   VoucherSummaryAndFilterBar,
   VoucherRowActionsMenu,
@@ -591,6 +592,15 @@ export default function AdminOverviewAndOpenSpacePage() {
       targetType: "clearance",
       clearance: "hr",
     });
+    await logStaffActivity({
+      staff_id: me.id,
+      staff_name: `${me.first_name || "Staff"} ${me.last_name || ""}`.trim(),
+      staff_code: me.staff_id || "STAFF",
+      department: me.department || "Operations",
+      action_type: "APPLIED_LEAVE",
+      module: "HR & Leave",
+      description: `Applied for ${requestedDays} working days of ${leaveForm.leave_type} (${leaveForm.start_date} to ${leaveForm.end_date})`,
+    });
     setLeaveForm({ leave_type: "Annual Leave", start_date: "", end_date: "", handover_staff: "", reason: "" });
     setSaving(false);
     loadOpenSpace();
@@ -688,6 +698,16 @@ export default function AdminOverviewAndOpenSpacePage() {
       }
 
       setVoucherNotice(`✅ Voucher ${vNo} saved to database!`);
+      await logStaffActivity({
+        staff_id: me.id,
+        staff_name: authorName,
+        staff_code: me.staff_id || "LS-01",
+        department: me.department || "Operations",
+        action_type: "RAISED_VOUCHER",
+        module: "Expenses & Vouchers",
+        description: `Raised expense voucher "${voucherForm.title}" (${vNo}) for ₦${computedVoucherTotal.toLocaleString()}`,
+        reference_code: vNo,
+      });
       setShowRaiseVoucherModal(false);
       setTimeout(() => setVoucherNotice(""), 5000);
 
@@ -705,9 +725,8 @@ export default function AdminOverviewAndOpenSpacePage() {
       triggerPushNotification({
         title: "🧾 New Expense Voucher Submitted",
         message: `${authorName} raised "${voucherForm.title}" (₦${computedVoucherTotal.toLocaleString()}).`,
-        url: "https://studioslavie.com/admin/hr",
-        targetType: "clearance",
-        clearance: "finance",
+        url: "https://studioslavie.com/admin/finance?tab=vouchers",
+        targetType: "all_staff",
       });
       loadOpenSpace();
     } catch (err: any) {
