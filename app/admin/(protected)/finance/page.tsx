@@ -1979,9 +1979,8 @@ export default function EnterpriseFinanceSuite() {
           <div className="lg:col-span-7 p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-subtle)]/40 pb-3">
               <h3 className="font-display text-base font-bold">Recorded Direct Expenses</h3>
-              <select
-                value={expenseFilterCategory}
-                onChange={(e) => {
+              <select value={expCategoryFilter} onChange={(e) => { setExpCategoryFilter(e.target.value); if (typeof setExpensesPage === "function") setExpensesPage(1); }} className="bg-[var(--bg-main)] border border-[var(--border-subtle)]/70 rounded-xl px-3 py-1.5 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#c7cb2d]">
+                        <option value="All">All Expense Categories</option> {
                   setExpenseFilterCategory(e.target.value);
                   if (typeof setExpensesPage === "function") setExpensesPage(1);
                 }}
@@ -1997,117 +1996,71 @@ export default function EnterpriseFinanceSuite() {
             </div>
 
                   {/* Direct Expenses Summary Strip */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 py-1">
-                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
-                        Total Direct Outflow (All)
-                      </p>
-                      <p className="font-mono text-base font-bold text-amber-300 mt-0.5">
-                        ₦{totalDirectExpensesAll.toLocaleString()}.00
-                      </p>
-                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                        {allDirectExpensesOnly.length} total direct entries
-                      </p>
-                    </div>
+                  {(() => {
+                    const allDirect = (vouchers || []).filter((v: any) =>
+                      getVoucherStageMeta(v).isDirectExpense
+                    );
+                    const activeCat = String(expCategoryFilter || "All").trim();
+                    const matchingDirect = allDirect.filter((v: any) => {
+                      if (!activeCat || activeCat === "All" || activeCat === "ALL" || activeCat === "All Categories") {
+                        return true;
+                      }
+                      return String(v.category || "").trim().toLowerCase() === activeCat.toLowerCase();
+                    });
+                    const totalAll = allDirect.reduce(
+                      (sum: number, item: any) =>
+                        sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
+                      0
+                    );
+                    const totalFiltered = matchingDirect.reduce(
+                      (sum: number, item: any) =>
+                        sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
+                      0
+                    );
+                    const sharePct = totalAll > 0 ? Math.round((totalFiltered / totalAll) * 100) : 0;
 
-                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/30">
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] truncate">
-                        {activeCatFilter === "All" || activeCatFilter === "ALL" || activeCatFilter === "All Categories"
-                          ? "Filtered Category Spend (All)"
-                          : activeCatFilter}
-                      </p>
-                      <p className="font-mono text-base font-bold text-[#c7cb2d] mt-0.5">
-                        ₦{totalDirectExpensesFiltered.toLocaleString()}.00
-                      </p>
-                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                        {filteredExp.length} matching {filteredExp.length === 1 ? "entry" : "entries"}
-                      </p>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
-                        Share of Direct Spend
-                      </p>
-                      <p className="font-display text-base font-bold text-[var(--text-primary)] mt-0.5">
-                        {totalDirectExpensesAll > 0
-                          ? Math.round((totalDirectExpensesFiltered / totalDirectExpensesAll) * 100)
-                          : 0}
-                        %
-                      </p>
-                      <p className="text-[10px] font-mono text-[var(--text-dim)]">
-                        Of total direct expenses
-                      </p>
-                    </div>
-                  </div>
-                  
-
-            {(() => {
-              const allDirectExpensesOnly = (vouchers || []).filter((v: any) =>
-                getVoucherStageMeta(v).isDirectExpense
-              );
-              const activeCatFilter = String(expenseFilterCategory || "All").trim();
-              const filteredExp = allDirectExpensesOnly.filter((v: any) => {
-                if (
-                  !activeCatFilter ||
-                  activeCatFilter === "All" ||
-                  activeCatFilter === "ALL" ||
-                  activeCatFilter === "All Categories"
-                ) {
-                  return true;
-                }
-                return String(v.category || "").trim().toLowerCase() === activeCatFilter.toLowerCase();
-              });
-              const totalDirectExpensesAll = allDirectExpensesOnly.reduce(
-                (sum: number, item: any) =>
-                  sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
-                0
-              );
-              const totalDirectExpensesFiltered = filteredExp.reduce(
-                (sum: number, item: any) =>
-                  sum + (Number(String(item.amount || 0).replace(/[^0-9.-]+/g, "")) || 0),
-                0
-              );
-              const pageIdx = typeof expensesPage === "number" ? expensesPage : 1;
-              const pagedExp = filteredExp.slice((pageIdx - 1) * 6, pageIdx * 6);
-              return (
-                <>
-                  <div className="space-y-2.5">
-                    {pagedExp.map((v: any) => {
-                      const codeStr = v.voucher_no || v.voucher_code || "";
-                      const isDirect =
-                        String(v.staff_code || "") === "FIN-DIRECT" || String(codeStr).startsWith("LV-EXP");
-                      const stageMeta = getVoucherStageMeta(v);
-                      return (
-                        <div
-                          key={v.id}
-                          className="p-4 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                        >
-                          <div className="space-y-1.5 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                              <span className={`px-2 py-0.5 rounded-full font-bold ${stageMeta.badgeClass}`}>
-                                {stageMeta.label}
-                              </span>
-                              {!isDirect && codeStr && (
-                                <span className="text-[var(--text-dim)]">{codeStr}</span>
-                              )}
-                              <span className="text-[var(--text-muted)]">{v.category}</span>
-                            </div>
-                            <h4 className="font-display text-sm font-bold truncate">{v.title}</h4>
-                            <p className="text-xs text-[var(--text-muted)] truncate">
-                              {v.staff_name} • {v.payment_method || "Bank Transfer"}
-                            </p>
-                            
-                          </div>
-                          <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
-                              -₦{Number(v.amount || 0).toLocaleString()}
-                            </span>
-                              
-                            </div>
-                            
-                          </div>
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 py-1">
+                        <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+                            Total Direct Outflow (All)
+                          </p>
+                          <p className="font-mono text-base font-bold text-amber-300 mt-0.5">
+                            ₦{totalAll.toLocaleString()}.00
+                          </p>
+                          <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                            {allDirect.length} total direct {allDirect.length === 1 ? "entry" : "entries"}
+                          </p>
                         </div>
+
+                        <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/30">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] truncate">
+                            {activeCat === "All" || activeCat === "ALL" || activeCat === "All Categories"
+                              ? "Filtered Category Spend (All)"
+                              : activeCat}
+                          </p>
+                          <p className="font-mono text-base font-bold text-[#c7cb2d] mt-0.5">
+                            ₦{totalFiltered.toLocaleString()}.00
+                          </p>
+                          <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                            {matchingDirect.length} matching {matchingDirect.length === 1 ? "entry" : "entries"}
+                          </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+                            Share of Direct Spend
+                          </p>
+                          <p className="font-display text-base font-bold text-[var(--text-primary)] mt-0.5">
+                            {sharePct}%
+                          </p>
+                          <p className="text-[10px] font-mono text-[var(--text-dim)]">
+                            Of total direct expenses
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                       );
                     })}
                     {filteredExp.length === 0 && (
