@@ -1,6 +1,7 @@
 "use client";
 
-import { fetchMergedStaffActivities } from "@/utils/staff-activity-logger";
+import { fetchMergedStaffActivities, logStaffActivity } from "@/utils/staff-activity-logger";
+import { playChatSound } from "@/utils/chat-sound-effects";
 import { getVoucherStageMeta } from "@/utils/resolve-current-staff";
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -239,8 +240,58 @@ export default function HRAndWorkspaceSuite() {
     };
   }, [supabase]);
   const [activeTab, setActiveTab] = React.useState<
-    "directory" | "onboard" | "leave" | "vouchers" | "promotions" | "salary_matrix" | "chat"
+    "directory" | "onboard" | "leave" | "vouchers" | "promotions" | "salary_matrix" | "chat" | "activity"
   >("directory");
+  const [hrActivities, setHrActivities] = React.useState<any[]>([]);
+  const [activitySearch, setActivitySearch] = React.useState("");
+  const [activityModuleFilter, setActivityModuleFilter] = React.useState("ALL");
+  const [activityPage, setActivityPage] = React.useState(1);
+
+  React.useEffect(() => {
+    const syncHrActivities = () => {
+      fetchMergedStaffActivities(200)
+        .then((rows) => {
+          if (Array.isArray(rows)) setHrActivities(rows);
+        })
+        .catch(() => {});
+    };
+    syncHrActivities();
+    window.addEventListener("lavie-activity-logged", syncHrActivities);
+    window.addEventListener("lavie:activity-updated", syncHrActivities);
+    return () => {
+      window.removeEventListener("lavie-activity-logged", syncHrActivities);
+      window.removeEventListener("lavie:activity-updated", syncHrActivities);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const applyHrParams = (searchStr: string) => {
+      const params = new URLSearchParams(searchStr);
+      const t = params.get("tab");
+      if (t && ["directory", "onboard", "leave", "vouchers", "promotions", "salary_matrix", "chat", "activity"].includes(t)) {
+        setActiveTab(t as any);
+      }
+      const chatMode = params.get("mode");
+      const targetCode = params.get("target");
+      if (chatMode && ["group", "direct", "multi_user", "multi_dept", "mentions"].includes(chatMode)) {
+        setChatChannelType(chatMode as any);
+      }
+      if (targetCode) {
+        setChatTarget(targetCode.toUpperCase());
+      }
+    };
+    applyHrParams(window.location.search);
+    const onDeepLink = (ev: Event) => {
+      const href = (ev as CustomEvent)?.detail?.href || "";
+      const qIdx = href.indexOf("?");
+      if (qIdx !== -1 && href.includes("/admin/hr")) {
+        applyHrParams(href.slice(qIdx));
+      }
+    };
+    window.addEventListener("lavie:deep-link", onDeepLink);
+    return () => window.removeEventListener("lavie:deep-link", onDeepLink);
+  }, []);
   const [loading, setLoading] = React.useState(true);
 
   const [salaryConfig, setSalaryConfig] = React.useState<
@@ -1419,6 +1470,56 @@ export default function HRAndWorkspaceSuite() {
       });
     }
 
+    // Play crisp outgoing sound tone (Telegram/WhatsApp style)
+    playChatSound("sent");
+
+    // Dispatch contextual push notifications strictly to the targeted recipients
+    const msgPreview = baseMsg.content.slice(0, 90);
+    if (allMentions.length > 0) {
+      triggerPushNotification({
+        title: `🏷️ You were tagged in a message by ${senderName}`,
+        message: msgPreview,
+        url: "https://studioslavie.com/admin/hr?tab=chat&mode=mentions",
+        targetType: "staff_codes",
+        staffCodes: allMentions,
+      });
+    }
+
+    if (chatChannelType === "direct" && chatTarget) {
+      triggerPushNotification({
+        title: `💬 You have a new message from ${senderName}`,
+        message: msgPreview,
+        url: `https://studioslavie.com/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}`,
+        targetType: "staff_codes",
+        staffCodes: [chatTarget],
+      });
+    } else if (chatChannelType === "multi_user" && selectedRecipients.length > 0) {
+      triggerPushNotification({
+        title: `💬 You have a new message from ${senderName}`,
+        message: msgPreview,
+        url: `https://studioslavie.com/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}`,
+        targetType: "staff_codes",
+        staffCodes: selectedRecipients,
+      });
+    } else if (chatChannelType === "multi_dept" && selectedDepartments.length > 0) {
+      for (const dept of selectedDepartments) {
+        triggerPushNotification({
+          title: `👥 ${senderName} sent a message to ${dept} group`,
+          message: msgPreview,
+          url: "https://studioslavie.com/admin/hr?tab=chat&mode=multi_dept",
+          targetType: "department",
+          department: dept,
+        });
+      }
+    } else if (chatChannelType === "group") {
+      triggerPushNotification({
+        title: `📢 ${senderName} sent a message to All Staff group`,
+        message: msgPreview,
+        url: "https://studioslavie.com/admin/hr?tab=chat&mode=group",
+        targetType: "all_staff",
+      });
+    }
+
     setChatInput("");
     setReplyingTo(null);
     setChatAttachment(null);
@@ -1538,6 +1639,8 @@ export default function HRAndWorkspaceSuite() {
               icon: Award,
             },
             { id: "leave", label: `Leave Approvals (${leaveList.length})`, icon: Calendar },
+              { id: "chat", label: `Workplace Chat (${messages.length})`, icon: MessageSquare },
+              ...((canEditHR || isExecutive) ? [{ id: "activity", label: `Staff Activities (${hrActivities.length})`, icon: Shield }] : []),
             ].map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;

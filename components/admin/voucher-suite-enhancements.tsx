@@ -962,6 +962,26 @@ export function RaisedVouchersWorkspacePanel({
   const [activeVoucher, setActiveVoucher] = React.useState<any | null>(null);
   const [modalMode, setModalMode] = React.useState<"comments" | "edit" | null>(null);
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const applyVoucherParam = (urlSearch: string) => {
+      const params = new URLSearchParams(urlSearch);
+      const vCode = params.get("voucher");
+      if (vCode) {
+        setFilters((prev) => ({ ...prev, search: vCode, status: "ALL", category: "ALL" }));
+        setPage(1);
+      }
+    };
+    applyVoucherParam(window.location.search);
+    const onDeepLink = (ev: Event) => {
+      const href = (ev as CustomEvent)?.detail?.href || "";
+      const qIdx = href.indexOf("?");
+      if (qIdx !== -1) applyVoucherParam(href.slice(qIdx));
+    };
+    window.addEventListener("lavie:deep-link", onDeepLink);
+    return () => window.removeEventListener("lavie:deep-link", onDeepLink);
+  }, []);
+
   const pageSize = 8;
   const filtered = React.useMemo(() => filterVouchersList(staffVouchersOnly, filters, currentUser), [staffVouchersOnly, filters, currentUser]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -1052,6 +1072,26 @@ export function FinanceVouchersApprovalPanel({
   const [page, setPage] = React.useState(1);
   const [activeVoucher, setActiveVoucher] = React.useState<any | null>(null);
   const [modalMode, setModalMode] = React.useState<"comments" | "edit" | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const applyVoucherParam = (urlSearch: string) => {
+      const params = new URLSearchParams(urlSearch);
+      const vCode = params.get("voucher");
+      if (vCode) {
+        setFilters((prev) => ({ ...prev, search: vCode, status: "ALL", category: "ALL" }));
+        setPage(1);
+      }
+    };
+    applyVoucherParam(window.location.search);
+    const onDeepLink = (ev: Event) => {
+      const href = (ev as CustomEvent)?.detail?.href || "";
+      const qIdx = href.indexOf("?");
+      if (qIdx !== -1) applyVoucherParam(href.slice(qIdx));
+    };
+    window.addEventListener("lavie:deep-link", onDeepLink);
+    return () => window.removeEventListener("lavie:deep-link", onDeepLink);
+  }, []);
 
   const pageSize = 8;
   const filtered = React.useMemo(

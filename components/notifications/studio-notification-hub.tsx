@@ -2,9 +2,15 @@
 
 import * as React from "react";
 import Script from "next/script";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-import { Bell, BellRing, X } from "lucide-react";
-import { checkModuleAccess } from "@/utils/resolve-current-staff";
+import { Bell, BellRing, X, Volume2, VolumeX, ArrowUpRight } from "lucide-react";
+import {
+  checkModuleAccess,
+  getStaffApprovalLevel,
+  getVoucherStageMeta,
+} from "@/utils/resolve-current-staff";
+import { playChatSound } from "@/utils/chat-sound-effects";
 
 declare global {
   interface Window {
@@ -38,9 +44,7 @@ export function PublicPushInitializer() {
           notifyButton: { enable: true },
         });
         await OneSignal.User.addTag("user_type", "public");
-      } catch (_) {
-        // Ignore domain mismatch or duplicate init in dev
-      }
+      } catch (_) {}
     });
   }, [appId]);
 
@@ -54,23 +58,51 @@ export function PublicPushInitializer() {
   );
 }
 
+export interface ActionNotificationItem {
+  id: string;
+  title: string;
+  body: string;
+  href: string;
+  time: string;
+  unread: boolean;
+  category?: "voucher" | "chat" | "leave" | "inquiry";
+}
+
 export function StaffNotificationBell({ staff }: { staff: any }) {
   const supabase = createClient();
+  const router = useRouter();
+  const pathname = usePathname();
   const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+
   const [open, setOpen] = React.useState(false);
+  const [soundEnabled, setSoundEnabled] = React.useState(true);
   const [permission, setPermission] = React.useState<NotificationPermission>("default");
-  const [feed, setFeed] = React.useState<
-    Array<{ id: string; title: string; body: string; href: string; time: string; unread: boolean }>
-  >([]);
-  const [liveToast, setLiveToast] = React.useState<{ title: string; body: string; href: string } | null>(null);
+  const [feed, setFeed] = React.useState<ActionNotificationItem[]>([]);
+  const [liveToast, setLiveToast] = React.useState<ActionNotificationItem | null>(null);
+  const bellRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
       setPermission(Notification.permission);
     }
+    try {
+      const savedMute = window.localStorage.getItem("lavie_sound_muted");
+      if (savedMute === "true") setSoundEnabled(false);
+    } catch (_) {}
   }, []);
 
-  // Sync Staff Identity & Role Clearance Tags with OneSignal (without re-calling OneSignal.init!)
+  // Close popover on click outside
+  React.useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  // Sync Staff Identity with OneSignal
   React.useEffect(() => {
     if (typeof window === "undefined" || !staff?.staff_id || !appId) return;
     if (!isProductionOneSignalAllowed()) return;
@@ -102,9 +134,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
               ? "true"
               : "false",
         });
-      } catch (_) {
-        // Safely ignore if domain isn't studioslavie.com or already initialized
-      }
+      } catch (_) {}
     });
   }, [staff, appId]);
 
@@ -121,105 +151,239 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
     }
   };
 
-  const pushLocalAlert = React.useCallback((title: string, body: string, href = "/admin") => {
-    const newItem = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      title,
-      body,
-      href,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      unread: true,
-    };
-    setFeed((prev) => [newItem, ...prev.slice(0, 24)]);
-    setLiveToast({ title, body, href });
-    setTimeout(() => setLiveToast(null), 5000);
-
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
       try {
-        const n = new Notification(title, {
-          body,
-          icon: "/logo-light.png",
-        });
-        n.onclick = () => {
-          window.focus();
-          window.location.href = href;
-        };
+        window.localStorage.setItem("lavie_sound_muted", next ? "false" : "true");
       } catch (_) {}
-    }
-  }, [])
+      if (next) playChatSound("sent");
+      return next;
+    });
+  };
 
-  // Hydrate notification feed from localStorage & /api/admin/activity on mount + listen to live events
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const loadInitialFeed = async () => {
-      try {
-        const rawLocal = window.localStorage.getItem("lavie_inapp_notifications_v1");
-        const localNotifs = rawLocal ? JSON.parse(rawLocal) : [];
-        const readIdsRaw = window.localStorage.getItem("lavie_read_notif_ids_v1");
-        const readIds = new Set<string>(readIdsRaw ? JSON.parse(readIdsRaw) : []);
-
-        const res = await fetch("/api/admin/activity", { cache: "no-store" }).catch(() => null);
-        const json = res ? await res.json().catch(() => ({})) : {};
-        const apiActs = Array.isArray(json?.data) ? json.data.slice(0, 20) : [];
-
-        const mappedActs = apiActs.map((a: any) => {
-          const id = String(a.id || (a.staff_code + "-" + a.created_at));
-          return {
-            id,
-            title: `${a.module || "Studio"}: ${String(a.action_type || a.action || "Update").replace(/_/g, " ")}`,
-            body: `${a.staff_name || "Staff"} — ${a.description || a.details || ""}`,
-            href:
-              String(a.module || "").toLowerCase().includes("voucher") ||
-              String(a.action_type || "").toLowerCase().includes("voucher")
-                ? "/admin/finance?tab=vouchers"
-                : "/admin/inquiries",
-            time: a.created_at
-              ? new Date(a.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-              : "Recent",
-            unread: !readIds.has(id),
-          };
-        });
-
-        const mergedMap = new Map<string, any>();
-        for (const item of [...(Array.isArray(localNotifs) ? localNotifs : []), ...mappedActs]) {
-          if (!item || !item.id) continue;
-          if (!mergedMap.has(item.id)) {
-            mergedMap.set(item.id, {
-              ...item,
-              unread: readIds.has(item.id) ? false : item.unread ?? true,
-            });
-          }
-        }
-        setFeed(Array.from(mergedMap.values()).slice(0, 30));
-      } catch (_) {}
-    };
-
-    loadInitialFeed();
-
-    const handleNewInAppNotif = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail;
-      if (detail && detail.title) {
-        pushLocalAlert(detail.title, detail.body || detail.message || "", detail.href || "/admin/finance?tab=vouchers");
-      } else {
-        loadInitialFeed();
+  const navigateToTarget = React.useCallback(
+    (href: string) => {
+      setOpen(false);
+      setLiveToast(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("lavie:deep-link", { detail: { href } }));
       }
-    };
+      router.push(href);
+    },
+    [router]
+  );
 
-    window.addEventListener("lavie:notification-updated", handleNewInAppNotif);
-    window.addEventListener("lavie-activity-logged", loadInitialFeed);
-    return () => {
-      window.removeEventListener("lavie:notification-updated", handleNewInAppNotif);
-      window.removeEventListener("lavie-activity-logged", loadInitialFeed);
-    };
-  }, [pushLocalAlert]);;
+  const pushLocalAlert = React.useCallback(
+    (
+      title: string,
+      body: string,
+      href = "/admin",
+      tone: "received" | "mention" = "received",
+      customId?: string
+    ) => {
+      const id = customId || `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newItem: ActionNotificationItem = {
+        id,
+        title,
+        body,
+        href,
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        unread: true,
+      };
 
-  // Supabase Realtime Listeners (Works on both localhost and production!)
+      setFeed((prev) => {
+        const filtered = prev.filter((item) => item.id !== id);
+        return [newItem, ...filtered].slice(0, 20);
+      });
+      setLiveToast(newItem);
+      setTimeout(() => setLiveToast((curr) => (curr?.id === id ? null : curr)), 4500);
+
+      if (soundEnabled) {
+        playChatSound(tone);
+      }
+
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        try {
+          const n = new Notification(title, {
+            body,
+            icon: "/logo-light.png",
+          });
+          n.onclick = () => {
+            window.focus();
+            navigateToTarget(href);
+          };
+        } catch (_) {}
+      }
+    },
+    [soundEnabled, navigateToTarget]
+  );
+
+  // Hydrate ONLY notifications that require THIS specific user's attention or action!
+  const loadMyActionableFeed = React.useCallback(async () => {
+    if (!staff?.staff_id || typeof window === "undefined") return;
+    const myCode = String(staff.staff_id).toUpperCase().trim();
+    const myFirst = String(staff.first_name || "").toLowerCase().trim();
+    const myDept = String(staff.department || "").trim();
+    const myTier = getStaffApprovalLevel(staff);
+    const canHR = checkModuleAccess(staff, "hr");
+    const canFin = checkModuleAccess(staff, "finance");
+
+    const readIdsRaw = window.localStorage.getItem("lavie_read_notif_ids_v2");
+    const readIds = new Set<string>(readIdsRaw ? JSON.parse(readIdsRaw) : []);
+    const items: ActionNotificationItem[] = [];
+
+    try {
+      // 1. VOUCHERS REQUIRING MY EXACT EXECUTIVE SIGN-OFF OR MY OWN VOUCHER UPDATES
+      const vRes = await fetch("/api/admin/vouchers", { cache: "no-store" }).catch(() => null);
+      const vJson = vRes ? await vRes.json().catch(() => ({})) : {};
+      const allVouchers: any[] = Array.isArray(vJson?.data) ? vJson.data : [];
+
+      for (const v of allVouchers) {
+        const meta = getVoucherStageMeta(v);
+        if (meta.isDirectExpense) continue; // Never notify on direct expenses
+
+        const vCode = v.voucher_no || v.voucher_code || "LV-VCH";
+        const vOwner = String(v.staff_code || "").toUpperCase().trim();
+        const amt = "₦" + Number(v.amount || 0).toLocaleString();
+        const targetHref = canFin || myTier !== "staff"
+          ? `/admin/finance?tab=vouchers&voucher=${encodeURIComponent(vCode)}`
+          : `/admin?tab=vouchers&voucher=${encodeURIComponent(vCode)}`;
+
+        // Case A: It is currently MY exact turn to approve or disburse this voucher
+        const needsMyApproval =
+          (meta.stage === "pending" && meta.requiredApproverTier === myTier) ||
+          (meta.stage === "approved_waiting" && meta.canDisburse && myTier === "level3_finance");
+
+        if (needsMyApproval) {
+          const notifId = `vch-action-${v.id}-L${meta.currentLevel}-${meta.stage}`;
+          items.push({
+            id: notifId,
+            title:
+              meta.stage === "approved_waiting"
+                ? `💸 Ready to Disburse • ${vCode}`
+                : `🧾 Action Required (L${meta.currentLevel}/3) • ${vCode}`,
+            body: `${v.staff_name || "Staff"} raised "${v.title}" (${amt}) — awaiting your action.`,
+            href: targetHref,
+            time: v.created_at
+              ? new Date(v.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Pending",
+            unread: !readIds.has(notifId),
+            category: "voucher",
+          });
+        }
+
+        // Case B: I raised this voucher and its status changed or someone commented on it
+        if (vOwner === myCode && meta.stage !== "pending") {
+          const notifId = `vch-mine-${v.id}-${meta.stage}`;
+          items.push({
+            id: notifId,
+            title: `🧾 Your Voucher ${vCode} • ${meta.stage.toUpperCase()}`,
+            body: `"${v.title}" (${amt}) is now ${meta.label}.`,
+            href: targetHref,
+            time: v.created_at
+              ? new Date(v.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Updated",
+            unread: !readIds.has(notifId),
+            category: "voucher",
+          });
+        }
+      }
+
+      // 2. RECENT MESSAGES DIRECTED AT ME, TAGGING ME, OR IN MY GROUP
+      const { data: recentMsgs } = await supabase
+        .from("studio_messages")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(25);
+
+      for (const m of recentMsgs || []) {
+        const senderCode = String(m.sender_code || "").toUpperCase().trim();
+        if (!m || senderCode === myCode) continue; // Never notify me of my own sent messages
+
+        const recip = String(m.recipient_code || "").trim();
+        const content = String(m.content || "").trim();
+        const isDirectToMe = recip.toUpperCase() === myCode;
+        const isTaggedMe =
+          content.toUpperCase().includes(myCode) ||
+          (myFirst && content.toLowerCase().includes(`@${myFirst}`));
+        const isMyDeptGroup = recip.startsWith("DEPT:") && myDept && recip.includes(myDept);
+        const isAllStaffGroup = recip === "All Staff";
+
+        if (!isDirectToMe && !isTaggedMe && !isMyDeptGroup && !isAllStaffGroup) {
+          continue; // Strictly ignore messages not meant for me!
+        }
+
+        const notifId = `msg-${m.id}`;
+        let title = "";
+        let href = "/admin/hr?tab=chat";
+
+        if (isTaggedMe) {
+          title = `🏷️ You were tagged by ${m.sender_name}`;
+          href = `/admin/hr?tab=chat&mode=mentions&msg=${m.id}`;
+        } else if (isDirectToMe) {
+          title = `💬 New message from ${m.sender_name}`;
+          href = `/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`;
+        } else if (isMyDeptGroup) {
+          title = `👥 ${m.sender_name} → ${myDept} Group`;
+          href = `/admin/hr?tab=chat&mode=multi_dept&msg=${m.id}`;
+        } else {
+          title = `📢 ${m.sender_name} → All Staff Group`;
+          href = `/admin/hr?tab=chat&mode=group&msg=${m.id}`;
+        }
+
+        items.push({
+          id: notifId,
+          title,
+          body: content || "Sent a voice note or file attachment",
+          href,
+          time: m.created_at
+            ? new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "Recent",
+          unread: !readIds.has(notifId),
+          category: "chat",
+        });
+      }
+
+      // 3. PENDING LEAVE APPROVALS (for HR / Execs)
+      if (canHR) {
+        const { data: leaves } = await supabase
+          .from("leave_requests")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        for (const lv of leaves || []) {
+          if (String(lv.staff_code || "").toUpperCase() === myCode) continue;
+          const notifId = `leave-pending-${lv.id}`;
+          items.push({
+            id: notifId,
+            title: `📅 Leave Approval Needed • ${lv.staff_name}`,
+            body: `${lv.leave_type} (${lv.start_date} → ${lv.end_date})`,
+            href: "/admin/hr?tab=leave",
+            time: "Pending",
+            unread: !readIds.has(notifId),
+            category: "leave",
+          });
+        }
+      }
+
+      setFeed(items.slice(0, 18));
+    } catch (_) {}
+  }, [staff, supabase]);
+
+  React.useEffect(() => {
+    loadMyActionableFeed();
+  }, [loadMyActionableFeed, pathname]);
+
+  // Realtime listeners strictly scoped to THIS user's actions and messages
   React.useEffect(() => {
     if (!staff?.staff_id) return;
-    const myCode = String(staff.staff_id).toUpperCase();
-    const myFirst = String(staff.first_name || "").toLowerCase();
-    const myDept = String(staff.department || "");
+    const myCode = String(staff.staff_id).toUpperCase().trim();
+    const myFirst = String(staff.first_name || "").toLowerCase().trim();
+    const myDept = String(staff.department || "").trim();
+    const myTier = getStaffApprovalLevel(staff);
     const canInq = checkModuleAccess(staff, "inquiries");
     const canHR = checkModuleAccess(staff, "hr");
     const canFin = checkModuleAccess(staff, "finance");
@@ -231,10 +395,11 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         { event: "INSERT", schema: "public", table: "studio_messages" },
         (payload) => {
           const m: any = payload.new;
-          if (!m || String(m.sender_code || "").toUpperCase() === myCode) return;
+          const senderCode = String(m?.sender_code || "").toUpperCase().trim();
+          if (!m || senderCode === myCode) return;
 
-          const recip = String(m.recipient_code || "");
-          const content = String(m.content || "");
+          const recip = String(m.recipient_code || "").trim();
+          const content = String(m.content || "").trim();
           const isDirectToMe = recip.toUpperCase() === myCode;
           const isTaggedMe =
             content.toUpperCase().includes(myCode) ||
@@ -242,17 +407,84 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           const isMyDept = recip.startsWith("DEPT:") && myDept && recip.includes(myDept);
           const isAllStaff = recip === "All Staff";
 
-          if (isDirectToMe || isTaggedMe) {
+          if (isTaggedMe) {
             pushLocalAlert(
-              `💬 Direct Message from ${m.sender_name}`,
-              content || "Sent a voice note or attachment",
-              "/admin"
+              `🏷️ You were tagged by ${m.sender_name}`,
+              content || "Tagged you in a message",
+              `/admin/hr?tab=chat&mode=mentions&msg=${m.id}`,
+              "mention",
+              `msg-${m.id}`
             );
-          } else if (isMyDept || isAllStaff) {
+          } else if (isDirectToMe) {
             pushLocalAlert(
-              `📢 Studio Chat (${m.sender_name})`,
-              content || "New attachment in channel",
-              "/admin"
+              `💬 You have a new message from ${m.sender_name}`,
+              content || "Sent a voice note or attachment",
+              `/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`,
+              "received",
+              `msg-${m.id}`
+            );
+          } else if (isMyDept) {
+            pushLocalAlert(
+              `👥 ${m.sender_name} sent a message to ${myDept} group`,
+              content || "New attachment in department group",
+              `/admin/hr?tab=chat&mode=multi_dept&msg=${m.id}`,
+              "received",
+              `msg-${m.id}`
+            );
+          } else if (isAllStaff) {
+            pushLocalAlert(
+              `📢 ${m.sender_name} sent a message to All Staff group`,
+              content || "New message in All Staff group",
+              `/admin/hr?tab=chat&mode=group&msg=${m.id}`,
+              "received",
+              `msg-${m.id}`
+            );
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "expense_vouchers" },
+        (payload) => {
+          const v: any = payload.new;
+          if (!v) return;
+          const meta = getVoucherStageMeta(v);
+          if (meta.isDirectExpense) return;
+
+          const vCode = v.voucher_no || v.voucher_code || "LV-VCH";
+          const vOwner = String(v.staff_code || "").toUpperCase().trim();
+          const amt = "₦" + Number(v.amount || 0).toLocaleString();
+          const href =
+            canFin || myTier !== "staff"
+              ? `/admin/finance?tab=vouchers&voucher=${encodeURIComponent(vCode)}`
+              : `/admin?tab=vouchers&voucher=${encodeURIComponent(vCode)}`;
+
+          // 1. Does this voucher now require MY executive approval or disbursement?
+          const needsMyTurn =
+            (meta.stage === "pending" && meta.requiredApproverTier === myTier) ||
+            (meta.stage === "approved_waiting" && meta.canDisburse && myTier === "level3_finance");
+
+          if (needsMyTurn) {
+            pushLocalAlert(
+              meta.stage === "approved_waiting"
+                ? `💸 Voucher Ready for Disbursement • ${vCode}`
+                : `🧾 Voucher Awaiting Your Approval (L${meta.currentLevel}/3)`,
+              `${v.staff_name || "Staff"}: "${v.title}" (${amt})`,
+              href,
+              "mention",
+              `vch-action-${v.id}-L${meta.currentLevel}-${meta.stage}`
+            );
+            return;
+          }
+
+          // 2. Is this MY own raised voucher that just got updated?
+          if (payload.eventType === "UPDATE" && vOwner === myCode) {
+            pushLocalAlert(
+              `🧾 Your Voucher ${vCode} Updated`,
+              `"${v.title}" (${amt}) — ${meta.label}`,
+              href,
+              "received",
+              `vch-mine-${v.id}-${meta.stage}`
             );
           }
         }
@@ -266,7 +498,8 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           pushLocalAlert(
             "📩 New Client Inquiry",
             `${inq?.name || "A client"} inquired about ${inq?.service || inq?.subject || "a project"}`,
-            "/admin/inquiries"
+            "/admin/inquiries",
+            "received"
           );
         }
       )
@@ -280,98 +513,66 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
             pushLocalAlert(
               `📅 Leave Application ${String(lv.status || "").toUpperCase()}`,
               `Your ${lv.leave_type} request is now ${lv.status}.`,
-              "/admin"
+              "/admin",
+              "received"
             );
           } else if (payload.eventType === "INSERT" && canHR && String(lv.staff_code || "").toUpperCase() !== myCode) {
             pushLocalAlert(
               "📅 New Staff Leave Request",
               `${lv.staff_name} applied for ${lv.leave_type}`,
-              "/admin/hr"
+              "/admin/hr?tab=leave",
+              "mention"
             );
           }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "expense_vouchers" },
-        (payload) => {
-          const v: any = payload.new;
-          if (!v) return;
-          const vCode = v.voucher_no || v.voucher_code || "LV-VCH";
-          if (payload.eventType === "UPDATE") {
-            pushLocalAlert(
-              `🧾 Voucher Updated — ${vCode}`,
-              `"${v.title}" was updated (Status: ${String(v.status || "pending").toUpperCase()}).`,
-              "/admin/finance?tab=vouchers"
-            );
-          } else if (payload.eventType === "INSERT" && String(v.staff_code || "").toUpperCase() !== myCode) {
-            pushLocalAlert(
-              "🧾 New Expense Voucher Raised",
-              `${v.staff_name} submitted ${v.title} (₦${Number(v.amount || 0).toLocaleString()})`,
-              "/admin/finance?tab=vouchers"
-            );
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "staff_promotions" },
-        (payload) => {
-          const p: any = payload.new;
-          if (!p) return;
-          if (String(p.staff_code || "").toUpperCase() === myCode && p.request_status === "approved") {
-            pushLocalAlert(
-              "🎉 Congratulations! Promotion Approved",
-              `You have been promoted to ${p.new_level} (${p.new_title}).`,
-              "/admin/settings"
-            );
-          } else if (payload.eventType === "INSERT" && canHR && p.requested_by_staff) {
-            pushLocalAlert(
-              "🏆 Staff Promotion Request",
-              `${p.staff_name} requested an upgrade to ${p.new_level}.`,
-              "/admin/hr"
-            );
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "case_studies" },
-        (payload) => {
-          const cs: any = payload.new;
-          pushLocalAlert(
-            "🚀 New Case Study Published",
-            `"${cs?.title || "New project"}" is now live on the portfolio!`,
-            "/portfolio"
-          );
         }
       )
       .subscribe();
 
+    const handleRefreshEvent = () => loadMyActionableFeed();
+    window.addEventListener("lavie-activity-logged", handleRefreshEvent);
+    window.addEventListener("lavie:activity-updated", handleRefreshEvent);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener("lavie-activity-logged", handleRefreshEvent);
+      window.removeEventListener("lavie:activity-updated", handleRefreshEvent);
     };
-  }, [supabase, staff, pushLocalAlert]);
+  }, [supabase, staff, pushLocalAlert, loadMyActionableFeed]);
 
   const unreadCount = feed.filter((f) => f.unread).length;
 
+  const markAllRead = () => {
+    setFeed((prev) => {
+      const next = prev.map((item) => ({ ...item, unread: false }));
+      try {
+        const existingRaw = window.localStorage.getItem("lavie_read_notif_ids_v2");
+        const existingIds = existingRaw ? JSON.parse(existingRaw) : [];
+        const mergedIds = Array.from(new Set([...existingIds, ...next.map((i) => i.id)]));
+        window.localStorage.setItem("lavie_read_notif_ids_v2", JSON.stringify(mergedIds));
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  const handleItemClick = (item: ActionNotificationItem) => {
+    try {
+      const existingRaw = window.localStorage.getItem("lavie_read_notif_ids_v2");
+      const existingIds = existingRaw ? JSON.parse(existingRaw) : [];
+      if (!existingIds.includes(item.id)) {
+        window.localStorage.setItem("lavie_read_notif_ids_v2", JSON.stringify([...existingIds, item.id]));
+      }
+    } catch (_) {}
+    setFeed((prev) => prev.map((f) => (f.id === item.id ? { ...f, unread: false } : f)));
+    navigateToTarget(item.href);
+  };
+
   return (
-    <div className="relative">
+    <div className="relative" ref={bellRef}>
       <button
         type="button"
-        onClick={() => {
-          setOpen((p) => !p);
-          setFeed((prev) => {
-            const next = prev.map((item) => ({ ...item, unread: false }));
-            try {
-              const ids = next.map((i) => i.id);
-              window.localStorage.setItem("lavie_read_notif_ids_v1", JSON.stringify(ids));
-            } catch (_) {}
-            return next;
-          });
-        }}
+        onClick={() => setOpen((p) => !p)}
         className="relative p-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer transition"
-        title="Notifications"
+        title="Actionable Notifications"
       >
         {unreadCount > 0 ? (
           <BellRing className="w-4 h-4 text-[#c7cb2d] animate-bounce" />
@@ -379,27 +580,46 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
           <Bell className="w-4 h-4" />
         )}
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#c7cb2d] text-black text-[9px] font-mono font-bold flex items-center justify-center">
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#c7cb2d] text-black text-[9px] font-mono font-bold flex items-center justify-center">
             {unreadCount}
           </span>
         )}
       </button>
 
+      {/* COMPACT ACTION-FOCUSED NOTIFICATION POPOVER */}
       {open && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-2xl p-4 z-50 space-y-3">
-          <div className="flex items-center justify-between border-b border-[var(--border-subtle)]/50 pb-2.5">
-            <div>
-              <h3 className="font-display text-xs font-bold">Live Activity Notifications</h3>
-              
-            </div>
+        <div className="absolute right-0 mt-2 w-72 sm:w-80 rounded-2xl bg-[#141414] border border-[var(--border-subtle)] shadow-2xl p-2.5 z-50 space-y-2">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)]/50 pb-2 px-1">
             <div className="flex items-center gap-1.5">
+              <h3 className="font-display text-[11px] font-bold text-[var(--text-primary)]">
+                Action & Inbox ({unreadCount})
+              </h3>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleSound}
+                title={soundEnabled ? "Sound Tones On (Click to Mute)" : "Sound Tones Muted"}
+                className="p-1 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
+              >
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#c7cb2d]" /> : <VolumeX className="w-3.5 h-3.5" />}
+              </button>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={markAllRead}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
+                >
+                  Mark read
+                </button>
+              )}
               {permission !== "granted" && (
                 <button
                   type="button"
                   onClick={requestBrowserPermission}
-                  className="px-2.5 py-1 rounded-full bg-[#c7cb2d] text-black text-[10px] font-bold cursor-pointer"
+                  className="px-2 py-0.5 rounded-full bg-[#c7cb2d] text-black text-[9px] font-bold cursor-pointer"
                 >
-                  Enable Push
+                  Push
                 </button>
               )}
               <button
@@ -407,47 +627,64 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
                 onClick={() => setOpen(false)}
                 className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             </div>
           </div>
 
           {feed.length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)] py-6 text-center">
-              No new notifications right now. You will be alerted immediately when a chat, inquiry, or personal staff update arrives.
+            <p className="text-[11px] text-[var(--text-muted)] py-4 text-center">
+              All caught up! Only items requiring your approval or direct messages/tags appear here.
             </p>
           ) : (
-            <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+            <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
               {feed.map((item) => (
-                <a
+                <button
                   key={item.id}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                  className="block p-3 rounded-2xl bg-[var(--bg-main)] hover:border-[#c7cb2d]/50 border border-[var(--border-subtle)]/40 transition space-y-0.5"
+                  type="button"
+                  onClick={() => handleItemClick(item)}
+                  className={`w-full text-left px-2.5 py-2 rounded-xl border transition flex items-start justify-between gap-2 cursor-pointer ${
+                    item.unread
+                      ? "bg-[#1c1c1c] border-[#c7cb2d]/40 hover:border-[#c7cb2d]"
+                      : "bg-[var(--bg-main)]/60 border-[var(--border-subtle)]/30 hover:border-[var(--border-subtle)] opacity-75"
+                  }`}
                 >
-                  <div className="flex items-center justify-between text-[10px] font-mono text-[#c7cb2d]">
-                    <span className="font-bold truncate">{item.title}</span>
-                    <span className="text-[var(--text-dim)] shrink-0">{item.time}</span>
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-[10px] font-mono font-bold text-[#c7cb2d] truncate">
+                        {item.title}
+                      </span>
+                      <span className="text-[9px] font-mono text-[var(--text-dim)] shrink-0">
+                        {item.time}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-primary)] truncate">
+                      {item.body}
+                    </p>
                   </div>
-                  <p className="text-xs text-[var(--text-muted)] line-clamp-2">{item.body}</p>
-                </a>
+                  <ArrowUpRight className="w-3 h-3 text-[#c7cb2d] shrink-0 mt-0.5" />
+                </button>
               ))}
             </div>
           )}
         </div>
       )}
 
+      {/* COMPACT CLICKABLE LIVE TOAST */}
       {liveToast && (
-        <a
-          href={liveToast.href}
-          className="fixed bottom-5 right-5 z-50 w-80 p-4 rounded-2xl bg-[var(--bg-card)] border-2 border-[#c7cb2d] shadow-2xl space-y-1 animate-in fade-in slide-in-from-bottom-4"
+        <button
+          type="button"
+          onClick={() => navigateToTarget(liveToast.href)}
+          className="fixed bottom-4 right-4 z-50 w-72 p-3 rounded-2xl bg-[#141414] border border-[#c7cb2d] shadow-2xl text-left space-y-0.5 cursor-pointer animate-in fade-in slide-in-from-bottom-4"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold text-[#c7cb2d]">{liveToast.title}</span>
-            <span className="text-[9px] font-mono uppercase text-[var(--text-dim)]">Now</span>
+            <span className="text-[10px] font-mono font-bold text-[#c7cb2d] truncate">
+              {liveToast.title}
+            </span>
+            <span className="text-[9px] font-mono uppercase text-[var(--text-dim)]">Open ↗</span>
           </div>
-          <p className="text-xs text-[var(--text-primary)] line-clamp-2">{liveToast.body}</p>
-        </a>
+          <p className="text-[11px] text-[var(--text-primary)] truncate">{liveToast.body}</p>
+        </button>
       )}
     </div>
   );

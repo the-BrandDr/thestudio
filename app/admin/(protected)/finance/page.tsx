@@ -102,9 +102,16 @@ export default function EnterpriseFinanceSuite() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const t = params.get("tab");
-      if (t && ["overview", "projects", "billing", "receipts", "expenses", "payroll", "tax"].includes(t)) {
+      if (t && ["overview", "projects", "billing", "receipts", "expenses", "vouchers", "payroll", "tax"].includes(t)) {
         setActiveTab(t as any);
       }
+      const handleDeepLink = (ev: Event) => {
+        const href = (ev as CustomEvent)?.detail?.href || "";
+        if (href.includes("tab=vouchers")) setActiveTab("vouchers" as any);
+        else if (href.includes("tab=expenses")) setActiveTab("expenses" as any);
+      };
+      window.addEventListener("lavie:deep-link", handleDeepLink);
+      return () => window.removeEventListener("lavie:deep-link", handleDeepLink);
     }
   }, []);
 

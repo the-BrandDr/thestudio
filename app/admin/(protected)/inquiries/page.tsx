@@ -327,14 +327,7 @@ export default function AdminInquiriesPage() {
             >
               Newsletter
             </button>
-          <button
-            onClick={() => setActiveView("activity")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1 ${
-              activeView === "activity" ? "bg-[var(--text-primary)] text-[var(--bg-main)]" : "text-[var(--text-muted)]"
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" /> Staff Activity ({activityLogs.length})
-          </button>
+          
         </div>
 
         {activeView === "inquiries" && (
