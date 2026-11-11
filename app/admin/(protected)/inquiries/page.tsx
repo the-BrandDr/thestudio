@@ -26,6 +26,7 @@ export default function AdminInquiriesPage() {
   const [subscribers, setSubscribers] = React.useState<any[]>([]);
   const [commercialModal, setCommercialModal] = React.useState<"sale" | "invoice" | null>(null);
   const [portalActivities, setPortalActivities] = React.useState<any[]>([]);
+  const [activityLogs, setActivityLogs] = React.useState<any[]>([]);
 
   const loadPortalActivities = React.useCallback(async () => {
     try {
@@ -50,7 +51,11 @@ export default function AdminInquiriesPage() {
     const onNewLog = () => loadPortalActivities();
     if (typeof window !== "undefined") {
       window.addEventListener("lavie-activity-logged", onNewLog);
-      return () => window.removeEventListener("lavie-activity-logged", onNewLog);
+    window.addEventListener("lavie:activity-updated", onNewLog);
+      return () => {
+      window.removeEventListener("lavie-activity-logged", onNewLog);
+      window.removeEventListener("lavie:activity-updated", onNewLog);
+    };
     }
   }, [loadPortalActivities]);
   const [canManageNewsletter, setCanManageNewsletter] = React.useState(true);
@@ -107,7 +112,6 @@ export default function AdminInquiriesPage() {
   const [activeView, setActiveView] = React.useState<"inquiries" | "quotes" | "feedbacks" | "newsletter" | "activity" | "sales" | "billing">("inquiries");
   const [inquiries, setInquiries] = React.useState<any[]>([]);
   const [quotes, setQuotes] = React.useState<any[]>([]);
-  const [activityLogs, setActivityLogs] = React.useState<any[]>([]);
   const [filter, setFilter] = React.useState("all");
   const [staffList, setStaffList] = React.useState<any[]>([]);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
@@ -153,7 +157,15 @@ export default function AdminInquiriesPage() {
       setCurrentUser(me);
     }
     if (qtData) setQuotes(qtData);
-    if (logData) setActivityLogs(logData);
+    if (logData && logData.length > 0) {
+      setActivityLogs((prev) => {
+        const map = new Map();
+        for (const item of [...logData, ...prev]) {
+          if (item) map.set(item.id || JSON.stringify(item), item);
+        }
+        return Array.from(map.values());
+      });
+    }
   }, [supabase]);
 
   React.useEffect(() => {

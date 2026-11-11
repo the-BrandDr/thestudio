@@ -289,10 +289,19 @@ export function getVoucherStageMeta(v: any): {
     };
   }
 
-  const rawStatus = String(v?.status || "pending").toLowerCase();
-  const lvl1Ceo = String(v?.strategist_status || "pending").toLowerCase();
-  const lvl2Ops = String(v?.ops_status || "pending").toLowerCase();
-  const lvl3Fin = String(v?.finance_status || "pending").toLowerCase();
+  let parsedMeta: any = {};
+  const rawDescStr = String(v?.description || v?.notes || "");
+  const metaMatch = rawDescStr.match(/<!--VCH_META:([\s\S]*?)-->/);
+  if (metaMatch && metaMatch[1]) {
+    try {
+      parsedMeta = JSON.parse(metaMatch[1]);
+    } catch (_) {}
+  }
+
+  const rawStatus = String(parsedMeta.status || v?.status || "pending").toLowerCase();
+  const lvl1Ceo = String(parsedMeta.strategist_status || v?.strategist_status || "pending").toLowerCase();
+  const lvl2Ops = String(parsedMeta.ops_status || v?.ops_status || "pending").toLowerCase();
+  const lvl3Fin = String(parsedMeta.finance_status || v?.finance_status || "pending").toLowerCase();
 
   const approvalSummary = "L1 CEO: " + lvl1Ceo.toUpperCase() + " → L2 Ops: " + lvl2Ops.toUpperCase() + " → L3 Fin: " + lvl3Fin.toUpperCase();
 

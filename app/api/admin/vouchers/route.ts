@@ -13,6 +13,93 @@ function getDbClient() {
   });
 }
 
+function unpackVoucherRow(row: any) {
+  if (!row) return row;
+  const rawText = String(row.description || row.notes || "");
+  let unpacked = { ...row };
+
+  // Extract embedded VCH_META if present
+  const metaMatch = rawText.match(/<!--VCH_META:([\s\S]*?)-->/);
+  if (metaMatch && metaMatch[1]) {
+    try {
+      const parsedMeta = JSON.parse(metaMatch[1]);
+      unpacked = {
+        ...unpacked,
+        strategist_status:
+          parsedMeta.strategist_status || unpacked.strategist_status || "pending",
+        ops_status:
+          parsedMeta.ops_status || unpacked.ops_status || "pending",
+        finance_status:
+          parsedMeta.finance_status || unpacked.finance_status || "pending",
+        status: parsedMeta.status || unpacked.status || "pending",
+      };
+    } catch (_) {}
+  }
+
+  // Extract embedded VCH_COMMENTS if present
+  const cmtMatch = rawText.match(/<!--VCH_COMMENTS:([\s\S]*?)-->/);
+  if (cmtMatch && cmtMatch[1]) {
+    try {
+      const parsedCmts = JSON.parse(cmtMatch[1]);
+      if (
+        Array.isArray(parsedCmts) &&
+        (!Array.isArray(unpacked.comments) || parsedCmts.length >= unpacked.comments.length)
+      ) {
+        unpacked.comments = parsedCmts;
+      }
+    } catch (_) {}
+  }
+
+  return unpacked;
+}
+
+function buildSerializedDescription(existingRow: any, updates: Record<string, any>, nextComments?: any[]) {
+  const rawText = String(
+    updates.notes !== undefined
+      ? updates.notes
+      : updates.description !== undefined
+      ? updates.description
+      : existingRow?.description || existingRow?.notes || ""
+  );
+
+  // Strip old markers to get clean base notes
+  const cleanBase = rawText
+    .split("<!--VCH_META:")[0]
+    .split("<!--VCH_COMMENTS:")[0]
+    .trim();
+
+  const currentUnpacked = unpackVoucherRow(existingRow || {});
+
+  const metaObj = {
+    strategist_status:
+      updates.strategist_status || currentUnpacked.strategist_status || "pending",
+    ops_status:
+      updates.ops_status || currentUnpacked.ops_status || "pending",
+    finance_status:
+      updates.finance_status || currentUnpacked.finance_status || "pending",
+    status: updates.status || currentUnpacked.status || "pending",
+  };
+
+  const finalComments =
+    nextComments !== undefined
+      ? nextComments
+      : Array.isArray(updates.comments)
+      ? updates.comments
+      : Array.isArray(currentUnpacked.comments)
+      ? currentUnpacked.comments
+      : [];
+
+  return (
+    cleanBase +
+    "\n<!--VCH_META:" +
+    JSON.stringify(metaObj) +
+    "-->" +
+    "\n<!--VCH_COMMENTS:" +
+    JSON.stringify(finalComments) +
+    "-->"
+  );
+}
+
 export async function GET() {
   try {
     const supabase = getDbClient();
@@ -24,7 +111,8 @@ export async function GET() {
     if (error) {
       return NextResponse.json({ error: error.message, data: [] }, { status: 400 });
     }
-    return NextResponse.json({ data: data || [] });
+    const unpackedList = (data || []).map(unpackVoucherRow);
+    return NextResponse.json({ data: unpackedList });
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Failed to fetch vouchers", data: [] },
@@ -39,10 +127,14 @@ export async function POST(req: Request) {
     const supabase = getDbClient();
 
     const codeFallback = `LV-VCH-${Date.now().toString().slice(-5)}`;
+    const serialized = buildSerializedDescription(body, body, body.comments);
+
     let payload: Record<string, any> = {
       ...body,
       voucher_code: body.voucher_code || body.voucher_no || codeFallback,
       voucher_no: body.voucher_no || body.voucher_code || codeFallback,
+      description: serialized,
+      notes: serialized,
     };
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,7 +143,7 @@ export async function POST(req: Request) {
     }
 
     let lastError: any = null;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
       const { data, error } = await supabase
         .from("expense_vouchers")
         .insert(payload)
@@ -59,7 +151,7 @@ export async function POST(req: Request) {
         .single();
 
       if (!error && data) {
-        return NextResponse.json({ data });
+        return NextResponse.json({ data: unpackVoucherRow(data) });
       }
 
       lastError = error;
@@ -103,56 +195,35 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Missing voucher id" }, { status: 400 });
     }
 
-    const supabase = getAdminSupabase();
+    const supabase = getDbClient();
 
-    // Fetch existing row first so we can safely append comments or merge edits
-    const { data: existing } = await supabase
+    // Fetch existing row first so we can merge comments and approval statuses safely
+    const { data: existingRaw } = await supabase
       .from("expense_vouchers")
       .select("*")
       .eq("id", id)
       .single();
 
+    const existing = unpackVoucherRow(existingRaw || { id });
+
+    let nextComments = Array.isArray(existing?.comments) ? [...existing.comments] : [];
     if (action === "add_comment" && comment) {
-      const existingComments = Array.isArray(existing?.comments) ? existing.comments : [];
-      const updatedComments = [...existingComments, comment];
-
-      // Try saving to `comments` column first; fallback to embedding JSON marker in `notes`
-      const { data: d1, error: e1 } = await supabase
-        .from("expense_vouchers")
-        .update({ comments: updatedComments })
-        .eq("id", id)
-        .select("*")
-        .single();
-
-      if (!e1 && d1) {
-        return NextResponse.json({ data: d1 });
-      }
-
-      // Fallback: store comments JSON inside description/notes if `comments` column is not in schema
-      const rawNotes = String(existing?.notes || existing?.description || "");
-      const baseNotes = rawNotes.split("\n<!--VCH_COMMENTS:")[0];
-      const serialized = `${baseNotes}\n<!--VCH_COMMENTS:${JSON.stringify(updatedComments)}-->`;
-
-      for (const col of ["notes", "description"]) {
-        const { data: d2, error: e2 } = await supabase
-          .from("expense_vouchers")
-          .update({ [col]: serialized })
-          .eq("id", id)
-          .select("*")
-          .single();
-        if (!e2 && d2) {
-          return NextResponse.json({ data: { ...d2, comments: updatedComments } });
-        }
-      }
-
-      return NextResponse.json({
-        data: { ...(existing || { id }), comments: updatedComments },
-      });
+      nextComments.push(comment);
+    } else if (Array.isArray(updates.comments)) {
+      nextComments = updates.comments;
     }
 
-    // Standard update (approvals, disbursement, or View/Edit voucher fields)
-    let payload: Record<string, any> = { ...updates };
-    for (let attempt = 0; attempt < 6; attempt++) {
+    const serialized = buildSerializedDescription(existing, updates, nextComments);
+
+    let payload: Record<string, any> = {
+      ...updates,
+      comments: nextComments,
+      description: serialized,
+      notes: serialized,
+    };
+
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < 12; attempt++) {
       const { data, error } = await supabase
         .from("expense_vouchers")
         .update(payload)
@@ -161,9 +232,10 @@ export async function PATCH(req: Request) {
         .single();
 
       if (!error && data) {
-        return NextResponse.json({ data });
+        return NextResponse.json({ data: unpackVoucherRow(data) });
       }
 
+      lastErr = error;
       const msg = String(error?.message || "");
       const colMatch =
         msg.match(/Could not find the '([^']+)' column/i) ||
@@ -172,10 +244,13 @@ export async function PATCH(req: Request) {
         delete payload[colMatch[1]];
         continue;
       }
-      return NextResponse.json({ error: msg || "Update failed" }, { status: 400 });
+      break;
     }
 
-    return NextResponse.json({ error: "Could not update voucher" }, { status: 400 });
+    return NextResponse.json(
+      { error: lastErr?.message || "Could not update voucher" },
+      { status: 400 }
+    );
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }

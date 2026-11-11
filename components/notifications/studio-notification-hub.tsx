@@ -146,7 +146,73 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         };
       } catch (_) {}
     }
-  }, []);
+  }, [])
+
+  // Hydrate notification feed from localStorage & /api/admin/activity on mount + listen to live events
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const loadInitialFeed = async () => {
+      try {
+        const rawLocal = window.localStorage.getItem("lavie_inapp_notifications_v1");
+        const localNotifs = rawLocal ? JSON.parse(rawLocal) : [];
+        const readIdsRaw = window.localStorage.getItem("lavie_read_notif_ids_v1");
+        const readIds = new Set<string>(readIdsRaw ? JSON.parse(readIdsRaw) : []);
+
+        const res = await fetch("/api/admin/activity", { cache: "no-store" }).catch(() => null);
+        const json = res ? await res.json().catch(() => ({})) : {};
+        const apiActs = Array.isArray(json?.data) ? json.data.slice(0, 20) : [];
+
+        const mappedActs = apiActs.map((a: any) => {
+          const id = String(a.id || (a.staff_code + "-" + a.created_at));
+          return {
+            id,
+            title: `${a.module || "Studio"}: ${String(a.action_type || a.action || "Update").replace(/_/g, " ")}`,
+            body: `${a.staff_name || "Staff"} — ${a.description || a.details || ""}`,
+            href:
+              String(a.module || "").toLowerCase().includes("voucher") ||
+              String(a.action_type || "").toLowerCase().includes("voucher")
+                ? "/admin/finance?tab=vouchers"
+                : "/admin/inquiries",
+            time: a.created_at
+              ? new Date(a.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Recent",
+            unread: !readIds.has(id),
+          };
+        });
+
+        const mergedMap = new Map<string, any>();
+        for (const item of [...(Array.isArray(localNotifs) ? localNotifs : []), ...mappedActs]) {
+          if (!item || !item.id) continue;
+          if (!mergedMap.has(item.id)) {
+            mergedMap.set(item.id, {
+              ...item,
+              unread: readIds.has(item.id) ? false : item.unread ?? true,
+            });
+          }
+        }
+        setFeed(Array.from(mergedMap.values()).slice(0, 30));
+      } catch (_) {}
+    };
+
+    loadInitialFeed();
+
+    const handleNewInAppNotif = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail && detail.title) {
+        pushLocalAlert(detail.title, detail.body || detail.message || "", detail.href || "/admin/finance?tab=vouchers");
+      } else {
+        loadInitialFeed();
+      }
+    };
+
+    window.addEventListener("lavie:notification-updated", handleNewInAppNotif);
+    window.addEventListener("lavie-activity-logged", loadInitialFeed);
+    return () => {
+      window.removeEventListener("lavie:notification-updated", handleNewInAppNotif);
+      window.removeEventListener("lavie-activity-logged", loadInitialFeed);
+    };
+  }, [pushLocalAlert]);;
 
   // Supabase Realtime Listeners (Works on both localhost and production!)
   React.useEffect(() => {
@@ -231,17 +297,18 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         (payload) => {
           const v: any = payload.new;
           if (!v) return;
-          if (payload.eventType === "UPDATE" && String(v.staff_code || "").toUpperCase() === myCode) {
+          const vCode = v.voucher_no || v.voucher_code || "LV-VCH";
+          if (payload.eventType === "UPDATE") {
             pushLocalAlert(
-              `🧾 Voucher ${v.voucher_no}: ${String(v.status || "").toUpperCase()}`,
-              `"${v.title}" status updated to ${v.status}.`,
-              "/admin"
+              `🧾 Voucher Updated — ${vCode}`,
+              `"${v.title}" was updated (Status: ${String(v.status || "pending").toUpperCase()}).`,
+              "/admin/finance?tab=vouchers"
             );
-          } else if (payload.eventType === "INSERT" && (canHR || canFin) && String(v.staff_code || "").toUpperCase() !== myCode) {
+          } else if (payload.eventType === "INSERT" && String(v.staff_code || "").toUpperCase() !== myCode) {
             pushLocalAlert(
               "🧾 New Expense Voucher Raised",
               `${v.staff_name} submitted ${v.title} (₦${Number(v.amount || 0).toLocaleString()})`,
-              "/admin/hr"
+              "/admin/finance?tab=vouchers"
             );
           }
         }
@@ -294,7 +361,14 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
         type="button"
         onClick={() => {
           setOpen((p) => !p);
-          setFeed((prev) => prev.map((item) => ({ ...item, unread: false })));
+          setFeed((prev) => {
+            const next = prev.map((item) => ({ ...item, unread: false }));
+            try {
+              const ids = next.map((i) => i.id);
+              window.localStorage.setItem("lavie_read_notif_ids_v1", JSON.stringify(ids));
+            } catch (_) {}
+            return next;
+          });
         }}
         className="relative p-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer transition"
         title="Notifications"

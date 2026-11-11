@@ -81,7 +81,7 @@ export function extractVoucherComments(v: any): VoucherComment[] {
 
 export function cleanVoucherNotes(v: any): string {
   const raw = String(v?.notes || v?.description || "");
-  return raw.split("<!--VCH_COMMENTS:")[0].trim();
+  return raw.split("<!--VCH_META:")[0].split("<!--VCH_COMMENTS:")[0].trim();
 }
 
 export function printVoucherOfficialPDF(v: any) {
@@ -299,10 +299,16 @@ export function VoucherLevelActionButtons({
   const activeUser = resolvedMe || currentUser;
   const userTier: ApprovalRoleTier = getStaffApprovalLevel(activeUser);
 
-  // Check individual level statuses on the voucher
-  const lvl1Status = String(voucher?.strategist_status || "pending").toLowerCase();
-  const lvl2Status = String(voucher?.ops_status || "pending").toLowerCase();
-  const lvl3Status = String(voucher?.finance_status || "pending").toLowerCase();
+  // Check individual level statuses on the voucher (including embedded VCH_META)
+  let embeddedMeta: any = {};
+  const rawDesc = String(voucher?.description || voucher?.notes || "");
+  const mMatch = rawDesc.match(/<!--VCH_META:([\s\S]*?)-->/);
+  if (mMatch && mMatch[1]) {
+    try { embeddedMeta = JSON.parse(mMatch[1]); } catch (_) {}
+  }
+  const lvl1Status = String(embeddedMeta.strategist_status || voucher?.strategist_status || "pending").toLowerCase();
+  const lvl2Status = String(embeddedMeta.ops_status || voucher?.ops_status || "pending").toLowerCase();
+  const lvl3Status = String(embeddedMeta.finance_status || voucher?.finance_status || "pending").toLowerCase();
 
   // Has this specific executive ALREADY approved their own level on this voucher?
   const hasAlreadyApprovedMyLevel =
