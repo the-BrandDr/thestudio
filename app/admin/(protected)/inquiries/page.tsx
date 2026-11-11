@@ -527,10 +527,36 @@ export default function AdminInquiriesPage() {
     }
   };
 
+  const buildPayPortalPath = (inv: any) => {
+    try {
+      const payload = {
+        id: inv.id,
+        invoice_no: inv.invoice_no,
+        client_name: inv.client_name,
+        client_company: inv.client_company || inv.client_name,
+        client_email: inv.client_email || "",
+        project_title: inv.project_title,
+        service_category: inv.service_category || "",
+        subtotal: Number(inv.subtotal || inv.total_amount || 0),
+        vat_amount: Number(inv.vat_amount || 0),
+        total_amount: Number(inv.total_amount || 0),
+        amount_paid: Number(inv.amount_paid || 0),
+        status: inv.status || "unpaid",
+      };
+      const b64 =
+        typeof window !== "undefined"
+          ? window.btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+          : "";
+      return "/pay/" + inv.id + (b64 ? "?d=" + encodeURIComponent(b64) : "");
+    } catch (_) {
+      return "/pay/" + inv.id;
+    }
+  };
+
   const copyPaystackLink = (inv: any) => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-    const payUrl = origin + "/pay/" + inv.id;
+    const payUrl = origin + buildPayPortalPath(inv);
     navigator.clipboard.writeText(payUrl);
     showToast("Paystack Payment Link (70% / 100%) copied to clipboard!");
   };
@@ -538,7 +564,7 @@ export default function AdminInquiriesPage() {
   const sharePaystackLinkWhatsApp = (inv: any) => {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
-    const payUrl = origin + "/pay/" + inv.id;
+    const payUrl = origin + buildPayPortalPath(inv);
     const total = Number(inv.total_amount || 0);
     const paid = Number(inv.amount_paid || 0);
     const bal = Math.max(0, total - paid);
@@ -965,7 +991,7 @@ export default function AdminInquiriesPage() {
                         </button>
 
                         <a
-                          href={"/pay/" + inv.id}
+                          href={buildPayPortalPath(inv)}
                           target="_blank"
                           rel="noreferrer"
                           className="px-2 py-1 rounded-lg bg-[var(--bg-main)] text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d]"
