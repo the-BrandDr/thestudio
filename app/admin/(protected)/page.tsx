@@ -305,10 +305,13 @@ export default function AdminOverviewAndOpenSpacePage() {
       const fullNameLower = `${resolved.first_name || ""} ${resolved.last_name || ""}`.trim().toLowerCase();
       setMyVouchers(
         (voucherData || []).filter((v) => {
+          if (getVoucherStageMeta(v).isDirectExpense) return false;
+          
           if (myId && v.staff_id === myId) return true;
           if (myCode && String(v.staff_code || "").toUpperCase() === myCode) return true;
           if (fullNameLower && String(v.staff_name || "").trim().toLowerCase() === fullNameLower) return true;
           return false;
+        
         })
       );
       setMyPromotions(

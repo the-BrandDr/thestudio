@@ -1139,7 +1139,7 @@ export default function EnterpriseFinanceSuite() {
             { id: "sales", label: "Projects & Sales", icon: Briefcase, badge: unifiedProjects.length },
             { id: "billing", label: "Billing", icon: FileSpreadsheet, badge: invoices.length },
             { id: "receipts", label: "Receipts", icon: Receipt, badge: receipts.length },
-          { id: "expenses", label: "Direct Expenses", icon: TrendingDown },
+          { id: "expenses", label: `Direct Expenses (${(vouchers || []).filter((v: any) => getVoucherStageMeta(v).isDirectExpense).length})`, icon: TrendingDown },
             { id: "vouchers", label: `Staff Vouchers (${(vouchers || []).filter((v: any) => !getVoucherStageMeta(v).isDirectExpense).length})`, icon: Receipt },
             { id: "payroll", label: "Payroll", icon: Users, badge: payrollList.length },
             { id: "tax", label: "Tax", icon: ShieldAlert, badge: taxList.filter(t => t.status !== "remitted").length },
@@ -1997,9 +1997,10 @@ export default function EnterpriseFinanceSuite() {
                   
 
             {(() => {
-              const filteredExp = (vouchers || []).filter((v: any) =>
-                expenseFilterCategory === "All Categories" ? true : v.category === expenseFilterCategory
-              );
+              const filteredExp = (vouchers || []).filter((v: any) => {
+                if (!getVoucherStageMeta(v).isDirectExpense) return false;
+                return expCategoryFilter === "All" ? true : v.category === expCategoryFilter;
+              });
               const pageIdx = typeof expensesPage === "number" ? expensesPage : 1;
               const pagedExp = filteredExp.slice((pageIdx - 1) * 6, pageIdx * 6);
               return (
@@ -2061,17 +2062,7 @@ export default function EnterpriseFinanceSuite() {
                               />
                             </div>
                             {!isDirect && (
-                              <VoucherLevelActionButtons
-                                voucher={v}
-                                pageContext="finance_desk"
-                                onVoucherUpdated={(updated) => {
-                                  if (typeof setVouchers === "function") {
-                                    setVouchers((prev: any[]) =>
-                                      prev.map((item: any) => (item.id === updated.id ? { ...item, ...updated } : item))
-                                    );
-                                  }
-                                }}
-                              />
+                              
                             )}
                           </div>
                         </div>

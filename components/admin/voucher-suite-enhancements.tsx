@@ -799,13 +799,14 @@ export function RaisedVouchersWorkspacePanel({
   onOpenCreateModal?: () => void;
   onReuseVoucher?: (v: any) => void;
 }) {
+  const staffVouchersOnly = React.useMemo(() => (vouchers || []).filter((v) => !getVoucherStageMeta(v).isDirectExpense), [vouchers]);
   const [filters, setFilters] = React.useState<FilterState>({ category: "ALL", status: "ALL", startDate: "", endDate: "", search: "" });
   const [page, setPage] = React.useState(1);
   const [activeVoucher, setActiveVoucher] = React.useState<any | null>(null);
   const [modalMode, setModalMode] = React.useState<"comments" | "edit" | null>(null);
 
   const pageSize = 8;
-  const filtered = React.useMemo(() => filterVouchersList(vouchers || [], filters, currentUser), [vouchers, filters, currentUser]);
+  const filtered = React.useMemo(() => filterVouchersList(staffVouchersOnly, filters, currentUser), [staffVouchersOnly, filters, currentUser]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -823,7 +824,7 @@ export function RaisedVouchersWorkspacePanel({
           </button>
         )}
       </div>
-      <VoucherSummaryAndFilterBar vouchers={vouchers || []} filters={filters} setFilters={(val) => { setFilters(val); setPage(1); }} currentUser={currentUser} showAttentionFilter={false} />
+      <VoucherSummaryAndFilterBar vouchers={staffVouchersOnly} filters={filters} setFilters={(val) => { setFilters(val); setPage(1); }} currentUser={currentUser} showAttentionFilter={false} />
       <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/70 overflow-visible">
         <div className="overflow-x-auto overflow-y-visible pb-2">
           <table className="w-full text-left border-collapse">

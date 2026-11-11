@@ -220,6 +220,29 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
   return "staff";
 }
 
+export function isDirectExpenseRecord(v: any): boolean {
+  if (!v) return false;
+  const codeStr = String(v?.voucher_no || v?.voucher_code || v?.reference_code || v?.expense_code || "").toUpperCase().trim();
+  const staffCode = String(v?.staff_code || "").toUpperCase().trim();
+  const staffName = String(v?.staff_name || v?.vendor || "").trim();
+  const expType = String(v?.expense_type || v?.record_type || v?.type || "").toLowerCase().trim();
+
+  if (
+    v?.is_direct === true ||
+    expType === "direct" ||
+    expType === "direct_expense" ||
+    staffCode === "FIN-DIRECT" ||
+    staffCode === "DIRECT" ||
+    codeStr.startsWith("LV-EXP") ||
+    codeStr.startsWith("LS/EXP") ||
+    codeStr.startsWith("EXP-") ||
+    staffName.toUpperCase().startsWith("[DIRECT]")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function getVoucherStageMeta(v: any): {
   stage: "pending" | "approved_waiting" | "disbursed" | "rejected";
   currentLevel: 1 | 2 | 3 | 4 | 0;
@@ -232,11 +255,7 @@ export function getVoucherStageMeta(v: any): {
   canDisburse: boolean;
   approvalSummary: string;
 } {
-  const codeStr = String(v?.voucher_no || v?.voucher_code || "");
-  const isDirect =
-    String(v?.staff_code || "") === "FIN-DIRECT" ||
-    codeStr.startsWith("LV-EXP") ||
-    String(v?.staff_name || "").startsWith("[DIRECT]");
+  const isDirect = isDirectExpenseRecord(v);
 
   if (isDirect) {
     return {
