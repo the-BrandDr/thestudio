@@ -62,20 +62,21 @@ function normalizeComment(raw: any, idx: number): VoucherComment {
 
 export function extractVoucherComments(v: any): VoucherComment[] {
   if (!v) return [];
-  if (Array.isArray(v.comments) && v.comments.length > 0) {
-    return v.comments.map((c: any, i: number) => normalizeComment(c, i));
-  }
+  const fromArray = Array.isArray(v.comments)
+    ? v.comments.map((c: any, i: number) => normalizeComment(c, i))
+    : [];
+  let fromEmbedded: VoucherComment[] = [];
   const raw = String(v.notes || v.description || "");
   const match = raw.match(/<!--VCH_COMMENTS:([\s\S]*?)-->/);
   if (match && match[1]) {
     try {
       const parsed = JSON.parse(match[1]);
       if (Array.isArray(parsed)) {
-        return parsed.map((c: any, i: number) => normalizeComment(c, i));
+        fromEmbedded = parsed.map((c: any, i: number) => normalizeComment(c, i));
       }
     } catch (_) {}
   }
-  return [];
+  return fromEmbedded.length > fromArray.length ? fromEmbedded : fromArray;
 }
 
 export function cleanVoucherNotes(v: any): string {
@@ -375,7 +376,11 @@ export function VoucherLevelActionButtons({
         await fetch("/api/admin/vouchers", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: voucher.id, action: "add_comment", comment: rejectComment }),
+          body: JSON.stringify({
+            id: voucher.id,
+            comments: [...extractVoucherComments(voucher), rejectComment],
+            description: cleanVoucherNotes(voucher) + "\n<!--VCH_COMMENTS:" + JSON.stringify([...extractVoucherComments(voucher), rejectComment]) + "-->",
+          }),
         }).catch(() => {});
       }
 
@@ -695,16 +700,30 @@ export function VoucherActionModals({
     if (!commentText.trim() && !attachedFile) return;
     setSubmitting(true);
 
+    // Resolve the current logged-in staff member if currentUser prop was null
+    let activeStaff: any = currentUser;
+    if (!activeStaff || (!activeStaff.first_name && !activeStaff.full_name)) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const { data: staffRows } = await supabase
+          .from("staff_profiles")
+          .select("id, staff_id, first_name, last_name, email, role, hierarchy_level, department, job_title");
+        activeStaff = resolveAuthenticatedStaff(authData?.user, staffRows || []) || currentUser;
+      } catch (_) {}
+    }
+
     const resolvedName =
-      currentUser?.full_name ||
-      ((currentUser?.first_name || "") + " " + (currentUser?.last_name || "")).trim() ||
+      activeStaff?.full_name ||
+      ((activeStaff?.first_name || "") + " " + (activeStaff?.last_name || "")).trim() ||
       "Studio Staff";
-    const resolvedCode = currentUser?.staff_id || "LS-01";
+    const resolvedCode = activeStaff?.staff_id || "LS-STAFF";
 
     const newComment: VoucherComment = {
       id: "cmt-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
       author_name: resolvedName,
       author_code: resolvedCode,
+      // Also include `author` and `at` keys so legacy readers and new readers both work!
+      ...({ author: resolvedName + " (" + resolvedCode + ")", at: new Date().toISOString() } as any),
       text: commentText.trim() || (attachedFile ? "Attached file: " + attachedFile.name : ""),
       attachment_url: attachedFile?.url || undefined,
       attachment_name: attachedFile?.name || undefined,
@@ -716,40 +735,64 @@ export function VoucherActionModals({
     setCommentText("");
     setAttachedFile(null);
 
+    // Build dual-persistence payload: both `comments` array AND embedded HTML comment in `description`
+    const baseDesc = cleanVoucherNotes(activeVoucher);
+    const serializedDesc = baseDesc + "\n<!--VCH_COMMENTS:" + JSON.stringify(nextComments) + "-->";
+
     try {
+      // 1) Persist via /api/admin/vouchers PATCH
       const res = await fetch("/api/admin/vouchers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: activeVoucher.id,
-          action: "add_comment",
-          comment: newComment,
+          comments: nextComments,
+          description: serializedDesc,
         }),
       });
-      const json = await res.json();
-      if (res.ok && json?.data) {
-        onVoucherUpdated({ ...json.data, comments: nextComments });
-      } else {
-        onVoucherUpdated({ ...activeVoucher, comments: nextComments });
-      }
+      const json = await res.json().catch(() => ({}));
+
+      // 2) Also persist directly to Supabase `expense_vouchers` to guarantee durability across reloads
+      try {
+        const { error: upErr } = await supabase
+          .from("expense_vouchers")
+          .update({ comments: nextComments, description: serializedDesc })
+          .eq("id", activeVoucher.id);
+        if (upErr) {
+          // Fallback if `comments` column does not exist: update `description` with embedded comments
+          await supabase
+            .from("expense_vouchers")
+            .update({ description: serializedDesc })
+            .eq("id", activeVoucher.id);
+        }
+      } catch (_) {}
+
+      const mergedVoucher = {
+        ...activeVoucher,
+        ...(res.ok && json?.data ? json.data : {}),
+        comments: nextComments,
+        description: serializedDesc,
+      };
+      onVoucherUpdated(mergedVoucher);
+
       await logStaffActivity({
         staff_name: resolvedName,
         staff_code: resolvedCode,
-        department: currentUser?.department || "Studio Operations",
+        department: activeStaff?.department || "Studio Operations",
         action_type: "COMMENTED_VOUCHER",
-        module: "Vouchers",
+        module: "Expenses & Vouchers",
         description: "Commented on voucher \"" + (activeVoucher.title || "") + "\": " + newComment.text.slice(0, 80),
         reference_code: activeVoucher.voucher_no || activeVoucher.voucher_code || "",
-      });
-      triggerPushNotification({
-        title: "💬 New Voucher Comment — " + (activeVoucher.voucher_no || activeVoucher.title),
-        message: resolvedName + " (" + resolvedCode + "): " + newComment.text,
-        url: "https://studioslavie.com/admin/finance?tab=vouchers",
-        targetType: activeVoucher.staff_code && activeVoucher.staff_code !== resolvedCode ? "staff_codes" : "all_staff",
-        staffCodes: activeVoucher.staff_code ? [activeVoucher.staff_code] : undefined,
+        notifyTarget: {
+          title: "💬 New Voucher Comment — " + (activeVoucher.voucher_no || activeVoucher.title),
+          message: resolvedName + " (" + resolvedCode + "): " + newComment.text,
+          url: "https://studioslavie.com/admin/finance?tab=vouchers",
+          targetType: activeVoucher.staff_code && activeVoucher.staff_code !== resolvedCode ? "staff_codes" : "all_staff",
+          staffCodes: activeVoucher.staff_code ? [activeVoucher.staff_code] : undefined,
+        },
       });
     } catch (_) {
-      onVoucherUpdated({ ...activeVoucher, comments: nextComments });
+      onVoucherUpdated({ ...activeVoucher, comments: nextComments, description: serializedDesc });
     } finally {
       setSubmitting(false);
     }

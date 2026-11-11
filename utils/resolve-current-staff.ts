@@ -182,28 +182,28 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
   if (!staff) return "staff";
   const code = String(staff.staff_id || staff.staff_code || "").toUpperCase().trim();
   const role = String(
-    staff.role || staff.job_title || staff.designation || staff.position || ""
+    staff.job_title || staff.role || staff.designation || staff.position || ""
   ).toLowerCase();
   const dept = String(staff.department || "").toLowerCase();
-  const hLevel = String(staff.hierarchy_level || "").toUpperCase();
 
-  // Level 1: CEO / Managing Director / Executive Director (LS-01)
+  // 1. Explicit CEO / Managing Director (LS-01) -> Level 1
   if (
     code === "LS-01" ||
     code === "LS-1" ||
-    hLevel.startsWith("L7") ||
     role.includes("ceo") ||
     role.includes("chief executive") ||
-    role.includes("founder") ||
     role.includes("managing director") ||
-    role.includes("strategist") ||
-    dept.includes("executive")
+    role.includes("founder")
   ) {
-    return "level1_ceo";
+    // Only if they are NOT explicitly Head of Ops or Head of Finance
+    if (!role.includes("operation") && !role.includes("head of ops") && !role.includes("finance") && !role.includes("account")) {
+      return "level1_ceo";
+    }
   }
 
-  // Level 3: Head of Finance / Treasury / Accounting
+  // 2. Level 3: Head of Finance / Accounting / Treasury
   if (
+    code === "LS-04" ||
     role.includes("finance") ||
     role.includes("account") ||
     role.includes("treasur") ||
@@ -213,15 +213,25 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
     return "level3_finance";
   }
 
-  // Level 2: Head of Operations / Operations Lead
+  // 3. Level 2: Head of Operations / Operations Lead (including LS-03 Blessing)
   if (
+    code === "LS-03" ||
+    code === "LS-3" ||
     role.includes("operation") ||
     role.includes("head of ops") ||
     role.includes("ops") ||
-    role.includes("manager") ||
+    role.includes("COO") ||
+    role.includes("chief operating") ||
+    role.includes("logistics") ||
+    role.includes("production") ||
     dept.includes("operation")
   ) {
     return "level2_ops";
+  }
+
+  // 4. Fallback for Strategist -> Level 1
+  if (role.includes("strategist")) {
+    return "level1_ceo";
   }
 
   return "staff";

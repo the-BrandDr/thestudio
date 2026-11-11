@@ -22,6 +22,7 @@ export interface StaffActivityPayload {
 }
 
 const LOCAL_STORAGE_KEY = "lavie_staff_activity_logs_v1";
+const LOCAL_NOTIF_KEY = "lavie_inapp_notifications_v1";
 
 export function getCachedStaffActivities(): any[] {
   if (typeof window === "undefined") return [];
@@ -84,6 +85,22 @@ export async function logStaffActivity(payload: StaffActivityPayload) {
       const updated = [entry, ...existing].slice(0, 250);
       window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
       window.dispatchEvent(new CustomEvent("lavie:activity-updated", { detail: entry }));
+
+      // Also push to in-app notifications cache so the top navbar bell icon updates immediately
+      const rawNotifs = window.localStorage.getItem(LOCAL_NOTIF_KEY);
+      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      const newNotif = {
+        id: "ntf-" + Date.now(),
+        title: payload.notifyTarget?.title || (payload.module + ": " + payload.action_type.replace(/_/g, " ")),
+        message: payload.notifyTarget?.message || payload.description,
+        url: payload.notifyTarget?.url || "/admin/finance?tab=vouchers",
+        actor_name: payload.staff_name,
+        actor_code: payload.staff_code,
+        is_read: false,
+        created_at: nowIso,
+      };
+      window.localStorage.setItem(LOCAL_NOTIF_KEY, JSON.stringify([newNotif, ...(Array.isArray(existingNotifs) ? existingNotifs : [])].slice(0, 100)));
+      window.dispatchEvent(new CustomEvent("lavie:notification-updated", { detail: newNotif }));
     } catch (_) {}
   }
 
@@ -108,6 +125,21 @@ export async function logStaffActivity(payload: StaffActivityPayload) {
         break;
       }
     }
+
+    // Also insert into in-app notifications table if present
+    for (const nTable of ["notifications", "staff_notifications", "studio_notifications"]) {
+      try {
+        const { error } = await supabase.from(nTable).insert({
+          title: payload.notifyTarget?.title || (payload.module + " Update"),
+          message: payload.notifyTarget?.message || payload.description,
+          link: payload.notifyTarget?.url || "/admin/finance?tab=vouchers",
+          sender_name: payload.staff_name,
+          sender_code: payload.staff_code,
+          is_read: false,
+        });
+        if (!error) break;
+      } catch (_) {}
+    }
   } catch (_) {}
 
   if (payload.notifyTarget) {
@@ -115,7 +147,7 @@ export async function logStaffActivity(payload: StaffActivityPayload) {
       await triggerPushNotification({
         title: payload.notifyTarget.title,
         message: payload.notifyTarget.message,
-        url: payload.notifyTarget.url || "https://studioslavie.com/admin/finance",
+        url: payload.notifyTarget.url || "https://studioslavie.com/admin/finance?tab=vouchers",
         targetType: payload.notifyTarget.targetType || "all_staff",
         clearance: payload.notifyTarget.clearance,
         staffCodes: payload.notifyTarget.staffCodes,
