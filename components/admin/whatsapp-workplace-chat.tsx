@@ -357,16 +357,19 @@ export default function WhatsAppWorkplaceChat({
   const markThreadAsRead = React.useCallback(
     (threadId: string) => {
       if (!myCode) return;
-      setLastReadMap((prev) => {
-        const next = { ...prev, [threadId]: Date.now() };
-        if (typeof window !== "undefined") {
+      const nowTs = Date.now();
+      setLastReadMap((prev) => ({ ...prev, [threadId]: nowTs }));
+      if (typeof window !== "undefined") {
+        queueMicrotask(() => {
           try {
+            const raw = window.localStorage.getItem(`lavie_wa_read_${myCode}`);
+            const existing = raw ? JSON.parse(raw) : {};
+            const next = { ...existing, [threadId]: nowTs };
             window.localStorage.setItem(`lavie_wa_read_${myCode}`, JSON.stringify(next));
             window.dispatchEvent(new CustomEvent("lavie:chat-read-updated"));
           } catch (_) {}
-        }
-        return next;
-      });
+        });
+      }
     },
     [myCode]
   );
