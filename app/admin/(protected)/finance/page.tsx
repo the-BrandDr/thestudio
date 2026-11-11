@@ -1842,70 +1842,114 @@ export default function EnterpriseFinanceSuite() {
             <h2 className="font-display text-base font-bold">Invoices</h2>
             <div className="space-y-3">
               {invoices.slice((invoicesPage - 1) * 6, invoicesPage * 6).map((inv) => {
-                const paid = Number(inv.amount_paid || (inv.status === "paid" ? inv.total_amount : 0));
-                const bal = Math.max(0, Number(inv.total_amount || 0) - paid);
-                return (
-                  <div key={inv.id} className="p-4 rounded-2xl bg-[var(--bg-main)] space-y-2.5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold">
-                            {inv.invoice_no}
-                          </span>
-                          <span className="text-xs font-bold">{inv.client_company || inv.client_name}</span>
+                      const paid = Number(inv.amount_paid || (inv.status === "paid" ? inv.total_amount : 0));
+                      const bal = Math.max(0, Number(inv.total_amount || 0) - paid);
+                      return (
+                        <div key={inv.id} className="p-4 sm:p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 items-start">
+                            <div className="sm:col-span-7 min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold shrink-0">
+                                  {inv.invoice_no}
+                                </span>
+                                <span className="text-xs sm:text-sm font-bold text-[var(--text-primary)] break-words">
+                                  {inv.client_company || inv.client_name}
+                                </span>
+                              </div>
+                              <p className="text-xs text-[var(--text-muted)] leading-relaxed break-words">
+                                {inv.project_title}
+                              </p>
+                            </div>
+
+                            <div className="sm:col-span-5 sm:text-right font-mono shrink-0 space-y-0.5 bg-[var(--bg-card)]/50 sm:bg-transparent p-2.5 sm:p-0 rounded-xl">
+                              <p className="text-sm font-bold text-[#c7cb2d]">
+                                Total: ₦{Number(inv.total_amount || 0).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-[var(--text-dim)]">
+                                Subtotal: ₦{Number(inv.subtotal || 0).toLocaleString()} • VAT: ₦{Number(inv.vat_amount || 0).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-[#c7cb2d] font-semibold">
+                                Amount Paid: ₦{paid.toLocaleString()} • Balance Due: ₦{bal.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[var(--border-subtle)]/50">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
+                                  bal <= 0
+                                    ? "bg-emerald-500/20 text-emerald-300"
+                                    : paid > 0
+                                    ? "bg-amber-500/20 text-amber-300"
+                                    : "bg-[var(--bg-card)] text-[#c7cb2d]"
+                                }`}
+                              >
+                                {bal <= 0 ? "PAID" : paid > 0 ? "PARTIALLY PAID" : inv.status || "UNPAID"}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const origin = typeof window !== "undefined" ? window.location.origin : "https://studioslavie.com";
+                                  const payUrl = `${origin}/pay/${inv.id}`;
+                                  navigator.clipboard.writeText(payUrl);
+                                  showToast("Paystack Payment Link (70% / 100%) copied!");
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] hover:border-[#c7cb2d]/50 border border-transparent text-[10px] font-mono flex items-center gap-1 cursor-pointer transition"
+                              >
+                                <Link2 className="w-3 h-3 text-[#c7cb2d]" /> Payment Link
+                              </button>
+
+                              <a
+                                href={`/pay/${inv.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 rounded-lg bg-[var(--bg-card)] text-[10px] font-mono text-[var(--text-muted)] hover:text-[#c7cb2d] transition"
+                              >
+                                Open Portal ↗
+                              </a>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {bal > 0 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVerifyPaystackReferenceOnInvoice(inv)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] font-mono uppercase cursor-pointer hover:bg-emerald-500 hover:text-black transition"
+                                  >
+                                    Confirm Paystack
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setReceiptModal({
+                                        sourceType: "invoice",
+                                        record: inv,
+                                        amountToReceive: bal,
+                                        paymentMethod: "Bank Transfer",
+                                      })
+                                    }
+                                    className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold text-[10px] font-mono uppercase cursor-pointer"
+                                  >
+                                    Receive Payment / Receipt
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setPrintDoc({ type: "invoice", data: inv })}
+                                className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] text-[10px] font-mono uppercase flex items-center gap-1 cursor-pointer"
+                              >
+                                <Printer className="w-3 h-3" /> Official PDF
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-xs text-[var(--text-muted)] mt-0.5">{inv.project_title}</p>
-                      </div>
-                      <div className="text-right font-mono">
-                        <p className="text-sm font-bold text-[#c7cb2d]">Total: ₦{Number(inv.total_amount).toLocaleString()}</p>
-                        <p className="text-[10px] text-[var(--text-dim)]">
-                          Subtotal: ₦{Number(inv.subtotal).toLocaleString()} • VAT: ₦{Number(inv.vat_amount).toLocaleString()}
-                        </p>
-                        <p className="text-[10px] text-[#c7cb2d]">
-                          Amount Paid: ₦{paid.toLocaleString()} • Balance Due: ₦{bal.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]/50">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[9px] font-mono uppercase bg-[var(--bg-card)] text-[#c7cb2d] font-bold">
-                          {inv.status}
-                        </span>
-                        {inv.payment_link && (
-                          <button
-                            type="button"
-                            onClick={() => { navigator.clipboard.writeText(inv.payment_link); showToast("Payment link copied!"); }}
-                            className="px-2 py-0.5 rounded bg-[var(--bg-card)] text-[10px] font-mono flex items-center gap-1 cursor-pointer"
-                          >
-                            <Link2 className="w-3 h-3" /> Payment Link
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {bal > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setReceiptModal({ sourceType: "invoice", record: inv, amountToReceive: bal, paymentMethod: "Bank Transfer" })}
-                            className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold text-[10px] font-mono uppercase font-bold cursor-pointer"
-                          >
-                            Receive Payment / Receipt
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setPrintDoc({ type: "invoice", data: inv })}
-                          className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] text-[10px] font-mono uppercase flex items-center gap-1 cursor-pointer"
-                        >
-                          <Printer className="w-3 h-3" /> Official PDF
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              {(activeTab === "billing" || activeTab === "invoices") && (<AdminPagination currentPage={invoicesPage} totalItems={invoices.length} pageSize={6} onPageChange={setInvoicesPage} itemLabel="invoices" />)}
+                      );
+                    })}
+                    {(activeTab === "billing" || activeTab === "invoices") && (<AdminPagination currentPage={invoicesPage} totalItems={invoices.length} pageSize={6} onPageChange={setInvoicesPage} itemLabel="invoices" />)}
             </div>
           </div>
         </div>
