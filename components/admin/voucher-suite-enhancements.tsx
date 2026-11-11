@@ -262,11 +262,16 @@ export function VoucherLevelActionButtons({
   onVoucherUpdated: (updated: any) => void;
 }) {
   const [busy, setBusy] = React.useState(false);
-  const [resolvedMe, setResolvedMe] = React.useState<any>(currentUser || null);
+  const hasInitialUser = Boolean(
+    currentUser && (currentUser.staff_id || currentUser.job_title || currentUser.role)
+  );
+  const [resolvedMe, setResolvedMe] = React.useState<any>(hasInitialUser ? currentUser : null);
+  const [identityReady, setIdentityReady] = React.useState<boolean>(hasInitialUser);
 
   React.useEffect(() => {
     if (currentUser && (currentUser.staff_id || currentUser.job_title || currentUser.role)) {
       setResolvedMe(currentUser);
+      setIdentityReady(true);
       return;
     }
     let active = true;
@@ -278,8 +283,13 @@ export function VoucherLevelActionButtons({
           .from("staff_profiles")
           .select("id, staff_id, first_name, last_name, email, role, hierarchy_level, department, job_title, permissions");
         const found = resolveAuthenticatedStaff(authData?.user, staffRows || []);
-        if (active && found) setResolvedMe(found);
-      } catch (_) {}
+        if (active) {
+          if (found) setResolvedMe(found);
+          setIdentityReady(true);
+        }
+      } catch (_) {
+        if (active) setIdentityReady(true);
+      }
     })();
     return () => { active = false; };
   }, [currentUser]);
@@ -288,6 +298,7 @@ export function VoucherLevelActionButtons({
   const curLevel = (meta as any).currentLevel ?? 1;
 
   if (
+    !identityReady ||
     pageContext === "staff_space" ||
     meta.isDirectExpense ||
     meta.stage === "disbursed" ||
@@ -331,13 +342,7 @@ export function VoucherLevelActionButtons({
     setBusy(true);
     try {
       let updates: Record<string, any> = {};
-      const canUserDisburse =
-        userTier === "level3_finance" ||
-        pageContext === "finance_desk" ||
-        String(activeUser?.department || "").toLowerCase().includes("finance") ||
-        String(activeUser?.role || "").toLowerCase().includes("finance") ||
-        (Array.isArray(activeUser?.permissions) &&
-          activeUser.permissions.some((p: string) => String(p).toLowerCase().includes("finance")));
+      const canUserDisburse = userTier === "level3_finance";
 
       if (decision === "disburse") {
         if (!meta.canDisburse || !canUserDisburse) {
@@ -360,7 +365,7 @@ export function VoucherLevelActionButtons({
           ops_status: decision === "accept" ? "approved" : "rejected",
           status: decision === "reject" ? "rejected" : "pending",
         };
-      } else if ((userTier === "level3_finance" || pageContext === "finance_desk") && curLevel === 3 && lvl3Status !== "approved") {
+      } else if (userTier === "level3_finance" && curLevel === 3 && lvl3Status !== "approved") {
         updates = {
           strategist_status: "approved",
           ops_status: "approved",
@@ -471,17 +476,9 @@ export function VoucherLevelActionButtons({
     }
   };
 
-  // 1. If all 3 levels approved, Finance Lead sees "Mark Disbursed"
-  const isFinanceDisburser =
-    userTier === "level3_finance" ||
-    pageContext === "finance_desk" ||
-    String(activeUser?.department || "").toLowerCase().includes("finance") ||
-    String(activeUser?.role || "").toLowerCase().includes("finance") ||
-    (Array.isArray(activeUser?.permissions) &&
-      activeUser.permissions.some((p: string) => String(p).toLowerCase().includes("finance")));
-
+  // 1. If all 3 levels approved, ONLY level3_finance sees "Mark Disbursed" (no flicker, no icon)
   if (meta.stage === "approved_waiting" && meta.canDisburse) {
-    if (isFinanceDisburser && userTier !== "level1_ceo" && userTier !== "level2_ops") {
+    if (userTier === "level3_finance") {
       return (
         <button
           type="button"
@@ -489,7 +486,7 @@ export function VoucherLevelActionButtons({
           onClick={() => handleDecision("disburse")}
           className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50 shadow-md"
         >
-          {busy ? "Disbursing..." : "💸 Mark Disbursed"}
+          {busy ? "Disbursing..." : "Mark Disbursed"}
         </button>
       );
     }

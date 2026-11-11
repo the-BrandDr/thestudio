@@ -461,7 +461,7 @@ export default function EnterpriseFinanceSuite() {
       supabase.from("client_invoices").select("*").order("created_at", { ascending: false }),
       supabase.from("payment_receipts").select("*").order("created_at", { ascending: false }),
       supabase.from("expense_vouchers").select("*").order("created_at", { ascending: false }),
-      supabase.from("payroll_runs").select("*").neq("status", "disbursed").order("created_at", { ascending: false }),
+      supabase.from("payroll_runs").select("*").order("created_at", { ascending: false }),
       supabase.from("tax_records").select("*").order("created_at", { ascending: false }),
       supabase.from("staff_tax_reliefs").select("*").order("created_at", { ascending: false }),
     ]);
@@ -900,9 +900,15 @@ export default function EnterpriseFinanceSuite() {
 
   const handleSyncAndGeneratePayroll = async () => {
     setSaving(true);
-    // 1. Delete any unapproved rows for this payPeriod so we never have stale/duplicate rows
+    // 1. Delete only pending/unapproved rows for this payPeriod so approved/disbursed records are preserved
     const unapprovedIds = payrollList
-      .filter((p) => p.pay_period === payPeriod && !(p.hr_status === "approved" && p.strategist_status === "approved"))
+      .filter(
+        (p) =>
+          p.pay_period === payPeriod &&
+          p.status !== "approved" &&
+          p.status !== "disbursed" &&
+          !(p.hr_status === "approved" && p.strategist_status === "approved")
+      )
       .map((p) => p.id);
 
     if (unapprovedIds.length > 0) {
@@ -912,7 +918,13 @@ export default function EnterpriseFinanceSuite() {
     // 2. Pull all active staff and use their exact onboarded salary_amount from staff_profiles
     const eligibleStaff = staffList.filter((s) => s.status !== "terminated" && s.status !== "suspended");
     const approvedCodes = payrollList
-      .filter((p) => p.pay_period === payPeriod && p.hr_status === "approved" && p.strategist_status === "approved")
+      .filter(
+        (p) =>
+          p.pay_period === payPeriod &&
+          (p.status === "approved" ||
+            p.status === "disbursed" ||
+            (p.hr_status === "approved" && p.strategist_status === "approved"))
+      )
       .map((p) => p.staff_code);
 
     const freshEntries = eligibleStaff
@@ -970,33 +982,78 @@ export default function EnterpriseFinanceSuite() {
     loadFinanceData();
   };
 
-  const handlePayrollApproval = async (pr: any, stage: "hr" | "strategist") => {
-    if (stage === "hr" && !isStrictlyHR) {
-      alert("Only designated HR personnel can sign off on HR payroll approval.");
+  const handleApproveMonthPayroll = async () => {
+    const rowsToApprove = payrollList.filter(
+      (p) => p.pay_period === payPeriod && p.status !== "approved" && p.status !== "disbursed"
+    );
+    if (rowsToApprove.length === 0) {
+      showToast(`All payroll entries for ${payPeriod} are already approved.`);
       return;
     }
-    if (stage === "strategist" && !isStrictlyChiefStrategist) {
-      alert("Only the Chief Strategist can sign off on Strategist payroll approval.");
-      return;
-    }
-    const actor = `${currentUser?.first_name} (${currentUser?.staff_id})`;
-    const nextHr = stage === "hr" ? "approved" : (pr.hr_status || "pending");
-    const nextStrat = stage === "strategist" ? "approved" : (pr.strategist_status || "pending");
-    const overall = nextHr === "approved" && nextStrat === "approved" ? "approved" : "pending";
+    setSaving(true);
+    const actor = currentUser ? `${currentUser.first_name} (${currentUser.staff_id})` : "Executive";
+    const ids = rowsToApprove.map((r) => r.id);
+    await supabase
+      .from("payroll_runs")
+      .update({
+        hr_status: "approved",
+        hr_by: actor,
+        strategist_status: "approved",
+        strategist_by: actor,
+        status: "approved",
+      })
+      .in("id", ids);
+    await loadFinanceData();
+    setSaving(false);
+    showToast(`Approved ${payPeriod} payroll (${ids.length} staff)`);
+  };
 
-    await supabase.from("payroll_runs").update({
-      hr_status: nextHr,
-      hr_by: stage === "hr" ? actor : pr.hr_by,
-      strategist_status: nextStrat,
-      strategist_by: stage === "strategist" ? actor : pr.strategist_by,
-      status: overall,
-    }).eq("id", pr.id);
+  const handleDisburseMonthPayroll = async () => {
+    const rowsToDisburse = payrollList.filter(
+      (p) =>
+        p.pay_period === payPeriod &&
+        p.status !== "disbursed" &&
+        (p.status === "approved" || (p.hr_status === "approved" && p.strategist_status === "approved"))
+    );
+    if (rowsToDisburse.length === 0) {
+      showToast(`Approve the ${payPeriod} payroll first before disbursing salaries.`);
+      return;
+    }
+    setSaving(true);
+    const ids = rowsToDisburse.map((r) => r.id);
+    await supabase
+      .from("payroll_runs")
+      .update({
+        status: "disbursed",
+      })
+      .in("id", ids);
+    await loadFinanceData();
+    setSaving(false);
+    showToast(`Disbursed ${payPeriod} salaries for ${ids.length} staff`);
+  };
+
+  const handleApproveSinglePayrollRow = async (pr: any) => {
+    const actor = currentUser ? `${currentUser.first_name} (${currentUser.staff_id})` : "Executive";
+    await supabase
+      .from("payroll_runs")
+      .update({
+        hr_status: "approved",
+        hr_by: actor,
+        strategist_status: "approved",
+        strategist_by: actor,
+        status: "approved",
+      })
+      .eq("id", pr.id);
     loadFinanceData();
+    showToast(`Approved salary for ${pr.staff_name}`);
   };
 
   const handleDisbursePayrollRow = async (id: string) => {
-    await supabase.from("payroll_runs").delete().eq("id", id);
-    showToast("Disbursed & removed from pending queue");
+    await supabase
+      .from("payroll_runs")
+      .update({ status: "disbursed" })
+      .eq("id", id);
+    showToast("Salary marked as disbursed");
     loadFinanceData();
   };
 
@@ -1063,8 +1120,12 @@ export default function EnterpriseFinanceSuite() {
   const outputVat = invoices.filter((i) => i.status !== "draft").reduce((a, b) => a + Number(b.vat_amount || 0), 0);
   const inputVatCredit = Math.round(paidVouchersTotal * 0.075);
   const netVatPayable = Math.max(0, outputVat - inputVatCredit);
-  const periodPayeTotal = payrollList.filter((p) => p.pay_period === taxPeriod).reduce((a, b) => a + Number(b.paye_tax || 0), 0);
-  const totalPayrollCost = payrollList.reduce((a, b) => a + Number(b.basic_salary || 0) + Number(b.bonuses || 0), 0);
+  const periodPayeTotal = payrollList
+    .filter((p) => p.pay_period === taxPeriod && String(p.status || "").toLowerCase() === "disbursed")
+    .reduce((a, b) => a + Number(b.paye_tax || 0), 0);
+  const totalPayrollCost = payrollList
+    .filter((p) => String(p.status || "").toLowerCase() === "disbursed")
+    .reduce((a, b) => a + Number(b.basic_salary || 0) + Number(b.bonuses || 0), 0);
   const assessableProfit = Math.max(0, totalInflow - paidVouchersTotal - totalPayrollCost);
   const computedCit = companyTier === "small" ? 0 : Math.round(assessableProfit * 0.25);
   const computedDevLevy = companyTier === "small" ? 0 : Math.round(assessableProfit * 0.04);
@@ -2155,140 +2216,221 @@ export default function EnterpriseFinanceSuite() {
           </div>
         )}
 
-        {activeTab === "payroll" && (
-        <div className="space-y-4 print:hidden">
-          <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
-            <h2 className="font-display text-base font-bold">Payroll</h2>
-            <div className="flex items-center gap-2">
-              <input
-                type="month"
-                value={payPeriod}
-                onChange={(e) => setPayPeriod(e.target.value)}
-                className="bg-[var(--bg-main)] rounded-xl px-3 py-1.5 text-xs font-mono"
-              />
-              <button
-                type="button"
-                onClick={handleSyncAndGeneratePayroll}
-                disabled={saving}
-                className="px-4 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer flex items-center gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-                <span>Sync & Generate {payPeriod} Payroll</span>
-              </button>
-            </div>
-          </div>
+        {activeTab === "payroll" && (() => {
+          const monthRows = payrollList.filter((p) => p.pay_period === payPeriod);
+          const pendingMonthRows = monthRows.filter(
+            (p) =>
+              p.status !== "approved" &&
+              p.status !== "disbursed" &&
+              !(p.hr_status === "approved" && p.strategist_status === "approved")
+          );
+          const approvedWaitingDisburseRows = monthRows.filter(
+            (p) =>
+              p.status !== "disbursed" &&
+              (p.status === "approved" || (p.hr_status === "approved" && p.strategist_status === "approved"))
+          );
+          const disbursedMonthRows = monthRows.filter((p) => p.status === "disbursed");
 
-          <div className="bg-[var(--bg-card)] p-5 rounded-3xl overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
-                  <th className="py-2.5 px-2">Staff</th>
-                  <th className="py-2.5 px-2">Bank</th>
-                  <th className="py-2.5 px-2">Onboarded Salary (₦)</th>
-                  <th className="py-2.5 px-2">Bonus (₦)</th>
-                  <th className="py-2.5 px-2">Tax Relief</th>
-                  <th className="py-2.5 px-2">PAYE Tax</th>
-                  <th className="py-2.5 px-2">Net Pay (₦)</th>
-                  <th className="py-2.5 px-2">Approvals</th>
-                  <th className="py-2.5 px-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border-subtle)]/40">
-                {payrollList.map((pr) => {
-                  const fullyApproved = pr.hr_status === "approved" && pr.strategist_status === "approved";
-                  return (
-                    <tr key={pr.id}>
-                      <td className="py-3 px-2">
-                        <p className="font-bold">{pr.staff_name}</p>
-                        <p className="text-[10px] font-mono text-[#c7cb2d]">{pr.staff_code} • {pr.pay_period}</p>
-                      </td>
-                      <td className="py-3 px-2 text-[11px]">
-                        <p className="font-medium">{pr.bank_account_name}</p>
-                        <p className="text-[10px] font-mono text-[var(--text-muted)]">{pr.bank_name} • {pr.bank_account_no}</p>
-                      </td>
-                      <td className="py-3 px-2">
-                        <input
-                          type="number"
-                          defaultValue={pr.basic_salary}
-                          disabled={fullyApproved}
-                          onBlur={(e) => handleRecalculatePayrollRow(pr, Number(e.target.value), Number(pr.bonuses || 0))}
-                          className="w-24 bg-[var(--bg-main)] rounded-lg px-2 py-1 text-xs font-mono border border-[var(--border-subtle)] disabled:opacity-60"
-                        />
-                      </td>
-                      <td className="py-3 px-2">
-                        <input
-                          type="number"
-                          defaultValue={pr.bonuses || 0}
-                          disabled={fullyApproved}
-                          onBlur={(e) => handleRecalculatePayrollRow(pr, Number(pr.basic_salary), Number(e.target.value))}
-                          className="w-20 bg-[var(--bg-main)] rounded-lg px-2 py-1 text-xs font-mono border border-[var(--border-subtle)] disabled:opacity-60"
-                        />
-                      </td>
-                      <td className="py-3 px-2 font-mono text-[var(--text-muted)]">
-                        {Number(pr.tax_relief_applied) > 0 ? `₦${Number(pr.tax_relief_applied).toLocaleString()}` : "₦0"}
-                      </td>
-                      <td className="py-3 px-2 font-mono text-amber-400">
-                        {Number(pr.paye_tax) === 0 ? "₦0" : `-₦${Number(pr.paye_tax).toLocaleString()}`}
-                      </td>
-                      <td className="py-3 px-2 font-mono font-bold text-[#c7cb2d]">₦{Number(pr.net_pay).toLocaleString()}</td>
-                      <td className="py-3 px-2">
-                        <div className="flex flex-col gap-1 text-[9px] font-mono uppercase">
-                          <span className={pr.hr_status === "approved" ? "text-[#c7cb2d]" : "text-[var(--text-dim)]"}>
-                            HR: {pr.hr_status || "pending"}
-                          </span>
-                          <span className={pr.strategist_status === "approved" ? "text-[#c7cb2d]" : "text-[var(--text-dim)]"}>
-                            Strategist: {pr.strategist_status || "pending"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-2 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-1">
-                          {isStrictlyHR && pr.hr_status !== "approved" && (
-                            <button
-                              onClick={() => handlePayrollApproval(pr, "hr")}
-                              className="px-2 py-1 rounded bg-[var(--text-primary)] text-[var(--bg-main)] font-bold text-[9px] font-mono uppercase cursor-pointer"
-                            >
-                              ✓ Approve (HR)
-                            </button>
-                          )}
-                          {isStrictlyChiefStrategist && pr.strategist_status !== "approved" && (
-                            <button
-                              onClick={() => handlePayrollApproval(pr, "strategist")}
-                              className="px-2 py-1 rounded bg-[#c7cb2d]/20 text-[#c7cb2d] text-[9px] font-mono uppercase font-bold cursor-pointer"
-                            >
-                              ✓ Approve (Strategist)
-                            </button>
-                          )}
-                          {fullyApproved && (
-                            <>
-                              <button
-                                onClick={() => setPrintDoc({ type: "payslip", data: pr })}
-                                className="px-2 py-1 rounded bg-[var(--bg-main)] text-[var(--text-primary)] text-[9px] font-mono uppercase flex items-center gap-1 cursor-pointer"
-                              >
-                                <FileCheck className="w-3 h-3 text-[#c7cb2d]" /> Preview Payslip
-                              </button>
-                              {isStrictlyFinance && (
-                                <button
-                                  onClick={() => handleDisbursePayrollRow(pr.id)}
-                                  className="px-2.5 py-1 rounded bg-[#c7cb2d] text-black font-bold text-[9px] font-mono uppercase font-bold cursor-pointer"
-                                >
-                                  Disburse
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
+          return (
+            <div className="space-y-4 print:hidden">
+              <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-display text-base font-bold">Monthly Payroll — {payPeriod}</h2>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {monthRows.length} staff • {disbursedMonthRows.length} Disbursed • {approvedWaitingDisburseRows.length} Ready to Disburse • {pendingMonthRows.length} Pending Approval
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="month"
+                    value={payPeriod}
+                    onChange={(e) => setPayPeriod(e.target.value)}
+                    className="bg-[var(--bg-main)] rounded-xl px-3 py-1.5 text-xs font-mono border border-[var(--border-subtle)]/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSyncAndGeneratePayroll}
+                    disabled={saving}
+                    className="px-3.5 py-2 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] hover:border-[#c7cb2d] text-[var(--text-primary)] text-xs font-bold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
+                    <span>Sync {payPeriod}</span>
+                  </button>
+
+                  {pendingMonthRows.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleApproveMonthPayroll}
+                      disabled={saving}
+                      className="px-4 py-2 rounded-full bg-emerald-500 text-black text-xs font-bold cursor-pointer hover:brightness-110 transition"
+                    >
+                      Approve Payroll ({pendingMonthRows.length})
+                    </button>
+                  )}
+
+                  {approvedWaitingDisburseRows.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDisburseMonthPayroll}
+                      disabled={saving}
+                      className="px-4 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer hover:brightness-110 transition"
+                    >
+                      Disburse Salaries ({approvedWaitingDisburseRows.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-[var(--bg-card)] p-5 rounded-3xl overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                      <th className="py-2.5 px-2">Staff</th>
+                      <th className="py-2.5 px-2">Bank</th>
+                      <th className="py-2.5 px-2">Onboarded Salary (₦)</th>
+                      <th className="py-2.5 px-2">Bonus (₦)</th>
+                      <th className="py-2.5 px-2">Tax Relief</th>
+                      <th className="py-2.5 px-2">PAYE Tax</th>
+                      <th className="py-2.5 px-2">Net Pay (₦)</th>
+                      <th className="py-2.5 px-2">Status</th>
+                      <th className="py-2.5 px-2 text-right">Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)]/40">
+                    {monthRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-xs text-[var(--text-muted)]">
+                          No payroll entries generated for {payPeriod} yet. Click "Sync {payPeriod}" above to load staff salaries.
+                        </td>
+                      </tr>
+                    ) : (
+                      monthRows.map((pr) => {
+                        const isDisbursed = pr.status === "disbursed";
+                        const isApproved =
+                          isDisbursed ||
+                          pr.status === "approved" ||
+                          (pr.hr_status === "approved" && pr.strategist_status === "approved");
 
-      {/* TAB 6: TAX & STAFF TAX RELIEFS */}
+                        return (
+                          <tr key={pr.id}>
+                            <td className="py-3 px-2">
+                              <p className="font-bold">{pr.staff_name}</p>
+                              <p className="text-[10px] font-mono text-[#c7cb2d]">
+                                {pr.staff_code} • {pr.pay_period}
+                              </p>
+                            </td>
+                            <td className="py-3 px-2 text-[11px]">
+                              <p className="font-medium">{pr.bank_account_name}</p>
+                              <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                                {pr.bank_name} • {pr.bank_account_no}
+                              </p>
+                            </td>
+                            <td className="py-3 px-2">
+                              <input
+                                type="number"
+                                defaultValue={pr.basic_salary}
+                                disabled={isApproved}
+                                onBlur={(e) =>
+                                  handleRecalculatePayrollRow(
+                                    pr,
+                                    Number(e.target.value),
+                                    Number(pr.bonuses || 0)
+                                  )
+                                }
+                                className="w-24 bg-[var(--bg-main)] rounded-lg px-2 py-1 text-xs font-mono border border-[var(--border-subtle)] disabled:opacity-60"
+                              />
+                            </td>
+                            <td className="py-3 px-2">
+                              <input
+                                type="number"
+                                defaultValue={pr.bonuses || 0}
+                                disabled={isApproved}
+                                onBlur={(e) =>
+                                  handleRecalculatePayrollRow(
+                                    pr,
+                                    Number(pr.basic_salary),
+                                    Number(e.target.value)
+                                  )
+                                }
+                                className="w-20 bg-[var(--bg-main)] rounded-lg px-2 py-1 text-xs font-mono border border-[var(--border-subtle)] disabled:opacity-60"
+                              />
+                            </td>
+                            <td className="py-3 px-2 font-mono text-[var(--text-muted)]">
+                              {Number(pr.tax_relief_applied) > 0
+                                ? `₦${Number(pr.tax_relief_applied).toLocaleString()}`
+                                : "₦0"}
+                            </td>
+                            <td className="py-3 px-2 font-mono text-amber-400">
+                              {!isDisbursed
+                                ? "₦0 (Until Paid)"
+                                : Number(pr.paye_tax) === 0
+                                ? "₦0"
+                                : `-₦${Number(pr.paye_tax).toLocaleString()}`}
+                            </td>
+                            <td className="py-3 px-2 font-mono font-bold text-[#c7cb2d]">
+                              ₦{Number(pr.net_pay).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-2">
+                              {isDisbursed ? (
+                                <span className="px-2 py-0.5 rounded-md bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/40 text-[9px] font-mono uppercase font-bold">
+                                  Disbursed • Paid
+                                </span>
+                              ) : isApproved ? (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-mono uppercase font-bold">
+                                  Approved
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-mono uppercase font-bold">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                {!isApproved && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveSinglePayrollRow(pr)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold text-[9px] font-mono uppercase cursor-pointer hover:bg-emerald-500 hover:text-black transition"
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                                {isApproved && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrintDoc({ type: "payslip", data: pr })}
+                                      className="px-2 py-1 rounded-lg bg-[var(--bg-main)] text-[var(--text-primary)] text-[9px] font-mono uppercase flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <FileCheck className="w-3 h-3 text-[#c7cb2d]" /> Payslip
+                                    </button>
+                                    {!isDisbursed && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDisbursePayrollRow(pr.id)}
+                                        className="px-2.5 py-1 rounded-lg bg-[#c7cb2d] text-black font-bold text-[9px] font-mono uppercase cursor-pointer hover:brightness-110 transition"
+                                      >
+                                        Disburse
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* TAB 6: TAX & STAFF TAX RELIEFS */}
       {activeTab === "tax" && (
         <TaxComplianceSuite execViewOnly={execViewOnly} />
       )}
