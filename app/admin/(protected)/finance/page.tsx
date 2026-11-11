@@ -817,7 +817,57 @@ export default function EnterpriseFinanceSuite() {
     setSaving(false);
   };
 
-  // --- MANUAL RECEIPT CREATION FROM RECEIPTS PANEL ---
+  // --- CONFIRM / VERIFY PAYSTACK PAYMENT DIRECTLY ON FINANCE PAGE ---
+  const handleVerifyPaystackReferenceOnInvoice = async (inv: any) => {
+    const totalAmt = Number(inv.total_amount || 0);
+    const paidSoFar = Number(inv.amount_paid || 0);
+    const bal = Math.max(0, totalAmt - paidSoFar);
+    const seventyAmt = Math.round(totalAmt * 0.7);
+
+    const refInput = window.prompt(
+      `Enter Paystack Reference (or leave default to confirm online payment for ${inv.invoice_no}):`,
+      `PS-${inv.invoice_no?.replace(/[^A-Z0-9]/gi, "")}-${Date.now().toString().slice(-5)}`
+    );
+    if (!refInput) return;
+
+    const amtChoice = window.prompt(
+      `Confirm amount paid via Paystack (₦):\n• Type ${seventyAmt} for 70% Deposit\n• Type ${bal} for Full Balance`,
+      String(paidSoFar === 0 ? seventyAmt : bal)
+    );
+    if (!amtChoice) return;
+    const parsedAmt = Number(String(amtChoice).replace(/[^0-9.]/g, ""));
+    if (!parsedAmt || parsedAmt <= 0) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/paystack/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceId: inv.id,
+          reference: refInput.trim(),
+          amountNaira: parsedAmt,
+          paymentOption: parsedAmt === seventyAmt ? "deposit_70" : "full_100",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        alert(json?.error || "Could not verify Paystack payment.");
+      } else {
+        await loadFinanceData();
+        showToast(
+          `Confirmed ₦${parsedAmt.toLocaleString()}! Balance Due: ₦${Number(
+            json.balanceRemaining || 0
+          ).toLocaleString()}`
+        );
+        if (json.receipt) setPrintDoc({ type: "receipt", data: json.receipt });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+    // --- MANUAL RECEIPT CREATION FROM RECEIPTS PANEL ---
   const handleCreateManualReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);

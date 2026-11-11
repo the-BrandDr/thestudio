@@ -1117,14 +1117,14 @@ export default function WhatsAppWorkplaceChat({
   const archivedCount = threads.filter((t) => t.archived).length;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 rounded-2xl sm:rounded-3xl overflow-hidden bg-[#111315] border border-[var(--border-subtle)]/70 shadow-2xl h-[540px] sm:h-[610px] lg:h-[660px] relative">
+    <div className="grid grid-cols-1 lg:grid-cols-12 rounded-2xl sm:rounded-3xl overflow-hidden bg-[#111315] border border-[var(--border-subtle)]/70 shadow-2xl h-[calc(100dvh-215px)] min-h-[460px] max-h-[670px] sticky top-20 relative">
       {/* =======================================================================
           LEFT PANE: WHATSAPP-STYLE UNIFIED CONVERSATION LIST
       ======================================================================= */}
       <div
         className={`${
           mobilePane === "chat" ? "hidden lg:flex" : "flex"
-        } lg:col-span-4 flex-col bg-[#161717] border-r border-white/10 h-full overflow-hidden`}
+        } lg:col-span-4 flex-col bg-[#161717] border-r border-white/10 h-full min-h-0 overflow-hidden`}
       >
         <div className="px-3.5 pt-3 pb-2 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
@@ -1194,7 +1194,7 @@ export default function WhatsAppWorkplaceChat({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-white/[0.04]">
           {visibleThreads.map((t) => {
             const isSelected = activeThread?.id === t.id;
             const lastMsg = t.lastMessage;
@@ -1311,7 +1311,7 @@ export default function WhatsAppWorkplaceChat({
       <div
         className={`${
           mobilePane === "list" ? "hidden lg:flex" : "flex"
-        } lg:col-span-8 flex-col bg-[#0b141a] h-full overflow-hidden relative`}
+        } lg:col-span-8 flex-col bg-[#0b141a] h-full min-h-0 overflow-hidden relative`}
       >
         {showPlusModal && (
           <div className="absolute inset-x-3 top-12 sm:inset-x-6 sm:top-14 z-40 p-4 rounded-2xl bg-[#1c2226] border border-[#c7cb2d]/60 shadow-2xl space-y-3 max-h-[82%] overflow-y-auto">
@@ -1822,7 +1822,7 @@ export default function WhatsAppWorkplaceChat({
 
             {/* Scrollable Message Bubbles Timeline */}
             <div
-              className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-2.5"
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 sm:py-4 space-y-2.5"
               style={{
                 backgroundImage:
                   "radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0)",

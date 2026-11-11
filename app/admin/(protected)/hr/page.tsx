@@ -2874,7 +2874,103 @@ export default function HRAndWorkspaceSuite() {
           TAB 7: EQUIPPED ALL-STAFF WORKPLACE CHAT
           (@Tagging, Voice Notes, Individual DM, Multi-User, Multi-Dept, Images/Files/Emojis)
       ===================================================================== */}
-      {activeTab === "chat" && (
+      {/* =====================================================================
+            STAFF ACTIVITY AUDIT LOG (STRICTLY HR & EXECUTIVES ONLY)
+        ===================================================================== */}
+        {activeTab === "activity" && (canEditHR || isExecutive) && (
+          <div className="p-6 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-bold flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-[#c7cb2d]" />
+                  <span>Studio Staff Activity & Audit Log</span>
+                </h2>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Confidential executive & HR audit trail of all staff actions across Finance, Vouchers, Leave, and Operations.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                  placeholder="Search staff, code, or action..."
+                  className="bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-full px-3.5 py-1.5 text-xs"
+                />
+                <select
+                  value={activityDeptFilter}
+                  onChange={(e) => setActivityDeptFilter(e.target.value)}
+                  className="bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-full px-3 py-1.5 text-xs"
+                >
+                  <option value="ALL">All Departments</option>
+                  {Object.keys(DEPARTMENT_JOB_TITLES).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[540px] overflow-y-auto rounded-2xl border border-[var(--border-subtle)]/40">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-[var(--bg-card)] z-10">
+                  <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                    <th className="py-2.5 px-3">Timestamp</th>
+                    <th className="py-2.5 px-3">Staff Member</th>
+                    <th className="py-2.5 px-3">Department</th>
+                    <th className="py-2.5 px-3">Module</th>
+                    <th className="py-2.5 px-3">Action</th>
+                    <th className="py-2.5 px-3">Details / Reference</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)]/40">
+                  {hrActivities
+                    .filter((a) => {
+                      if (activityDeptFilter !== "ALL" && a.department !== activityDeptFilter) return false;
+                      if (!activitySearch.trim()) return true;
+                      const q = activitySearch.toLowerCase();
+                      return `${a.staff_name || ""} ${a.staff_code || ""} ${a.action_type || ""} ${a.module || ""} ${a.description || ""} ${a.reference_code || ""}`
+                        .toLowerCase()
+                        .includes(q);
+                    })
+                    .map((act, i) => (
+                      <tr key={act.id || i} className="hover:bg-[var(--bg-main)]/50">
+                        <td className="py-2.5 px-3 font-mono text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                          <FormattedDate date={act.created_at} showTime />
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold">
+                          {act.staff_name}{" "}
+                          <span className="font-mono text-[10px] text-[#c7cb2d]">({act.staff_code})</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-muted)]">{act.department || "—"}</td>
+                        <td className="py-2.5 px-3 font-mono text-[10px]">{act.module || "Workspace"}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded-full bg-[#c7cb2d]/15 text-[#c7cb2d] font-mono text-[10px] font-bold">
+                            {act.action_type}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-primary)]">
+                          {act.description}
+                          {act.reference_code && (
+                            <span className="ml-1.5 font-mono text-[10px] text-[#c7cb2d]">
+                              [{act.reference_code}]
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  {hrActivities.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-[var(--text-muted)]">
+                        No staff activities recorded yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "chat" && (
           <WhatsAppWorkplaceChat
             currentUser={currentUser}
             staffList={staffList}
