@@ -900,68 +900,136 @@ export default function EnterpriseFinanceSuite() {
 
   const handleSyncAndGeneratePayroll = async () => {
     setSaving(true);
-    // 1. Delete only pending/unapproved rows for this payPeriod so approved/disbursed records are preserved
-    const unapprovedIds = payrollList
-      .filter(
-        (p) =>
-          p.pay_period === payPeriod &&
-          p.status !== "approved" &&
-          p.status !== "disbursed" &&
-          !(p.hr_status === "approved" && p.strategist_status === "approved")
-      )
-      .map((p) => p.id);
+    try {
+      // 1. Fetch fresh rows for this payPeriod directly from DB to prevent race conditions or stale state
+      const { data: existingPeriodRows } = await supabase
+        .from("payroll_runs")
+        .select("*")
+        .eq("pay_period", payPeriod)
+        .order("created_at", { ascending: true });
 
-    if (unapprovedIds.length > 0) {
-      await supabase.from("payroll_runs").delete().in("id", unapprovedIds);
-    }
+      const periodRows = Array.isArray(existingPeriodRows) ? existingPeriodRows : [];
 
-    // 2. Pull all active staff and use their exact onboarded salary_amount from staff_profiles
-    const eligibleStaff = staffList.filter((s) => s.status !== "terminated" && s.status !== "suspended");
-    const approvedCodes = payrollList
-      .filter(
-        (p) =>
-          p.pay_period === payPeriod &&
-          (p.status === "approved" ||
-            p.status === "disbursed" ||
-            (p.hr_status === "approved" && p.strategist_status === "approved"))
-      )
-      .map((p) => p.staff_code);
+      // 2. Deduplicate if multiple rows already exist for the same staff_code in this payPeriod
+      //    Keep the most progressed row (disbursed > approved > pending)
+      const rankRow = (r: any) =>
+        r.status === "disbursed"
+          ? 3
+          : r.status === "approved" || (r.hr_status === "approved" && r.strategist_status === "approved")
+          ? 2
+          : 1;
 
-    const freshEntries = eligibleStaff
-      .filter((s) => !approvedCodes.includes(s.staff_id))
-      .map((s) => {
+      const keptByCode = new Map<string, any>();
+      const duplicateIdsToDelete: string[] = [];
+
+      for (const row of periodRows) {
+        const key = String(row.staff_code || row.staff_id || "").toUpperCase().trim();
+        if (!key) continue;
+        const existing = keptByCode.get(key);
+        if (!existing) {
+          keptByCode.set(key, row);
+        } else {
+          if (rankRow(row) > rankRow(existing)) {
+            duplicateIdsToDelete.push(existing.id);
+            keptByCode.set(key, row);
+          } else {
+            duplicateIdsToDelete.push(row.id);
+          }
+        }
+      }
+
+      if (duplicateIdsToDelete.length > 0) {
+        await supabase.from("payroll_runs").delete().in("id", duplicateIdsToDelete);
+      }
+
+      // 3. Compare eligible active staff against keptByCode:
+      //    - If staff is NOT in keptByCode -> insert new row
+      //    - If staff IS in keptByCode and still "pending" -> update their row in-place with latest onboarding salary & bank info
+      //    - If staff IS in keptByCode and already "approved" or "disbursed" -> leave untouched
+      const eligibleStaff = staffList.filter(
+        (s) => s.status !== "terminated" && s.status !== "suspended"
+      );
+
+      const newEntriesToInsert: any[] = [];
+      let updatedCount = 0;
+
+      for (const s of eligibleStaff) {
+        const codeKey = String(s.staff_id || "").toUpperCase().trim();
+        if (!codeKey) continue;
+
         const onboardedSalary = Number(s.salary_amount || 0);
         const relief = getStaffApprovedRelief(s.staff_id);
-        const { paye, net } = computePayeWithRelief(onboardedSalary, relief);
-        return {
-          pay_period: payPeriod,
-          staff_id: s.id,
-          staff_code: s.staff_id,
-          staff_name: `${s.first_name} ${s.last_name}`,
-          department: s.department || "Executive",
-          hierarchy_level: (s.hierarchy_level || "L3").split(" - ")[0],
-          basic_salary: onboardedSalary,
-          bonuses: 0,
-          tax_relief_applied: relief,
-          paye_tax: paye,
-          pension_deduction: 0,
-          net_pay: net,
-          bank_name: s.bank_name || "Not Set",
-          bank_account_name: s.bank_account_name || `${s.first_name} ${s.last_name}`,
-          bank_account_no: s.bank_account_no || "Not Set",
-          hr_status: "pending",
-          strategist_status: "pending",
-          status: "pending",
-          processed_by: currentUser ? `${currentUser.first_name} (${currentUser.staff_id})` : "Finance",
-        };
-      });
+        const existingRow = keptByCode.get(codeKey);
 
-    if (freshEntries.length > 0) {
-      await supabase.from("payroll_runs").insert(freshEntries);
+        if (!existingRow) {
+          const { paye, net } = computePayeWithRelief(onboardedSalary, relief);
+          newEntriesToInsert.push({
+            pay_period: payPeriod,
+            staff_id: s.id,
+            staff_code: s.staff_id,
+            staff_name: `${s.first_name} ${s.last_name}`,
+            department: s.department || "Executive",
+            hierarchy_level: (s.hierarchy_level || "L3").split(" - ")[0],
+            basic_salary: onboardedSalary,
+            bonuses: 0,
+            tax_relief_applied: relief,
+            paye_tax: paye,
+            pension_deduction: 0,
+            net_pay: net,
+            bank_name: s.bank_name || "Not Set",
+            bank_account_name: s.bank_account_name || `${s.first_name} ${s.last_name}`,
+            bank_account_no: s.bank_account_no || "Not Set",
+            hr_status: "pending",
+            strategist_status: "pending",
+            status: "pending",
+            processed_by: currentUser ? `${currentUser.first_name} (${currentUser.staff_id})` : "Finance",
+          });
+        } else {
+          const isLocked =
+            existingRow.status === "approved" ||
+            existingRow.status === "disbursed" ||
+            (existingRow.hr_status === "approved" && existingRow.strategist_status === "approved");
+
+          if (!isLocked) {
+            const currentBonus = Number(existingRow.bonuses || 0);
+            const gross = onboardedSalary + currentBonus;
+            const { paye, net } = computePayeWithRelief(gross, relief);
+
+            await supabase
+              .from("payroll_runs")
+              .update({
+                staff_name: `${s.first_name} ${s.last_name}`,
+                department: s.department || existingRow.department || "Executive",
+                basic_salary: onboardedSalary,
+                tax_relief_applied: relief,
+                paye_tax: paye,
+                net_pay: net,
+                bank_name: s.bank_name || existingRow.bank_name || "Not Set",
+                bank_account_name:
+                  s.bank_account_name || existingRow.bank_account_name || `${s.first_name} ${s.last_name}`,
+                bank_account_no: s.bank_account_no || existingRow.bank_account_no || "Not Set",
+              })
+              .eq("id", existingRow.id);
+            updatedCount += 1;
+          }
+        }
+      }
+
+      if (newEntriesToInsert.length > 0) {
+        await supabase.from("payroll_runs").insert(newEntriesToInsert);
+      }
+
+      await loadFinanceData();
+      showToast(
+        newEntriesToInsert.length > 0 || updatedCount > 0
+          ? `Synced ${payPeriod}: ${newEntriesToInsert.length} added, ${updatedCount} updated${
+              duplicateIdsToDelete.length > 0 ? `, ${duplicateIdsToDelete.length} duplicates cleaned` : ""
+            }`
+          : `${payPeriod} payroll is already up to date (no missing staff)`
+      );
+    } finally {
+      setSaving(false);
     }
-    await loadFinanceData();
-    setSaving(false);
-    showToast(`Synced ${payPeriod} payroll from staff onboarding records`);
   };
 
   const handleRecalculatePayrollRow = async (pr: any, newBasic: number, newBonus: number) => {
@@ -2217,7 +2285,18 @@ export default function EnterpriseFinanceSuite() {
         )}
 
         {activeTab === "payroll" && (() => {
-          const monthRows = payrollList.filter((p) => p.pay_period === payPeriod);
+          // Deduplicate display list per staff_code for the selected month as a visual safeguard
+          const rawMonthRows = payrollList.filter((p) => p.pay_period === payPeriod);
+          const monthMap = new Map<string, any>();
+          for (const r of rawMonthRows) {
+            const key = String(r.staff_code || r.staff_id || r.id).toUpperCase().trim();
+            const prev = monthMap.get(key);
+            if (!prev || r.status === "disbursed" || (r.status === "approved" && prev.status !== "disbursed")) {
+              monthMap.set(key, r);
+            }
+          }
+          const monthRows = Array.from(monthMap.values());
+
           const pendingMonthRows = monthRows.filter(
             (p) =>
               p.status !== "approved" &&
@@ -2231,13 +2310,50 @@ export default function EnterpriseFinanceSuite() {
           );
           const disbursedMonthRows = monthRows.filter((p) => p.status === "disbursed");
 
+          // Summary financial calculations for selected month
+          const monthBasicTotal = monthRows.reduce((s, r) => s + Number(r.basic_salary || 0), 0);
+          const monthBonusTotal = monthRows.reduce((s, r) => s + Number(r.bonuses || 0), 0);
+          const monthGrossRaised = monthBasicTotal + monthBonusTotal;
+          const monthReliefTotal = monthRows.reduce((s, r) => s + Number(r.tax_relief_applied || 0), 0);
+          const monthNetTotal = monthRows.reduce((s, r) => s + Number(r.net_pay || 0), 0);
+
+          const totalNetToBeDisbursed = monthRows
+            .filter((r) => r.status !== "disbursed")
+            .reduce((s, r) => s + Number(r.net_pay || 0), 0);
+
+          const approvedNetReadyNow = approvedWaitingDisburseRows.reduce(
+            (s, r) => s + Number(r.net_pay || 0),
+            0
+          );
+
+          const totalNetDisbursed = disbursedMonthRows.reduce(
+            (s, r) => s + Number(r.net_pay || 0),
+            0
+          );
+
+          const disbursedPayeTotal = disbursedMonthRows.reduce(
+            (s, r) => s + Number(r.paye_tax || 0),
+            0
+          );
+          const projectedPayeTotal = monthRows.reduce(
+            (s, r) => s + Number(r.paye_tax || 0),
+            0
+          );
+
+          // All-time cumulative payroll raised across all months
+          const allTimePayrollRaised = payrollList.reduce(
+            (s, r) => s + Number(r.basic_salary || 0) + Number(r.bonuses || 0),
+            0
+          );
+
           return (
             <div className="space-y-4 print:hidden">
-              <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
+              {/* TOP HEADER & ACTION BAR */}
+              <div className="bg-[var(--bg-card)] px-5 py-4 rounded-3xl flex flex-wrap items-center justify-between gap-4 border border-[var(--border-subtle)]/50">
                 <div>
                   <h2 className="font-display text-base font-bold">Monthly Payroll — {payPeriod}</h2>
                   <p className="text-[11px] text-[var(--text-muted)]">
-                    {monthRows.length} staff • {disbursedMonthRows.length} Disbursed • {approvedWaitingDisburseRows.length} Ready to Disburse • {pendingMonthRows.length} Pending Approval
+                    {monthRows.length} Staff Listed • {disbursedMonthRows.length} Disbursed • {approvedWaitingDisburseRows.length} Approved (Awaiting Payout) • {pendingMonthRows.length} Pending Approval
                   </p>
                 </div>
 
@@ -2253,9 +2369,10 @@ export default function EnterpriseFinanceSuite() {
                     onClick={handleSyncAndGeneratePayroll}
                     disabled={saving}
                     className="px-3.5 py-2 rounded-full bg-[var(--bg-main)] border border-[var(--border-subtle)] hover:border-[#c7cb2d] text-[var(--text-primary)] text-xs font-bold cursor-pointer flex items-center gap-1.5"
+                    title="Adds any missing staff and updates unapproved rows without creating duplicates"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-                    <span>Sync {payPeriod}</span>
+                    <span>{monthRows.length > 0 ? `Sync Missing / Update ${payPeriod}` : `Generate ${payPeriod} Payroll`}</span>
                   </button>
 
                   {pendingMonthRows.length > 0 && (
@@ -2282,7 +2399,59 @@ export default function EnterpriseFinanceSuite() {
                 </div>
               </div>
 
-              <div className="bg-[var(--bg-card)] p-5 rounded-3xl overflow-x-auto">
+              {/* PAYROLL SUMMARY & TOTALS CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-1">
+                  <p className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                    Total Payroll Raised ({payPeriod})
+                  </p>
+                  <p className="font-mono text-xl font-bold text-[var(--text-primary)]">
+                    ₦{monthGrossRaised.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                    Net Payroll: ₦{monthNetTotal.toLocaleString()} • All-Time: ₦{allTimePayrollRaised.toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-amber-500/30 space-y-1">
+                  <p className="text-[10px] font-mono uppercase text-amber-300">
+                    Total to be Disbursed ({payPeriod})
+                  </p>
+                  <p className="font-mono text-xl font-bold text-amber-300">
+                    ₦{totalNetToBeDisbursed.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                    Approved & Ready Now: ₦{approvedNetReadyNow.toLocaleString()} ({approvedWaitingDisburseRows.length} staff)
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[#c7cb2d]/40 space-y-1">
+                  <p className="text-[10px] font-mono uppercase text-[#c7cb2d]">
+                    Total Disbursed • Paid ({payPeriod})
+                  </p>
+                  <p className="font-mono text-xl font-bold text-[#c7cb2d]">
+                    ₦{totalNetDisbursed.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                    {disbursedMonthRows.length} of {monthRows.length} staff salaries paid
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 space-y-1">
+                  <p className="text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                    PAYE Tax ({payPeriod})
+                  </p>
+                  <p className="font-mono text-xl font-bold text-emerald-400">
+                    ₦{disbursedPayeTotal.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                    Active after payout • Projected Full Month: ₦{projectedPayeTotal.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* PAYROLL TABLE + FOOTER SUM TOTALS */}
+              <div className="bg-[var(--bg-card)] p-5 rounded-3xl overflow-x-auto border border-[var(--border-subtle)]/50">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-[var(--border-subtle)] text-[10px] font-mono uppercase text-[var(--text-dim)]">
@@ -2301,7 +2470,7 @@ export default function EnterpriseFinanceSuite() {
                     {monthRows.length === 0 ? (
                       <tr>
                         <td colSpan={9} className="py-8 text-center text-xs text-[var(--text-muted)]">
-                          No payroll entries generated for {payPeriod} yet. Click "Sync {payPeriod}" above to load staff salaries.
+                          No payroll entries generated for {payPeriod} yet. Click "Generate {payPeriod} Payroll" above to load staff salaries.
                         </td>
                       </tr>
                     ) : (
@@ -2424,6 +2593,33 @@ export default function EnterpriseFinanceSuite() {
                       })
                     )}
                   </tbody>
+                  {monthRows.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 border-[var(--border-subtle)] font-mono text-xs bg-[var(--bg-main)]/50">
+                        <td colSpan={2} className="py-3 px-2 font-bold text-[var(--text-primary)]">
+                          TOTAL ({monthRows.length} STAFF • {payPeriod})
+                        </td>
+                        <td className="py-3 px-2 font-bold text-[var(--text-primary)]">
+                          ₦{monthBasicTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 font-bold text-[var(--text-primary)]">
+                          ₦{monthBonusTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 font-bold text-[var(--text-muted)]">
+                          ₦{monthReliefTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 font-bold text-amber-400">
+                          -₦{disbursedPayeTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 font-bold text-[#c7cb2d] text-sm">
+                          ₦{monthNetTotal.toLocaleString()}
+                        </td>
+                        <td colSpan={2} className="py-3 px-2 text-right text-[10px] text-[var(--text-muted)]">
+                          To Disburse: <strong className="text-amber-300">₦{totalNetToBeDisbursed.toLocaleString()}</strong> • Paid: <strong className="text-[#c7cb2d]">₦{totalNetDisbursed.toLocaleString()}</strong>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
