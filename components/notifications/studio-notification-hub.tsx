@@ -316,20 +316,20 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
 
         const notifId = `msg-${m.id}`;
         let title = "";
-        let href = "/admin/hr?tab=chat";
+        let href = "/admin?tab=chat";
 
         if (isTaggedMe) {
           title = `🏷️ You were tagged by ${m.sender_name}`;
-          href = `/admin/hr?tab=chat&mode=mentions&msg=${m.id}`;
+          href = `/admin?tab=chat&mode=mentions&msg=${m.id}`;
         } else if (isDirectToMe) {
           title = `💬 New message from ${m.sender_name}`;
-          href = `/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`;
+          href = `/admin?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`;
         } else if (isMyDeptGroup) {
           title = `👥 ${m.sender_name} → ${myDept} Group`;
-          href = `/admin/hr?tab=chat&mode=multi_dept&msg=${m.id}`;
+          href = `/admin?tab=chat&mode=multi_dept&msg=${m.id}`;
         } else {
           title = `📢 ${m.sender_name} → All Staff Group`;
-          href = `/admin/hr?tab=chat&mode=group&msg=${m.id}`;
+          href = `/admin?tab=chat&mode=group&msg=${m.id}`;
         }
 
         items.push({
@@ -411,7 +411,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
             pushLocalAlert(
               `🏷️ You were tagged by ${m.sender_name}`,
               content || "Tagged you in a message",
-              `/admin/hr?tab=chat&mode=mentions&msg=${m.id}`,
+              `/admin?tab=chat&mode=mentions&msg=${m.id}`,
               "mention",
               `msg-${m.id}`
             );
@@ -419,7 +419,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
             pushLocalAlert(
               `💬 You have a new message from ${m.sender_name}`,
               content || "Sent a voice note or attachment",
-              `/admin/hr?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`,
+              `/admin?tab=chat&mode=direct&target=${encodeURIComponent(senderCode)}&msg=${m.id}`,
               "received",
               `msg-${m.id}`
             );
@@ -427,7 +427,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
             pushLocalAlert(
               `👥 ${m.sender_name} sent a message to ${myDept} group`,
               content || "New attachment in department group",
-              `/admin/hr?tab=chat&mode=multi_dept&msg=${m.id}`,
+              `/admin?tab=chat&mode=multi_dept&msg=${m.id}`,
               "received",
               `msg-${m.id}`
             );
@@ -435,7 +435,7 @@ export function StaffNotificationBell({ staff }: { staff: any }) {
             pushLocalAlert(
               `📢 ${m.sender_name} sent a message to All Staff group`,
               content || "New message in All Staff group",
-              `/admin/hr?tab=chat&mode=group&msg=${m.id}`,
+              `/admin?tab=chat&mode=group&msg=${m.id}`,
               "received",
               `msg-${m.id}`
             );

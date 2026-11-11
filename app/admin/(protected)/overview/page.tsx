@@ -1,5 +1,6 @@
 "use client";
 
+import WhatsAppWorkplaceChat from "@/components/admin/whatsapp-workplace-chat";
 import * as React from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
@@ -132,6 +133,32 @@ export default function AdminOverviewAndOpenSpacePage() {
   const [wsVoucherModalMode, setWsVoucherModalMode] = React.useState<"comments" | "edit" | null>(null);
   const supabase = createClient();
   const [activeTab, setActiveTab] = React.useState<"overview" | "chat" | "leave" | "vouchers" | "promotion">("overview");
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const applyPageParams = (searchStr: string) => {
+      const params = new URLSearchParams(searchStr);
+      const t = params.get("tab");
+      if (t && ["overview", "chat", "leave", "vouchers", "promotion"].includes(t)) {
+        setActiveTab(t as any);
+      }
+      const vCode = params.get("voucher");
+      if (vCode) {
+        setActiveTab("vouchers");
+        setWsVoucherFilters((prev) => ({ ...prev, search: vCode, status: "ALL", category: "ALL" }));
+      }
+    };
+    applyPageParams(window.location.search);
+    const onDeepLink = (ev: Event) => {
+      const href = (ev as CustomEvent)?.detail?.href || "";
+      const qIdx = href.indexOf("?");
+      if (qIdx !== -1 && (href.startsWith("/admin?") || href.startsWith("/admin/overview?"))) {
+        applyPageParams(href.slice(qIdx));
+      }
+    };
+    window.addEventListener("lavie:deep-link", onDeepLink);
+    return () => window.removeEventListener("lavie:deep-link", onDeepLink);
+  }, []);
   const [showRaiseVoucherModal, setShowRaiseVoucherModal] = React.useState(false);
   const [me, setMe] = React.useState<any | null>(null);
   const [staffColleagues, setStaffColleagues] = React.useState<any[]>([]);
@@ -2498,365 +2525,16 @@ export default function AdminOverviewAndOpenSpacePage() {
           TAB 1: STUDIO CHAT (100% PRESERVED)
       ===================================================================== */}
       {activeTab === "chat" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)]/60 p-4 h-[560px]">
-          <div className="lg:col-span-4 flex flex-col border-b lg:border-b-0 lg:border-r border-[var(--border-subtle)]/50 pr-0 lg:pr-3 pb-3 lg:pb-0 overflow-hidden">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2.5 shrink-0">
-              {[
-                { id: "group", label: "All Staff" },
-                { id: "direct", label: "Direct (1:1)" },
-                { id: "multi_user", label: "Multi-User" },
-                { id: "multi_dept", label: "Departments" },
-                { id: "mentions", label: "@Tagged You" },
-              ].map((mode) => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  onClick={() => setChatChannelType(mode.id as any)}
-                  className={`px-2 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition ${
-                    chatChannelType === mode.id
-                      ? "bg-[#c7cb2d] text-black"
-                      : "bg-[var(--bg-main)] text-[var(--text-muted)]"
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
+          <WhatsAppWorkplaceChat
+            currentUser={me}
+            staffList={staffColleagues}
+            messages={messages}
+            onRefreshMessages={() => loadOpenSpace()}
+            onPreviewImage={(url) => setLightboxUrl(url)}
+          />
+        )}
 
-            <div className="relative mb-2.5 shrink-0">
-              <Search className="w-3 h-3 text-[var(--text-dim)] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={chatSearch}
-                onChange={(e) => setChatSearch(e.target.value)}
-                placeholder="Search messages or @tags..."
-                className="w-full bg-[var(--bg-main)] rounded-xl pl-8 pr-3 py-1.5 text-[11px]"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-              {chatChannelType === "group" && (
-                <div className="p-3 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 text-xs space-y-1">
-                  <p className="font-bold text-[#c7cb2d]">General Workplace Channel</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Type <strong>@</strong> to tag colleagues or click the Mic icon to send a Voice Note.
-                  </p>
-                </div>
-              )}
-
-              {chatChannelType === "mentions" && (
-                <div className="p-3 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 text-xs space-y-1">
-                  <p className="font-bold text-[#c7cb2d]">@Mentions Feed</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Messages where you ({me?.staff_id || "you"}) were tagged.
-                  </p>
-                </div>
-              )}
-
-              {chatChannelType === "direct" &&
-                staffColleagues.map((st) => {
-                  const active = chatTarget === st.staff_id;
-                  return (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={() => setChatTarget(st.staff_id)}
-                      className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between text-xs cursor-pointer transition ${
-                        active ? "bg-[#c7cb2d] text-black font-bold" : "bg-[var(--bg-main)] hover:bg-[var(--bg-main)]/70"
-                      }`}
-                    >
-                      <span className="truncate">
-                        {st.first_name} {st.last_name} ({st.job_title || st.department})
-                      </span>
-                      <span className="text-[10px] font-mono opacity-75">{st.staff_id}</span>
-                    </button>
-                  );
-                })}
-
-              {chatChannelType === "multi_user" &&
-                staffColleagues.map((st) => {
-                  const checked = selectedRecipients.includes(st.staff_id);
-                  return (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedRecipients((prev) =>
-                          prev.includes(st.staff_id) ? prev.filter((c) => c !== st.staff_id) : [...prev, st.staff_id]
-                        )
-                      }
-                      className={`w-full px-3 py-1.5 rounded-xl text-left flex items-center justify-between text-xs cursor-pointer ${
-                        checked ? "bg-[#c7cb2d]/20 border border-[#c7cb2d] text-[#c7cb2d] font-bold" : "bg-[var(--bg-main)]"
-                      }`}
-                    >
-                      <span className="truncate">
-                        {st.first_name} {st.last_name} ({st.department?.split(" ")[0]})
-                      </span>
-                      <span className="text-[10px] font-mono">{checked ? "✓" : st.staff_id}</span>
-                    </button>
-                  );
-                })}
-
-              {chatChannelType === "multi_dept" &&
-                STUDIO_DEPARTMENTS.map((dept) => {
-                  const checked = selectedDepartments.includes(dept);
-                  return (
-                    <button
-                      key={dept}
-                      type="button"
-                      onClick={() =>
-                        setSelectedDepartments((prev) =>
-                          prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
-                        )
-                      }
-                      className={`w-full px-3 py-1.5 rounded-xl text-left flex items-center justify-between text-xs cursor-pointer ${
-                        checked ? "bg-[#c7cb2d]/20 border border-[#c7cb2d] text-[#c7cb2d] font-bold" : "bg-[var(--bg-main)]"
-                      }`}
-                    >
-                      <span className="truncate">{dept}</span>
-                      {checked && <Check className="w-3 h-3 shrink-0" />}
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-
-          <div className="lg:col-span-8 flex flex-col h-full overflow-hidden">
-            <div className="pb-2 mb-2 border-b border-[var(--border-subtle)]/50 flex items-center justify-between text-xs shrink-0">
-              <span className="font-bold text-[#c7cb2d] truncate">
-                {chatChannelType === "group"
-                  ? "All Staff Workplace Channel"
-                  : chatChannelType === "mentions"
-                  ? "Messages Tagging You (@Mentions)"
-                  : chatChannelType === "direct"
-                  ? `Direct Chat → ${chatTarget}`
-                  : chatChannelType === "multi_user"
-                  ? `Multi-User Group (${selectedRecipients.length} selected)`
-                  : `Departmental Group (${selectedDepartments.join(", ") || "Select departments"})`}
-              </span>
-              {dispatchNotice && <span className="text-[10px] font-mono text-[#c7cb2d]">{dispatchNotice}</span>}
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {filteredMessages.map((m) => {
-                const isMe = m.sender_code === me?.staff_id;
-                const isVoiceNote =
-                  String(m.attachment_name || "").startsWith("VOICE_NOTE") ||
-                  String(m.attachment_url || "").startsWith("data:audio") ||
-                  /\.(webm|mp3|wav|ogg)$/i.test(String(m.attachment_url || ""));
-                const isImg =
-                  !isVoiceNote &&
-                  m.attachment_url &&
-                  (String(m.attachment_url).startsWith("data:image") ||
-                    /\.(png|jpe?g|webp|gif)$/i.test(String(m.attachment_url)));
-
-                return (
-                  <div
-                    key={m.id}
-                    className={`p-2.5 rounded-2xl max-w-[85%] space-y-1 ${
-                      isMe ? "ml-auto bg-[#c7cb2d]/15 border border-[#c7cb2d]/40" : "bg-[var(--bg-main)]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3 text-[10px] font-mono">
-                      <span className="font-bold text-[#c7cb2d]">
-                        {m.sender_name} ({m.sender_code})
-                        {m.recipient_code && m.recipient_code !== "All Staff" ? ` → ${m.recipient_code}` : ""}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <FormattedDate date={m.created_at} className="text-[9px] text-[var(--text-dim)]" />
-                        <button
-                          type="button"
-                          onClick={() => setReplyingTo(m)}
-                          className="text-[var(--text-dim)] hover:text-[#c7cb2d] cursor-pointer"
-                        >
-                          <Reply className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {m.reply_preview && (
-                      <div className="px-2 py-1 rounded bg-black/30 border-l-2 border-[#c7cb2d] text-[10px] text-[var(--text-muted)] truncate">
-                        {m.reply_preview}
-                      </div>
-                    )}
-
-                    {m.content && (
-                      <p className="text-xs text-[var(--text-primary)] leading-snug">
-                        {renderFormattedChatText(m.content)}
-                      </p>
-                    )}
-
-                    {m.attachment_url && (
-                      <div className="pt-1">
-                        {isVoiceNote ? (
-                          <div className="flex items-center gap-2 p-1.5 rounded-xl bg-black/40 border border-[#c7cb2d]/30">
-                            <Volume2 className="w-4 h-4 text-[#c7cb2d] shrink-0 ml-1" />
-                            <audio controls src={m.attachment_url} className="h-8 w-52 sm:w-64" />
-                          </div>
-                        ) : isImg ? (
-                          <img
-                            src={m.attachment_url}
-                            alt={m.attachment_name || "Chat image"}
-                            onClick={() => setPreviewProofUrl(m.attachment_url)}
-                            className="max-h-36 rounded-xl object-cover cursor-pointer border border-white/10"
-                          />
-                        ) : (
-                          <a
-                            href={m.attachment_url}
-                            download={m.attachment_name || "attachment"}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/40 text-[11px] font-mono text-[#c7cb2d]"
-                          >
-                            <Paperclip className="w-3 h-3" /> {m.attachment_name || "Download Attachment"}
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {showMentionList && (
-              <div className="p-2 rounded-2xl bg-[var(--bg-main)] border border-[#c7cb2d]/60 max-h-36 overflow-y-auto space-y-1 mb-1.5 shadow-xl">
-                {staffColleagues
-                  .filter((s) =>
-                    `${s.first_name} ${s.last_name} ${s.staff_id} ${s.department}`
-                      .toLowerCase()
-                      .includes(mentionQuery)
-                  )
-                  .slice(0, 6)
-                  .map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => handleInsertMention(s)}
-                      className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs hover:bg-[#c7cb2d] hover:text-black flex items-center justify-between cursor-pointer"
-                    >
-                      <span>
-                        {s.first_name} {s.last_name} — <span className="opacity-75">{s.job_title}</span>
-                      </span>
-                      <span className="font-mono text-[10px] font-bold">@{s.staff_id}</span>
-                    </button>
-                  ))}
-              </div>
-            )}
-
-            {(replyingTo || chatAttachment || voiceNoteDraft || isRecordingVoice) && (
-              <div className="px-3 py-1.5 mt-1 rounded-xl bg-[var(--bg-main)] border border-[#c7cb2d]/40 flex items-center justify-between gap-2 text-[11px] shrink-0">
-                <div className="flex items-center gap-2 truncate">
-                  {isRecordingVoice && (
-                    <span className="text-red-400 font-mono font-bold animate-pulse">
-                      ● Recording Voice Note ({recordingSeconds}s)...
-                    </span>
-                  )}
-                  {voiceNoteDraft && !isRecordingVoice && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[#c7cb2d] font-bold">🎤 ({voiceNoteDraft.duration}s)</span>
-                      <audio controls src={voiceNoteDraft.url} className="h-7 w-40" />
-                    </div>
-                  )}
-                  {replyingTo && (
-                    <span className="text-[var(--text-muted)] truncate">
-                      Replying to <strong className="text-[#c7cb2d]">{replyingTo.sender_name}</strong>
-                    </span>
-                  )}
-                  {chatAttachment && (
-                    <span className="font-mono text-[#c7cb2d] truncate">📎 {chatAttachment.name}</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isRecordingVoice) stopVoiceRecording();
-                    setReplyingTo(null);
-                    setChatAttachment(null);
-                    setVoiceNoteDraft(null);
-                  }}
-                  className="text-red-400 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            {showEmojiPicker && (
-              <div className="flex flex-wrap gap-1.5 p-2 mt-1 rounded-xl bg-[var(--bg-main)] shrink-0">
-                {QUICK_EMOJIS.map((em) => (
-                  <button
-                    key={em}
-                    type="button"
-                    onClick={() => setChatInput((prev) => prev + em)}
-                    className="text-sm hover:scale-125 transition cursor-pointer px-1"
-                  >
-                    {em}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <form onSubmit={handleSendMessage} className="pt-2 mt-1 flex items-center gap-1.5 shrink-0">
-              <input
-                ref={chatFileRef}
-                type="file"
-                accept="image/*,.pdf,.doc,.docx,.xlsx,.zip"
-                onChange={handleChatFileSelect}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => chatFileRef.current?.click()}
-                className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowMentionList((prev) => !prev)}
-                className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
-              >
-                <AtSign className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowEmojiPicker((prev) => !prev)}
-                className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
-              >
-                <Smile className="w-4 h-4" />
-              </button>
-              {!isRecordingVoice ? (
-                <button
-                  type="button"
-                  onClick={startVoiceRecording}
-                  className="p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[#c7cb2d] cursor-pointer"
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={stopVoiceRecording}
-                  className="p-2 rounded-xl bg-red-500 text-white animate-pulse cursor-pointer"
-                >
-                  <Square className="w-4 h-4" />
-                </button>
-              )}
-              <input
-                value={chatInput}
-                onChange={(e) => handleChatInputChange(e.target.value)}
-                placeholder="Write a message or type @ to tag colleagues..."
-                className="flex-1 bg-[var(--bg-main)] rounded-full px-4 py-2 text-xs"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" /> Send
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
+        {/* =====================================================================
           TAB 2: MY LEAVE APPLICATIONS (100% PRESERVED)
       ===================================================================== */}
       {activeTab === "leave" && (
