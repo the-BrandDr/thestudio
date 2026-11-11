@@ -818,6 +818,13 @@ export default function EnterpriseFinanceSuite() {
   };
 
   // --- CONFIRM / VERIFY PAYSTACK PAYMENT VIA CUSTOM STUDIO MODAL ---
+  const [paystackModal, setPaystackModal] = React.useState<{
+    invoice: any;
+    reference: string;
+    amountNaira: number;
+    tier: "deposit_70" | "full_100";
+  } | null>(null);
+
   const handleVerifyPaystackReferenceOnInvoice = (inv: any) => {
     const totalAmt = Number(inv.total_amount || 0);
     const paidSoFar = Number(inv.amount_paid || 0);
@@ -2729,6 +2736,171 @@ export default function EnterpriseFinanceSuite() {
       {activeTab === "tax" && (
         <TaxComplianceSuite execViewOnly={execViewOnly} />
       )}
+
+      
+      {/* MODAL: CUSTOM STUDIO PAYSTACK PAYMENT CONFIRMATION */}
+      {paystackModal && (() => {
+        const inv = paystackModal.invoice;
+        const totalAmt = Number(inv.total_amount || 0);
+        const paidSoFar = Number(inv.amount_paid || 0);
+        const bal = Math.max(0, totalAmt - paidSoFar);
+        const seventyAmt = Math.round(totalAmt * 0.7);
+        const canPickSeventy = paidSoFar === 0 && bal > 0;
+        const projectedBalance = Math.max(0, bal - Number(paystackModal.amountNaira || 0));
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+            <form
+              onSubmit={handleConfirmPaystackModalSubmit}
+              className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-[#c7cb2d] font-bold">
+                    Paystack Payment Confirmation
+                  </span>
+                  <h3 className="font-display text-base font-bold mt-0.5">
+                    {inv.invoice_no} — {inv.client_company || inv.client_name}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaystackModal(null)}
+                  className="p-1.5 rounded-full bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 grid grid-cols-3 gap-2 text-center font-mono text-xs">
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-dim)]">Invoice Total</p>
+                  <p className="font-bold text-white mt-0.5">₦{totalAmt.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-dim)]">Already Paid</p>
+                  <p className="font-bold text-emerald-400 mt-0.5">₦{paidSoFar.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[#c7cb2d]">Balance Due</p>
+                  <p className="font-bold text-[#c7cb2d] mt-0.5">₦{bal.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {canPickSeventy && (
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)]">
+                    Select Payment Tier
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPaystackModal({
+                          ...paystackModal,
+                          tier: "deposit_70",
+                          amountNaira: seventyAmt,
+                        })
+                      }
+                      className={
+                        "p-3 rounded-2xl border text-left transition cursor-pointer " +
+                        (paystackModal.tier === "deposit_70"
+                          ? "bg-[#c7cb2d]/15 border-[#c7cb2d] text-white"
+                          : "bg-[var(--bg-main)] border-[var(--border-subtle)]/60 text-[var(--text-muted)]")
+                      }
+                    >
+                      <p className="text-[10px] font-mono uppercase font-bold text-[#c7cb2d]">
+                        70% Advance
+                      </p>
+                      <p className="font-mono text-sm font-bold mt-1">
+                        ₦{seventyAmt.toLocaleString()}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPaystackModal({
+                          ...paystackModal,
+                          tier: "full_100",
+                          amountNaira: bal,
+                        })
+                      }
+                      className={
+                        "p-3 rounded-2xl border text-left transition cursor-pointer " +
+                        (paystackModal.tier === "full_100"
+                          ? "bg-emerald-500/15 border-emerald-500 text-white"
+                          : "bg-[var(--bg-main)] border-[var(--border-subtle)]/60 text-[var(--text-muted)]")
+                      }
+                    >
+                      <p className="text-[10px] font-mono uppercase font-bold text-emerald-400">
+                        100% Full Payment
+                      </p>
+                      <p className="font-mono text-sm font-bold mt-1">
+                        ₦{bal.toLocaleString()}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[var(--text-dim)] mb-1">
+                  Paystack Transaction Reference *
+                </label>
+                <input
+                  required
+                  value={paystackModal.reference}
+                  onChange={(e) =>
+                    setPaystackModal({ ...paystackModal, reference: e.target.value })
+                  }
+                  placeholder="e.g. LV-LSBRANDS112602-..."
+                  className="w-full bg-[var(--bg-main)] border border-[var(--border-subtle)]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[#c7cb2d]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[#c7cb2d] mb-1">
+                  Confirmed Amount Paid (₦) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={paystackModal.amountNaira || ""}
+                  onChange={(e) =>
+                    setPaystackModal({
+                      ...paystackModal,
+                      amountNaira: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-[var(--bg-main)] border border-[#c7cb2d]/50 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-[#c7cb2d] focus:outline-none"
+                />
+                <p className="text-[10px] font-mono text-[var(--text-muted)] mt-1">
+                  Remaining Balance After Confirmation: <strong className="text-white">₦{projectedBalance.toLocaleString()}</strong>
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPaystackModal(null)}
+                  className="px-4 py-2 rounded-full bg-[var(--bg-main)] text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-full bg-[#c7cb2d] text-black text-xs font-bold cursor-pointer hover:brightness-110 transition"
+                >
+                  {saving ? "Confirming..." : "Confirm & Issue Receipt"}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
 
       {receiptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
