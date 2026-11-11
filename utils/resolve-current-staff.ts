@@ -181,12 +181,17 @@ export type ApprovalRoleTier = "level1_ceo" | "level2_ops" | "level3_finance" | 
 export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
   if (!staff) return "staff";
   const code = String(staff.staff_id || staff.staff_code || "").toUpperCase().trim();
-  const role = String(staff.role || staff.designation || staff.position || "").toLowerCase();
+  const role = String(
+    staff.role || staff.job_title || staff.designation || staff.position || ""
+  ).toLowerCase();
   const dept = String(staff.department || "").toLowerCase();
+  const hLevel = String(staff.hierarchy_level || "").toUpperCase();
 
+  // Level 1: CEO / Managing Director / Executive Director (LS-01)
   if (
     code === "LS-01" ||
     code === "LS-1" ||
+    hLevel.startsWith("L7") ||
     role.includes("ceo") ||
     role.includes("chief executive") ||
     role.includes("founder") ||
@@ -197,6 +202,7 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
     return "level1_ceo";
   }
 
+  // Level 3: Head of Finance / Treasury / Accounting
   if (
     role.includes("finance") ||
     role.includes("account") ||
@@ -207,6 +213,7 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
     return "level3_finance";
   }
 
+  // Level 2: Head of Operations / Operations Lead
   if (
     role.includes("operation") ||
     role.includes("head of ops") ||

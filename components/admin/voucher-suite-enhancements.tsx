@@ -6,6 +6,7 @@ import {
   VOUCHER_CATEGORIES,
   getVoucherStageMeta,
   getStaffApprovalLevel,
+  resolveAuthenticatedStaff,
   ApprovalRoleTier,
 } from "@/utils/resolve-current-staff";
 import { logStaffActivity } from "@/utils/staff-activity-logger";
@@ -260,23 +261,62 @@ export function VoucherLevelActionButtons({
   onVoucherUpdated: (updated: any) => void;
 }) {
   const [busy, setBusy] = React.useState(false);
+  const [resolvedMe, setResolvedMe] = React.useState<any>(currentUser || null);
+
+  React.useEffect(() => {
+    if (currentUser && (currentUser.staff_id || currentUser.job_title || currentUser.role)) {
+      setResolvedMe(currentUser);
+      return;
+    }
+    let active = true;
+    const supabase = createClient();
+    (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const { data: staffRows } = await supabase
+          .from("staff_profiles")
+          .select("id, staff_id, first_name, last_name, email, role, hierarchy_level, department, job_title");
+        const found = resolveAuthenticatedStaff(authData?.user, staffRows || []);
+        if (active && found) setResolvedMe(found);
+      } catch (_) {}
+    })();
+    return () => { active = false; };
+  }, [currentUser]);
+
   const meta = getVoucherStageMeta(voucher);
   const curLevel = (meta as any).currentLevel ?? 1;
 
-  if (pageContext === "staff_space" || meta.isDirectExpense || meta.stage === "disbursed" || meta.stage === "rejected") {
+  if (
+    pageContext === "staff_space" ||
+    meta.isDirectExpense ||
+    meta.stage === "disbursed" ||
+    meta.stage === "rejected"
+  ) {
     return null;
   }
 
-  let userTier: ApprovalRoleTier = typeof getStaffApprovalLevel === "function" ? getStaffApprovalLevel(currentUser) : "staff";
-  if (userTier === "staff" && pageContext === "finance_desk") {
-    userTier = curLevel === 1 ? "level1_ceo" : curLevel === 2 ? "level2_ops" : "level3_finance";
-  }
+  const activeUser = resolvedMe || currentUser;
+  const userTier: ApprovalRoleTier = getStaffApprovalLevel(activeUser);
+
+  // Check individual level statuses on the voucher
+  const lvl1Status = String(voucher?.strategist_status || "pending").toLowerCase();
+  const lvl2Status = String(voucher?.ops_status || "pending").toLowerCase();
+  const lvl3Status = String(voucher?.finance_status || "pending").toLowerCase();
+
+  // Has this specific executive ALREADY approved their own level on this voucher?
+  const hasAlreadyApprovedMyLevel =
+    (userTier === "level1_ceo" && lvl1Status === "approved") ||
+    (userTier === "level2_ops" && lvl2Status === "approved") ||
+    (userTier === "level3_finance" && lvl3Status === "approved");
 
   const handleDecision = async (decision: "accept" | "reject" | "disburse") => {
     if (busy) return;
     let rejectionReason = "";
     if (decision === "reject") {
-      const input = window.prompt("Reason for rejecting this voucher (will be logged in comments):", "Budget / supporting document review required");
+      const input = window.prompt(
+        "Reason for rejecting this voucher (will be logged in comments):",
+        "Budget / supporting document review required"
+      );
       if (input === null) return;
       rejectionReason = input.trim() || "Rejected";
     }
@@ -285,16 +325,29 @@ export function VoucherLevelActionButtons({
     try {
       let updates: Record<string, any> = {};
       if (decision === "disburse") {
-        if (!meta.canDisburse) { setBusy(false); return; }
+        if (!meta.canDisburse || userTier !== "level3_finance") {
+          setBusy(false);
+          return;
+        }
         updates = { status: "disbursed" };
-      } else if (userTier === "level1_ceo" && curLevel === 1) {
-        updates = { strategist_status: decision === "accept" ? "approved" : "rejected", status: decision === "reject" ? "rejected" : "pending" };
-      } else if (userTier === "level2_ops" && curLevel === 2) {
-        updates = { ops_status: decision === "accept" ? "approved" : "rejected", status: decision === "reject" ? "rejected" : "pending" };
-      } else if (userTier === "level3_finance" && curLevel === 3) {
-        updates = { finance_status: decision === "accept" ? "approved" : "rejected", status: decision === "accept" ? "approved" : "rejected" };
+      } else if (userTier === "level1_ceo" && curLevel === 1 && lvl1Status !== "approved") {
+        updates = {
+          strategist_status: decision === "accept" ? "approved" : "rejected",
+          status: decision === "reject" ? "rejected" : "pending",
+        };
+      } else if (userTier === "level2_ops" && curLevel === 2 && lvl2Status !== "approved") {
+        updates = {
+          ops_status: decision === "accept" ? "approved" : "rejected",
+          status: decision === "reject" ? "rejected" : "pending",
+        };
+      } else if (userTier === "level3_finance" && curLevel === 3 && lvl3Status !== "approved") {
+        updates = {
+          finance_status: decision === "accept" ? "approved" : "rejected",
+          status: decision === "accept" ? "approved" : "rejected",
+        };
       } else {
-        setBusy(false); return;
+        setBusy(false);
+        return;
       }
 
       const res = await fetch("/api/admin/vouchers", {
@@ -303,13 +356,19 @@ export function VoucherLevelActionButtons({
         body: JSON.stringify({ id: voucher.id, ...updates }),
       });
       const json = await res.json();
-      const updatedRow = res.ok && json?.data ? json.data : { ...voucher, ...updates };
+      const updatedRow = res.ok && json?.data ? { ...voucher, ...json.data, ...updates } : { ...voucher, ...updates };
+
+      const execName =
+        activeUser?.full_name ||
+        ((activeUser?.first_name || "") + " " + (activeUser?.last_name || "")).trim() ||
+        "Executive Approver";
+      const execCode = activeUser?.staff_id || "LS-EXEC";
 
       if (decision === "reject" && rejectionReason) {
         const rejectComment: VoucherComment = {
           id: "cmt-" + Date.now(),
-          author_name: currentUser?.full_name || "Executive Approver",
-          author_code: currentUser?.staff_id || "LS-EXEC",
+          author_name: execName,
+          author_code: execCode,
           text: "[REJECTED]: " + rejectionReason,
           created_at: new Date().toISOString(),
         };
@@ -321,16 +380,15 @@ export function VoucherLevelActionButtons({
       }
 
       await logStaffActivity({
-        staff_name: currentUser?.full_name || "Executive Approver",
-        staff_code: currentUser?.staff_id || "LS-EXEC",
-        department: currentUser?.department || "Finance & Executive",
+        staff_name: execName,
+        staff_code: execCode,
+        department: activeUser?.department || "Finance & Executive",
         action_type: decision === "disburse" ? "DISBURSED_VOUCHER" : decision === "accept" ? "APPROVED_VOUCHER" : "REJECTED_VOUCHER",
         module: "Expenses & Vouchers",
         description: (decision === "disburse" ? "Disbursed" : decision === "accept" ? "Approved" : "Rejected") + " voucher \"" + voucher.title + "\"",
         reference_code: voucher.voucher_no || voucher.voucher_code || "",
       });
 
-      // Trigger active Push Notifications to requester & next approver level
       const vCode = voucher.voucher_no || voucher.voucher_code || "LV-VCH";
       const amtStr = "₦" + Number(voucher.amount || 0).toLocaleString();
       if (decision === "disburse") {
@@ -363,6 +421,7 @@ export function VoucherLevelActionButtons({
           targetType: "all_staff",
         });
       }
+
       onVoucherUpdated(updatedRow);
     } catch (_) {
     } finally {
@@ -370,10 +429,16 @@ export function VoucherLevelActionButtons({
     }
   };
 
+  // 1. If all 3 levels approved, ONLY Head of Finance sees "Mark Disbursed"
   if (meta.stage === "approved_waiting" && meta.canDisburse) {
-    if (userTier === "level3_finance" || pageContext === "finance_desk") {
+    if (userTier === "level3_finance") {
       return (
-        <button type="button" disabled={busy} onClick={() => handleDecision("disburse")} className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleDecision("disburse")}
+          className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50"
+        >
           {busy ? "..." : "Mark Disbursed"}
         </button>
       );
@@ -381,15 +446,39 @@ export function VoucherLevelActionButtons({
     return null;
   }
 
-  const isMyTurn = (userTier === "level1_ceo" && curLevel === 1) || (userTier === "level2_ops" && curLevel === 2) || (userTier === "level3_finance" && curLevel === 3);
-  if (!isMyTurn) return null;
+  // 2. If this executive ALREADY approved their level on this voucher, never show Accept/Reject again!
+  if (hasAlreadyApprovedMyLevel) {
+    return (
+      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold select-none">
+        ✓ Approved by You
+      </span>
+    );
+  }
+
+  // 3. Show Accept / Reject ONLY if it is currently this executive's exact sequential turn
+  const isMyExactTurn =
+    (userTier === "level1_ceo" && curLevel === 1 && lvl1Status !== "approved") ||
+    (userTier === "level2_ops" && curLevel === 2 && lvl1Status === "approved" && lvl2Status !== "approved") ||
+    (userTier === "level3_finance" && curLevel === 3 && lvl1Status === "approved" && lvl2Status === "approved" && lvl3Status !== "approved");
+
+  if (!isMyExactTurn) return null;
 
   return (
     <div className="flex items-center gap-1.5">
-      <button type="button" disabled={busy} onClick={() => handleDecision("accept")} className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-[10px] font-mono uppercase font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => handleDecision("accept")}
+        className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500 hover:text-black text-[10px] font-mono uppercase font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+      >
         <Check className="w-3 h-3" /><span>Accept</span>
       </button>
-      <button type="button" disabled={busy} onClick={() => handleDecision("reject")} className="px-2.5 py-1 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500 hover:text-white text-[10px] font-mono uppercase font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => handleDecision("reject")}
+        className="px-2.5 py-1 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500 hover:text-white text-[10px] font-mono uppercase font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+      >
         <Ban className="w-3 h-3" /><span>Reject</span>
       </button>
     </div>
@@ -408,34 +497,54 @@ export function VoucherRowActionsMenu({
   onReuse: (v: any) => void;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [openUpward, setOpenUpward] = React.useState(false);
-  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   const commentsCount = extractVoucherComments(voucher).length;
 
+  const updatePosition = React.useCallback(() => {
+    if (!btnRef.current || typeof window === "undefined") return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const menuWidth = 212;
+    const menuHeight = 175;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight + 16 ? Math.max(12, rect.top - menuHeight - 6) : rect.bottom + 6;
+    const left = Math.max(12, Math.min(window.innerWidth - menuWidth - 12, rect.right - menuWidth));
+    setCoords({ top, left });
+  }, []);
+
   React.useEffect(() => {
+    if (!open) return;
+    updatePosition();
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        btnRef.current && !btnRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
-    if (open) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
-
-  const handleToggle = () => {
-    if (!open && menuRef.current && typeof window !== "undefined") {
-      const rect = menuRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 220);
-    }
-    setOpen((p) => !p);
-  };
+    const handleScrollOrResize = () => updatePosition();
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+    };
+  }, [open, updatePosition]);
 
   return (
-    <div className="relative inline-block text-left" ref={menuRef}>
+    <div className="inline-block text-left">
       <button
+        ref={btnRef}
         type="button"
-        onClick={handleToggle}
+        onClick={() => {
+          if (!open) updatePosition();
+          setOpen((p) => !p);
+        }}
         title="Options"
         className="px-2.5 py-1 rounded-lg bg-[var(--bg-main)] border border-[var(--border-subtle)]/70 hover:border-[#c7cb2d] text-[var(--text-primary)] flex items-center gap-1 text-xs font-mono cursor-pointer transition"
       >
@@ -448,10 +557,9 @@ export function VoucherRowActionsMenu({
       </button>
       {open && (
         <div
-          className={
-            "absolute right-0 w-52 rounded-2xl bg-[#141414] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-[100] text-xs " +
-            (openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5")
-          }
+          ref={dropdownRef}
+          style={{ position: "fixed", top: coords.top + "px", left: coords.left + "px", width: "212px" }}
+          className="rounded-2xl bg-[#141414] border border-[var(--border-subtle)] shadow-2xl py-1.5 z-[9999] text-xs"
         >
           <button
             type="button"

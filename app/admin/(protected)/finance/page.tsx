@@ -2037,33 +2037,9 @@ export default function EnterpriseFinanceSuite() {
                               <span className="font-mono text-sm font-bold text-[var(--text-primary)] block">
                               -₦{Number(v.amount || 0).toLocaleString()}
                             </span>
-                              <VoucherRowActionsMenu
-                                voucher={v}
-                                onViewEdit={(item) => {
-                                  setActiveVoucherModal(item);
-                                  setVoucherModalMode("edit");
-                                }}
-                                onOpenComments={(item) => {
-                                  setActiveVoucherModal(item);
-                                  setVoucherModalMode("comments");
-                                }}
-                                onReuse={(item) => {
-                                  setDirectExpForm({
-                                    title: item.title || "",
-                                    category: item.category || VOUCHER_CATEGORIES[0],
-                                    amount: String(item.amount || ""),
-                                    date: new Date().toISOString().slice(0, 10),
-                                    vendor: String(item.staff_name || "").replace(/^\[DIRECT\]\s*/, ""),
-                                    payment_method: item.payment_method || "Bank Transfer",
-                                    project_ref: "",
-                                    notes: cleanVoucherNotes(item),
-                                  });
-                                }}
-                              />
-                            </div>
-                            {!isDirect && (
                               
-                            )}
+                            </div>
+                            
                           </div>
                         </div>
                       );
