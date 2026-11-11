@@ -55,6 +55,7 @@ function computePayeWithRelief(monthlyGross: number, monthlyRelief: number = 0):
 }
 
 export default function EnterpriseFinanceSuite() {
+  const [expCategoryFilter, setExpCategoryFilter] = React.useState<string>("All");
   const scopedMode = false;
   const supabase = createClient();
   const [execViewOnly, setExecViewOnly] = React.useState(false);
@@ -1997,9 +1998,10 @@ export default function EnterpriseFinanceSuite() {
                   
 
             {(() => {
+              const activeCatFilter = typeof expCategoryFilter === "string" ? expCategoryFilter : "All";
               const filteredExp = (vouchers || []).filter((v: any) => {
                 if (!getVoucherStageMeta(v).isDirectExpense) return false;
-                return expCategoryFilter === "All" ? true : v.category === expCategoryFilter;
+                return activeCatFilter === "All" ? true : v.category === activeCatFilter;
               });
               const pageIdx = typeof expensesPage === "number" ? expensesPage : 1;
               const pagedExp = filteredExp.slice((pageIdx - 1) * 6, pageIdx * 6);
