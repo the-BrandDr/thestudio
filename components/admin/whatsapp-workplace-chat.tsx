@@ -192,6 +192,7 @@ export default function WhatsAppWorkplaceChat({
   const [sidebarSearch, setSidebarSearch] = React.useState("");
   const [inChatSearch, setInChatSearch] = React.useState("");
   const [showInChatSearch, setShowInChatSearch] = React.useState(false);
+  const [internalPreviewUrl, setInternalPreviewUrl] = React.useState<string | null>(null);
 
   // Group Members & Admin Controls Drawer state
   const [showMembersDrawer, setShowMembersDrawer] = React.useState(false);
@@ -1915,7 +1916,7 @@ export default function WhatsAppWorkplaceChat({
                             <img
                               src={m.attachment_url}
                               alt={m.attachment_name || "Attachment"}
-                              onClick={() => onPreviewImage && onPreviewImage(m.attachment_url)}
+                              onClick={() => (onPreviewImage ? onPreviewImage(m.attachment_url) : setInternalPreviewUrl(m.attachment_url))}
                               className="max-h-52 rounded-xl object-cover cursor-pointer border border-white/10"
                             />
                           </div>
@@ -2136,6 +2137,25 @@ export default function WhatsAppWorkplaceChat({
           </>
         ) : null}
       </div>
+      {internalPreviewUrl && (
+        <div
+          onClick={() => setInternalPreviewUrl(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <button
+            type="button"
+            onClick={() => setInternalPreviewUrl(null)}
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={internalPreviewUrl}
+            alt="Attachment preview"
+            className="max-h-[88vh] max-w-[92vw] rounded-2xl object-contain border border-white/10 shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }

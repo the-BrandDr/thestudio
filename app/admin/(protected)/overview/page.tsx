@@ -2536,7 +2536,7 @@ export default function AdminOverviewAndOpenSpacePage() {
             staffList={staffColleagues}
             messages={messages}
             onRefreshMessages={() => loadOpenSpace()}
-            onPreviewImage={(url) => setLightboxUrl(url)}
+            onPreviewImage={(url) => setPreviewProofUrl(url)}
           />
         )}
 
