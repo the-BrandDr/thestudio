@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       data: invoice,
-      paystackPublicKey: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
+      paystackPublicKey: process.env.PAYSTACK_PUBLIC_KEY || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
