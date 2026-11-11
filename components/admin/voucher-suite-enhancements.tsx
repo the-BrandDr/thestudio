@@ -276,7 +276,7 @@ export function VoucherLevelActionButtons({
         const { data: authData } = await supabase.auth.getUser();
         const { data: staffRows } = await supabase
           .from("staff_profiles")
-          .select("id, staff_id, first_name, last_name, email, role, hierarchy_level, department, job_title");
+          .select("id, staff_id, first_name, last_name, email, role, hierarchy_level, department, job_title, permissions");
         const found = resolveAuthenticatedStaff(authData?.user, staffRows || []);
         if (active && found) setResolvedMe(found);
       } catch (_) {}
@@ -331,12 +331,25 @@ export function VoucherLevelActionButtons({
     setBusy(true);
     try {
       let updates: Record<string, any> = {};
+      const canUserDisburse =
+        userTier === "level3_finance" ||
+        pageContext === "finance_desk" ||
+        String(activeUser?.department || "").toLowerCase().includes("finance") ||
+        String(activeUser?.role || "").toLowerCase().includes("finance") ||
+        (Array.isArray(activeUser?.permissions) &&
+          activeUser.permissions.some((p: string) => String(p).toLowerCase().includes("finance")));
+
       if (decision === "disburse") {
-        if (!meta.canDisburse || userTier !== "level3_finance") {
+        if (!meta.canDisburse || !canUserDisburse) {
           setBusy(false);
           return;
         }
-        updates = { status: "disbursed" };
+        updates = {
+          strategist_status: "approved",
+          ops_status: "approved",
+          finance_status: "approved",
+          status: "disbursed",
+        };
       } else if (userTier === "level1_ceo" && curLevel === 1 && lvl1Status !== "approved") {
         updates = {
           strategist_status: decision === "accept" ? "approved" : "rejected",
@@ -347,8 +360,10 @@ export function VoucherLevelActionButtons({
           ops_status: decision === "accept" ? "approved" : "rejected",
           status: decision === "reject" ? "rejected" : "pending",
         };
-      } else if (userTier === "level3_finance" && curLevel === 3 && lvl3Status !== "approved") {
+      } else if ((userTier === "level3_finance" || pageContext === "finance_desk") && curLevel === 3 && lvl3Status !== "approved") {
         updates = {
+          strategist_status: "approved",
+          ops_status: "approved",
           finance_status: decision === "accept" ? "approved" : "rejected",
           status: decision === "accept" ? "approved" : "rejected",
         };
@@ -363,7 +378,23 @@ export function VoucherLevelActionButtons({
         body: JSON.stringify({ id: voucher.id, ...updates }),
       });
       const json = await res.json();
-      const updatedRow = res.ok && json?.data ? { ...voucher, ...json.data, ...updates } : { ...voucher, ...updates };
+      const mergedMeta = {
+        strategist_status: updates.strategist_status || lvl1Status || "pending",
+        ops_status: updates.ops_status || lvl2Status || "pending",
+        finance_status: updates.finance_status || lvl3Status || "pending",
+        status: updates.status || voucher.status || "pending",
+      };
+      const updatedDesc =
+        cleanVoucherNotes(voucher) +
+        "\n<!--VCH_META:" +
+        JSON.stringify(mergedMeta) +
+        "-->\n<!--VCH_COMMENTS:" +
+        JSON.stringify(extractVoucherComments(voucher)) +
+        "-->";
+      const updatedRow =
+        res.ok && json?.data
+          ? { ...voucher, ...json.data, ...updates, description: json.data.description || updatedDesc, notes: json.data.notes || updatedDesc }
+          : { ...voucher, ...updates, description: updatedDesc, notes: updatedDesc };
 
       const execName =
         activeUser?.full_name ||
@@ -440,21 +471,33 @@ export function VoucherLevelActionButtons({
     }
   };
 
-  // 1. If all 3 levels approved, ONLY Head of Finance sees "Mark Disbursed"
+  // 1. If all 3 levels approved, Finance Lead sees "Mark Disbursed"
+  const isFinanceDisburser =
+    userTier === "level3_finance" ||
+    pageContext === "finance_desk" ||
+    String(activeUser?.department || "").toLowerCase().includes("finance") ||
+    String(activeUser?.role || "").toLowerCase().includes("finance") ||
+    (Array.isArray(activeUser?.permissions) &&
+      activeUser.permissions.some((p: string) => String(p).toLowerCase().includes("finance")));
+
   if (meta.stage === "approved_waiting" && meta.canDisburse) {
-    if (userTier === "level3_finance") {
+    if (isFinanceDisburser && userTier !== "level1_ceo" && userTier !== "level2_ops") {
       return (
         <button
           type="button"
           disabled={busy}
           onClick={() => handleDecision("disburse")}
-          className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50"
+          className="px-3 py-1 rounded-lg bg-[#c7cb2d] text-black text-[10px] font-mono uppercase font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50 shadow-md"
         >
-          {busy ? "..." : "Mark Disbursed"}
+          {busy ? "Disbursing..." : "💸 Mark Disbursed"}
         </button>
       );
     }
-    return null;
+    return (
+      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold select-none">
+        ✓ Approved (Awaiting Payout)
+      </span>
+    );
   }
 
   // 2. If this executive ALREADY approved their level on this voucher, never show Accept/Reject again!

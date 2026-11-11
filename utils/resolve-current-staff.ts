@@ -201,6 +201,10 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
     }
   }
 
+  const perms = Array.isArray(staff.permissions)
+    ? staff.permissions.map((p: any) => String(p).toLowerCase())
+    : [];
+
   // 2. Level 3: Head of Finance / Accounting / Treasury
   if (
     code === "LS-04" ||
@@ -208,7 +212,9 @@ export function getStaffApprovalLevel(staff: any): ApprovalRoleTier {
     role.includes("account") ||
     role.includes("treasur") ||
     dept.includes("finance") ||
-    dept.includes("accounting")
+    dept.includes("accounting") ||
+    perms.includes("head_of_finance") ||
+    perms.includes("finance")
   ) {
     return "level3_finance";
   }
@@ -298,10 +304,31 @@ export function getVoucherStageMeta(v: any): {
     } catch (_) {}
   }
 
-  const rawStatus = String(parsedMeta.status || v?.status || "pending").toLowerCase();
-  const lvl1Ceo = String(parsedMeta.strategist_status || v?.strategist_status || "pending").toLowerCase();
-  const lvl2Ops = String(parsedMeta.ops_status || v?.ops_status || "pending").toLowerCase();
-  const lvl3Fin = String(parsedMeta.finance_status || v?.finance_status || "pending").toLowerCase();
+  const rawStatus = String(
+    v?.status && v.status !== "pending" ? v.status : parsedMeta.status || v?.status || "pending"
+  ).toLowerCase();
+  let lvl1Ceo = String(
+    v?.strategist_status && v.strategist_status !== "pending"
+      ? v.strategist_status
+      : parsedMeta.strategist_status || v?.strategist_status || "pending"
+  ).toLowerCase();
+  let lvl2Ops = String(
+    v?.ops_status && v.ops_status !== "pending"
+      ? v.ops_status
+      : parsedMeta.ops_status || v?.ops_status || "pending"
+  ).toLowerCase();
+  let lvl3Fin = String(
+    v?.finance_status && v.finance_status !== "pending"
+      ? v.finance_status
+      : parsedMeta.finance_status || v?.finance_status || "pending"
+  ).toLowerCase();
+
+  // If overall status is already "approved" or Finance (L3) approved it, ensure L1/L2/L3 reflect approved
+  if (rawStatus === "approved" || rawStatus === "approved_waiting" || lvl3Fin === "approved") {
+    lvl1Ceo = "approved";
+    lvl2Ops = "approved";
+    lvl3Fin = "approved";
+  }
 
   const approvalSummary = "L1 CEO: " + lvl1Ceo.toUpperCase() + " → L2 Ops: " + lvl2Ops.toUpperCase() + " → L3 Fin: " + lvl3Fin.toUpperCase();
 
