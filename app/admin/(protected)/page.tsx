@@ -1997,98 +1997,146 @@ export default function AdminOverviewAndOpenSpacePage() {
                     </div>
                   </div>
 
-                  <div className="relative h-56 pt-6 px-3 border-b border-[var(--border-subtle)]/50 flex flex-col justify-end">
-                    {/* Horizontal Scale Grid Lines */}
-                    <div className="absolute inset-x-3 top-6 bottom-6 flex flex-col justify-between pointer-events-none">
-                      {[1, 0.66, 0.33, 0].map((ratio, idx) => (
-                        <div
-                          key={idx}
-                          className="w-full border-t border-dashed border-[var(--border-subtle)]/30 flex items-center justify-end"
-                        >
-                          <span className="text-[9px] font-mono text-[var(--text-dim)] -mt-3 bg-[var(--bg-main)] px-1">
-                            ₦{Math.round((execAnalytics.maxMonthVal * ratio) / 1000).toLocaleString()}k
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                  <div className="space-y-2">
+                            {/* Unified 180px Plot Area: Grid, Bars & SVG Curve share exact 0-100% Y coordinates */}
+                            <div className="relative h-48 w-full pr-12 pl-2">
+                              {/* Horizontal Scale Grid Lines (100%, 66%, 33%, 0%) */}
+                              {[1, 0.66, 0.33, 0].map((ratio, idx) => {
+                                const topPct = Math.round((1 - ratio) * 100);
+                                const labelVal = Math.round((execAnalytics.maxMonthVal * ratio) / 1000);
+                                return (
+                                  <div
+                                    key={idx}
+                                    style={{ top: `${topPct}%` }}
+                                    className="absolute inset-x-0 border-t border-dashed border-[var(--border-subtle)]/35 flex items-center justify-end pointer-events-none"
+                                  >
+                                    <span className="text-[9px] font-mono text-[var(--text-dim)] -mt-2.5 bg-[var(--bg-main)] pl-1.5">
+                                      ₦{labelVal.toLocaleString()}k
+                                    </span>
+                                  </div>
+                                );
+                              })}
 
-                    {/* High-Contrast Gold SVG Smooth Curve for Net Margin */}
-                    {execAnalytics.months.length > 1 && (
-                      <svg
-                        viewBox="0 0 600 140"
-                        className="absolute inset-x-4 top-8 h-36 w-[calc(100%-2rem)] overflow-visible pointer-events-none z-10"
-                        preserveAspectRatio="none"
-                      >
-                        {(() => {
-                          const pts = execAnalytics.months.map((m, idx) => {
-                            const count = Math.max(1, execAnalytics.months.length - 1);
-                            const x = Math.round((idx / count) * 540) + 30;
-                            const norm = Math.max(0, m.net) / execAnalytics.maxMonthVal;
-                            const y = 130 - Math.round(norm * 115);
-                            return { x, y, label: m.label, net: m.net };
-                          });
-                          const dPath = pts.reduce((acc, pt, i, a) => {
-                            if (i === 0) return `M ${pt.x},${pt.y}`;
-                            const prev = a[i - 1];
-                            const cx = Math.round((prev.x + pt.x) / 2);
-                            return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
-                          }, "");
-                          return (
-                            <>
-                              <path
-                                d={dPath}
-                                fill="none"
-                                stroke="#facc15"
-                                strokeWidth="3"
-                                strokeLinecap="round"
-                              />
-                              {pts.map((pt, idx) => (
-                                <circle
-                                  key={idx}
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="4.5"
-                                  fill="#facc15"
-                                  stroke="#000"
-                                  strokeWidth="1.5"
-                                />
-                              ))}
-                            </>
-                          );
-                        })()}
-                      </svg>
-                    )}
+                              {/* Aligned Bars (Exact % Height of Shared Plot Area) */}
+                              <div className="absolute inset-y-0 left-2 right-12 flex items-end justify-between gap-1.5 z-10">
+                                {execAnalytics.months.map((m) => {
+                                  const inPct = m.inflow > 0 ? Math.max(3, Math.min(100, (m.inflow / execAnalytics.maxMonthVal) * 100)) : 0;
+                                  const outPct = m.outflow > 0 ? Math.max(3, Math.min(100, (m.outflow / execAnalytics.maxMonthVal) * 100)) : 0;
+                                  const hasActivity = m.inflow > 0 || m.outflow > 0;
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="relative flex-1 h-full flex items-end justify-center gap-1 group min-w-0"
+                                    >
+                                      {/* Hover Tooltip with Exact Breakdown */}
+                                      <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute -top-12 left-1/2 -translate-x-1/2 z-30 bg-[#141619] border border-white/15 rounded-xl px-2.5 py-1.5 shadow-2xl whitespace-nowrap text-[9px] font-mono">
+                                        <p className="font-bold text-white mb-0.5">{m.label}</p>
+                                        <p className="text-emerald-400">In: ₦{m.inflow.toLocaleString()}</p>
+                                        <p className="text-amber-400">Out: ₦{m.outflow.toLocaleString()}</p>
+                                        <p className={m.net >= 0 ? "text-[#c7cb2d] font-bold" : "text-rose-400 font-bold"}>
+                                          Net: {m.net < 0 ? "-" : ""}₦{Math.abs(m.net).toLocaleString()}
+                                        </p>
+                                      </div>
 
-                    {/* High-Contrast Emerald (#10b981) vs Crimson Rose (#f59e0b) Bars */}
-                    <div className="relative z-0 flex items-end justify-between gap-2 h-40">
-                      {execAnalytics.months.map((m) => {
-                        const inHeight = Math.max(5, Math.round((m.inflow / execAnalytics.maxMonthVal) * 135));
-                        const outHeight = Math.max(5, Math.round((m.outflow / execAnalytics.maxMonthVal) * 135));
-                        return (
-                          <div key={m.key} className="flex-1 flex flex-col items-center gap-1.5 group min-w-0">
-                            <div className="w-full flex items-end justify-center gap-1 h-36">
-                              <div
-                                style={{ height: `${inHeight}px`, backgroundColor: "#10b981" }}
-                                title={`${m.label} Inflow: ₦${m.inflow.toLocaleString()}`}
-                                className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
-                              />
-                              <div
-                                style={{ height: `${outHeight}px`, backgroundColor: "#f59e0b" }}
-                                title={`${m.label} Outflow: ₦${m.outflow.toLocaleString()}`}
-                                className="w-2.5 sm:w-4 rounded-t-md group-hover:brightness-110 transition-all"
-                              />
+                                      {/* Direct Value Pill Above Active Month */}
+                                      {hasActivity && (
+                                        <span
+                                          style={{ bottom: `${Math.min(92, Math.max(inPct, outPct) + 3)}%` }}
+                                          className="absolute text-[8.5px] font-mono font-bold text-zinc-200 bg-black/70 px-1 py-0.5 rounded pointer-events-none whitespace-nowrap"
+                                        >
+                                          ₦{Math.round(Math.max(m.inflow, m.outflow) / 1000).toLocaleString()}k
+                                        </span>
+                                      )}
+
+                                      {/* Inflow Bar */}
+                                      <div
+                                        style={{
+                                          height: `${inPct}%`,
+                                          backgroundColor: "#10b981",
+                                          opacity: m.inflow > 0 ? 1 : 0.15,
+                                        }}
+                                        className="w-2.5 sm:w-3.5 rounded-t-md group-hover:brightness-110 transition-all"
+                                      />
+
+                                      {/* Outflow Bar */}
+                                      <div
+                                        style={{
+                                          height: `${outPct}%`,
+                                          backgroundColor: "#f59e0b",
+                                          opacity: m.outflow > 0 ? 1 : 0.15,
+                                        }}
+                                        className="w-2.5 sm:w-3.5 rounded-t-md group-hover:brightness-110 transition-all"
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Net Margin SVG Curve (Locked to Exact Same 0-100% Plot Box) */}
+                              {execAnalytics.months.length > 1 && (
+                                <svg
+                                  viewBox="0 0 600 160"
+                                  className="absolute inset-y-0 left-2 right-12 w-[calc(100%-3.5rem)] h-full overflow-visible pointer-events-none z-20"
+                                  preserveAspectRatio="none"
+                                >
+                                  {(() => {
+                                    const colCount = execAnalytics.months.length;
+                                    const pts = execAnalytics.months.map((m, idx) => {
+                                      const x = ((idx + 0.5) / colCount) * 600;
+                                      const clampedNet = Math.max(0, m.net);
+                                      const ratio = Math.min(1, clampedNet / execAnalytics.maxMonthVal);
+                                      const y = Math.round(160 - ratio * 160);
+                                      return { x, y, net: m.net, hasData: m.inflow > 0 || m.outflow > 0 };
+                                    });
+                                    const pathD = pts.reduce((acc, pt, i, a) => {
+                                      if (i === 0) return `M ${pt.x},${pt.y}`;
+                                      const prev = a[i - 1];
+                                      const cx = (prev.x + pt.x) / 2;
+                                      return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
+                                    }, "");
+                                    return (
+                                      <>
+                                        <path
+                                          d={pathD}
+                                          fill="none"
+                                          stroke="#facc15"
+                                          strokeWidth="2.5"
+                                          strokeLinecap="round"
+                                        />
+                                        {pts.map((pt, i) =>
+                                          pt.hasData ? (
+                                            <circle
+                                              key={i}
+                                              cx={pt.x}
+                                              cy={pt.y}
+                                              r="4.5"
+                                              fill="#facc15"
+                                              stroke="#090a0c"
+                                              strokeWidth="2"
+                                            />
+                                          ) : null
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </svg>
+                              )}
                             </div>
-                            <span className="text-[9px] font-mono text-[var(--text-muted)] pb-1 truncate max-w-full">
-                              {m.label}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
 
-                {/* UNBIASED OUTFLOW DISTRIBUTION DONUT CHART (DYNAMICALLY SORTED BY ACTUAL SPEND) */}
+                            {/* Month X-Axis Labels */}
+                            <div className="flex items-center justify-between pr-12 pl-2 pt-1">
+                              {execAnalytics.months.map((m) => (
+                                <div key={m.key} className="flex-1 text-center min-w-0">
+                                  <span className="text-[9px] font-mono text-[var(--text-muted)] truncate block">
+                                    {m.label}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* UNBIASED OUTFLOW DISTRIBUTION DONUT CHART (DYNAMICALLY SORTED BY ACTUAL SPEND) */}
                 <div className="lg:col-span-5 p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/50 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
