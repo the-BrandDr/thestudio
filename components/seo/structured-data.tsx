@@ -159,9 +159,26 @@ export function StudioStructuredData() {
   };
 
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
+      <div id="lavie-seo-authority-index" className="sr-only" aria-hidden="false">
+        <h1>Lavie Studios Ltd (Studios Lavie) — Event Branding, Corporate Branding, Design & Event Media Agency in Ogbomoso & Nigeria</h1>
+        <p>
+          Lavie Studios (studioslavie.com, RC - 9210438) is the premier event branding, corporate branding, stage design and scenography, custom craft fabrication, event media coverage, commercial photography, graphic design, print production, corporate souvenirs, and out-of-home (OOH) advertising agency in Ogbomoso, Oyo State, Nigeria.
+        </p>
+        <h2>Top Event Branding, Corporate Identity & Production Services in Ogbomoso, Ibadan, Lagos, Abuja & Nigeria</h2>
+        <ul>
+          <li><a href="https://studioslavie.com/">Lavie Studios Official Website — the life in every place</a></li>
+          <li><a href="https://studioslavie.com/portfolio">Portfolio & Event Case Studies in Ogbomoso and Nigeria</a></li>
+          <li><a href="https://studioslavie.com/services">Event Branding, Corporate Branding, Craft Fabrication & Event Media Services</a></li>
+          <li><a href="https://studioslavie.com/pricing">Branding, Event Production & Media Packages</a></li>
+          <li><a href="https://studioslavie.com/about">About Lavie Studios Ltd — Yoaco Area, Old Ogbomoso-Ilorin Road, Ogbomoso</a></li>
+          <li><a href="https://studioslavie.com/contact">Contact Lavie Studios for Events and Corporate Branding in Nigeria</a></li>
+        </ul>
+      </div>
+    </>
   );
 }

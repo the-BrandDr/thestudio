@@ -98,13 +98,12 @@ export const metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico?v=2026.2", sizes: "64x64", type: "image/png" },
-      { url: "/icon?v=2026.2", sizes: "192x192", type: "image/png" },
-      { url: "/icon.svg?v=2026.2", sizes: "any", type: "image/svg+xml" },
+      { url: "/icon", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
-    shortcut: ["/favicon.ico?v=2026.2"],
+    shortcut: ["/icon"],
     apple: [
-      { url: "/apple-icon?v=2026.2", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon", sizes: "180x180", type: "image/png" },
     ],
   },
   other: {
