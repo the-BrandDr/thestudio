@@ -5,7 +5,19 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/portfolio", "/services", "/pricing", "/about", "/contact"],
+        allow: [
+          "/",
+          "/portfolio",
+          "/portfolio/*",
+          "/services",
+          "/pricing",
+          "/about",
+          "/contact",
+          "/icon",
+          "/apple-icon",
+          "/opengraph-image",
+          "/twitter-image",
+        ],
         disallow: ["/admin", "/admin/*", "/login", "/api/*"],
       },
     ],

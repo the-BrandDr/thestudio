@@ -14,22 +14,59 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata = {
+  metadataBase: new URL("https://studioslavie.com"),
   title: {
     default: "Lavie Studios | Event Branding, Corporate Identity & Advertising Agency",
     template: "%s | Lavie Studios",
   },
   description:
-    "Premier creative branding, corporate identity, event scenography, custom craft fabrication, and advertising agency.",
-      manifest: "/site.webmanifest",
+    "Premier event branding, corporate identity, stage scenography, custom craft fabrication, event media, and out-of-home (OOH) advertising agency in Nigeria.",
+  keywords: [
+    "Lavie Studios",
+    "Event Branding Nigeria",
+    "Corporate Branding Agency Nigeria",
+    "Stage Design and Scenography",
+    "Custom Craft Fabrication",
+    "Out of Home Advertising Nigeria",
+    "Corporate Identity Design",
+    "Event Production Lagos Abuja Ibadan Ogbomoso",
+  ],
+  manifest: "/site.webmanifest",
+  alternates: {
+    canonical: "https://studioslavie.com",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_NG",
+    url: "https://studioslavie.com",
+    siteName: "Lavie Studios",
+    title: "Lavie Studios | Event Branding, Corporate Identity & Advertising Agency",
+    description:
+      "Premier creative branding, corporate identity, event scenography, custom craft fabrication, and advertising agency across Nigeria.",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Lavie Studios — Event Branding, Corporate Identity & Advertising Agency",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Lavie Studios | Event Branding, Corporate Identity & Advertising Agency",
+    description:
+      "Premier creative branding, corporate identity, event scenography, custom craft fabrication, and advertising agency across Nigeria.",
+    images: ["/twitter-image"],
+  },
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "48x48", type: "image/x-icon" },
-      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/icon", sizes: "192x192", type: "image/png" },
       { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
-    shortcut: ["/favicon.ico"],
+    shortcut: ["/icon"],
     apple: [
-      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon", sizes: "180x180", type: "image/png" },
     ],
   },
 };

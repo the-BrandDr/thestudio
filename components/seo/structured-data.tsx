@@ -10,8 +10,8 @@ export function StudioStructuredData() {
         name: "Lavie Studios Ltd",
         alternateName: ["Lavie Studios", "Studios Lavie"],
         url: "https://studioslavie.com",
-        logo: "https://studioslavie.com/logo-light.png",
-        image: "https://studioslavie.com/logo-light.png",
+        logo: "https://studioslavie.com/icon",
+        image: "https://studioslavie.com/icon",
         description:
           "Premier event branding, corporate identity systems, spatial scenography, stage production, print collateral, and out-of-home (OOH) advertising agency in Nigeria.",
         areaServed: [
