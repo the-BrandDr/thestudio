@@ -254,30 +254,41 @@ export default function ClientInvoicePaystackPortal() {
   return (
     <div className="min-h-screen bg-[#0b0c0e] text-white flex flex-col items-center justify-center p-4 sm:p-6">
       <div className="max-w-xl w-full rounded-3xl bg-[#141619] border border-white/10 shadow-2xl overflow-hidden">
-        <div className="px-6 py-5 bg-[#191c20] border-b border-white/10 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src="/logo-light.svg" alt="Lavie Studios" className="h-7 w-auto" />
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d]">
+        <div className="px-6 py-5 bg-[#191c20] border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 shrink-0">
+              <img src="/logo-light.svg" alt="Lavie Studios" className="h-6 w-auto block" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-[#c7cb2d] truncate">
                 Official Client Payment Portal
               </p>
-              <h1 className="font-display text-base font-bold text-white">
+              <h1 className="font-display text-base sm:text-lg font-bold text-white truncate mt-0.5">
                 {invoice.client_company || invoice.client_name}
               </h1>
             </div>
           </div>
-          <span
-            className={
-              "px-3 py-1 rounded-full font-mono text-[10px] font-bold uppercase " +
-              (balanceDue <= 0
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                : amountPaid > 0
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                : "bg-[#c7cb2d]/20 text-[#c7cb2d] border border-[#c7cb2d]/30")
-            }
-          >
-            {balanceDue <= 0 ? "PAID IN FULL" : amountPaid > 0 ? "PARTIALLY PAID" : "UNPAID"}
-          </span>
+
+          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0">
+            <div className="text-left sm:text-right font-mono">
+              <p className="text-[9px] uppercase text-zinc-400">Balance Due</p>
+              <p className={"text-sm font-bold " + (balanceDue <= 0 ? "text-emerald-400" : "text-[#c7cb2d]")}>
+                ₦{balanceDue.toLocaleString()}
+              </p>
+            </div>
+            <span
+              className={
+                "px-3 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shrink-0 " +
+                (balanceDue <= 0
+                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                  : amountPaid > 0
+                  ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                  : "bg-[#c7cb2d]/15 text-[#c7cb2d] border border-[#c7cb2d]/30")
+              }
+            >
+              {balanceDue <= 0 ? "✓ PAID IN FULL" : amountPaid > 0 ? "PARTIALLY PAID" : "UNPAID"}
+            </span>
+          </div>
         </div>
 
         <div className="p-6 space-y-5">

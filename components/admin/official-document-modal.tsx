@@ -82,33 +82,48 @@ export default function OfficialDocumentModal({ type, data, onClose }: OfficialD
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm print:bg-white">
       <style dangerouslySetInnerHTML={{ __html: `
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-          #lavie-a4-sheet, #lavie-a4-sheet * {
-            visibility: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #lavie-a4-sheet {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 210mm !important;
-            height: 297mm !important;
-            max-width: 210mm !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
           @page {
             size: A4 portrait;
             margin: 0mm;
           }
-        }
-      `}} />
+          @media print {
+            html, body {
+              width: 210mm !important;
+              height: 296mm !important;
+              max-height: 296mm !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+            }
+            body * {
+              visibility: hidden !important;
+            }
+            #lavie-a4-sheet, #lavie-a4-sheet * {
+              visibility: visible !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            #lavie-a4-sheet {
+              position: fixed !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 210mm !important;
+              height: 296mm !important;
+              max-height: 296mm !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-shadow: none !important;
+              border: none !important;
+              overflow: hidden !important;
+              page-break-after: avoid !important;
+              page-break-inside: avoid !important;
+              break-after: avoid !important;
+              break-inside: avoid !important;
+            }
+          }
+        `}} />
 
       {/* Top Action Bar */}
       <div className="w-full bg-zinc-950 border-b border-zinc-800 px-4 sm:px-8 py-3 flex items-center justify-between shrink-0 print:hidden">
@@ -233,7 +248,7 @@ export default function OfficialDocumentModal({ type, data, onClose }: OfficialD
             </div>
 
             {/* PREMIUM ARCHITECTURAL DOCUMENT BODY */}
-            <div className="px-11 pt-8 pb-6 space-y-6">
+            <div className="px-10 pt-5 pb-4 space-y-4">
               {/* Top Bar: Document Type Tag + Reference Metadata */}
               <div className="flex items-start justify-between border-b border-zinc-200 pb-5">
                 <div className="space-y-1.5">
@@ -249,7 +264,13 @@ export default function OfficialDocumentModal({ type, data, onClose }: OfficialD
                         {data.client_company || data.client_name}
                       </h2>
                       <p className="text-[12px] font-medium text-zinc-600">
-                        Attention: <strong className="text-zinc-900">{data.through_person || data.client_name}</strong>
+                        Attention: <strong className="text-zinc-900">{
+                              (() => {
+                                const tp = String(data.through_person || "").trim();
+                                const looksLikeStaff = /\bLS-\d+\b/i.test(tp) || /ayegboyin|adegboye|omotayo/i.test(tp);
+                                return (!tp || looksLikeStaff) ? (data.client_name || data.client_company || "Client Representative") : tp;
+                              })()
+                            }</strong>
                       </p>
                     </div>
                   ) : (
@@ -424,7 +445,7 @@ export default function OfficialDocumentModal({ type, data, onClose }: OfficialD
                         )}
                       </div>
                       <p className="text-[10px] text-zinc-500 pt-2 border-t border-zinc-200 mt-2">
-                        Issued By: <strong className="text-zinc-800">{stripStaffId(data.created_by || data.prepared_by || "Lavie Studios Billing Desk")}</strong>
+                        Issued By: <strong className="text-zinc-800">{stripStaffId(data.created_by || data.prepared_by || (/\bLS-\d+\b/i.test(String(data.through_person || "")) ? data.through_person : "") || "Lavie Studios Billing Desk")}</strong>
                       </p>
                     </div>
                   </div>

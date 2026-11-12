@@ -1282,7 +1282,31 @@ export default function AdminOverviewAndOpenSpacePage() {
     const leavesInWindow = (execData.allLeaves || []).filter((l) => matchesDateFilter(getRowDate(l)));
     const inquiriesInWindow = (execData.inquiries || []).filter((inq) => matchesDateFilter(getRowDate(inq)));
 
-    // Calculate Inflow & Unpaid Pipeline across Projects, Invoices, and Receipts
+    // Calculate Inflow & Unpaid Pipeline across Projects, Invoices, and Standalone Receipts (Zero Omissions, Zero Double-Counting)
+    const countedInvoiceIds = new Set(invoicesInWindow.map((i) => String(i.id || "")).filter(Boolean));
+    const countedInvoiceNos = new Set(invoicesInWindow.map((i) => String(i.invoice_no || "").toUpperCase().trim()).filter(Boolean));
+    const countedProjectIds = new Set(projectsInWindow.map((p) => String(p.id || "")).filter(Boolean));
+    const countedProjectCodes = new Set(projectsInWindow.map((p) => String(p.project_code || "").toUpperCase().trim()).filter(Boolean));
+
+    // Identify receipts that are NOT already counted inside a cleared project or cleared invoice
+    const standaloneReceiptsInWindow = receiptsInWindow.filter((r) => {
+      const invId = String(r?.invoice_id || "");
+      const prjId = String(r?.project_id || "");
+      const refCode = String(r?.reference_code || "").toUpperCase().trim();
+      if (invId && countedInvoiceIds.has(invId)) {
+        const linkedInv = invoicesInWindow.find((i) => String(i.id) === invId);
+        if (linkedInv && getRowClearedAmount(linkedInv) > 0) return false;
+      }
+      if (prjId && countedProjectIds.has(prjId)) {
+        const linkedPrj = projectsInWindow.find((p) => String(p.id) === prjId);
+        if (linkedPrj && getRowClearedAmount(linkedPrj) > 0) return false;
+      }
+      if (refCode && (countedInvoiceNos.has(refCode) || countedProjectCodes.has(refCode))) {
+        return false;
+      }
+      return true;
+    });
+
     const projectClearedTotal = projectsInWindow.reduce((acc, p) => acc + getRowClearedAmount(p), 0);
     const projectUnpaidTotal = projectsInWindow.reduce(
       (acc, p) => acc + Math.max(0, getRowTotalValue(p) - getRowClearedAmount(p)),
@@ -1295,13 +1319,17 @@ export default function AdminOverviewAndOpenSpacePage() {
       0
     );
 
+    const standaloneReceiptClearedTotal = standaloneReceiptsInWindow.reduce(
+      (acc, r) => acc + Math.max(toNum(r?.amount_received), toNum(r?.amount_paid), toNum(r?.amount), toNum(r?.total)),
+      0
+    );
+
     const receiptClearedTotal = receiptsInWindow.reduce(
       (acc, r) => acc + Math.max(toNum(r?.amount_received), toNum(r?.amount_paid), toNum(r?.amount), toNum(r?.total)),
       0
     );
 
-    // Avoid double-counting if receipts mirror paid invoices, while capturing all distinct inflows
-    const combinedProjectAndInvoiceInflow = projectClearedTotal + invoiceClearedTotal;
+    const combinedProjectAndInvoiceInflow = projectClearedTotal + invoiceClearedTotal + standaloneReceiptClearedTotal;
     const totalInflow = Math.max(combinedProjectAndInvoiceInflow, receiptClearedTotal);
     const receivablesPipeline = projectUnpaidTotal + invoiceUnpaidTotal;
     const totalBilledVolume = totalInflow + receivablesPipeline;
@@ -1447,16 +1475,14 @@ export default function AdminOverviewAndOpenSpacePage() {
       }
     });
 
-    if (combinedProjectAndInvoiceInflow === 0 && receiptClearedTotal > 0) {
-      receiptsInWindow.forEach((rec) => {
-        const val = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount));
-        if (val > 0) {
-          const k = resolveBucketKey(getRowDate(rec));
-          const bucket = months.find((x) => x.key === k) || months[months.length - 1];
-          if (bucket) bucket.inflow += val;
-        }
-      });
-    }
+    standaloneReceiptsInWindow.forEach((rec) => {
+      const val = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount), toNum(rec?.total));
+      if (val > 0) {
+        const k = resolveBucketKey(getRowDate(rec));
+        const bucket = months.find((x) => x.key === k) || months[months.length - 1];
+        if (bucket) bucket.inflow += val;
+      }
+    });
 
     disbursedVouchersAndExpenses
       .forEach((v) => {
@@ -1520,12 +1546,12 @@ export default function AdminOverviewAndOpenSpacePage() {
       recordServiceRow(inv, clearedV, unpaidV);
     });
 
-    if (combinedProjectAndInvoiceInflow === 0 && receiptClearedTotal > 0) {
-      receiptsInWindow.forEach((rec) => {
-        const clearedV = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount));
-        recordServiceRow(rec, clearedV, 0);
-      });
-    }
+    standaloneReceiptsInWindow.forEach((rec) => {
+      const clearedV = Math.max(toNum(rec?.amount_received), toNum(rec?.amount_paid), toNum(rec?.amount), toNum(rec?.total));
+      const totalContractV = Math.max(clearedV, toNum(rec?.total_contract_amount));
+      const unpaidV = Math.max(0, totalContractV - clearedV);
+      recordServiceRow(rec, clearedV, unpaidV);
+    });
 
     const maxServiceVolume = Math.max(
       1,

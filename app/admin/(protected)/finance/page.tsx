@@ -2069,35 +2069,41 @@ export default function EnterpriseFinanceSuite() {
             <h2 className="font-display text-base font-bold">Issued Receipts</h2>
             <div className="space-y-2.5">
               {receipts.slice((receiptsPage - 1) * 6, receiptsPage * 6).map((rct) => (
-                <div key={rct.id} className="p-4 rounded-2xl bg-[var(--bg-main)] flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold">
-                        {rct.receipt_no}
-                      </span>
-                      <span className="text-xs font-bold">{rct.client_company || rct.client_name}</span>
-                    </div>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{rct.project_title}</p>
-                  </div>
+                <div key={rct.id} className="p-4 sm:p-5 rounded-2xl bg-[var(--bg-main)] border border-[var(--border-subtle)]/40 grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 items-center">
+                        <div className="sm:col-span-7 min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--bg-card)] text-[#c7cb2d] font-bold shrink-0">
+                              {rct.receipt_no}
+                            </span>
+                            <span className="text-xs sm:text-sm font-bold text-[var(--text-primary)] break-words">
+                              {rct.client_company || rct.client_name}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[var(--text-muted)] leading-relaxed break-words">
+                            {rct.project_title}
+                          </p>
+                        </div>
 
-                  <div className="flex items-center gap-4">
-                    <div className="text-right font-mono">
-                      <p className="text-sm font-bold text-[#c7cb2d]">Received: ₦{Number(rct.amount_received).toLocaleString()}</p>
-                      <p className="text-[10px] text-[var(--text-dim)]">
-                        Contract: ₦{Number(rct.total_contract_amount).toLocaleString()} • Balance Due: ₦{Number(rct.balance_remaining).toLocaleString()}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPrintDoc({ type: "receipt", data: rct })}
-                      className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] text-xs font-mono uppercase flex items-center gap-1.5 cursor-pointer hover:bg-[#c7cb2d] hover:text-black font-bold"
-                    >
-                      <Printer className="w-3.5 h-3.5" /> Official PDF
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {activeTab === "receipts" && (<AdminPagination currentPage={receiptsPage} totalItems={receipts.length} pageSize={6} onPageChange={setReceiptsPage} itemLabel="receipts" />)}
+                        <div className="sm:col-span-5 flex flex-wrap sm:justify-end items-center gap-3 shrink-0">
+                          <div className="sm:text-right font-mono space-y-0.5">
+                            <p className="text-sm font-bold text-[#c7cb2d]">
+                              Received: ₦{Number(rct.amount_received || 0).toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-[var(--text-dim)]">
+                              Contract: ₦{Number(rct.total_contract_amount || 0).toLocaleString()} • Balance Due: ₦{Number(rct.balance_remaining || 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPrintDoc({ type: "receipt", data: rct })}
+                            className="px-3 py-1.5 rounded-xl bg-[var(--bg-card)] text-xs font-mono uppercase flex items-center gap-1.5 cursor-pointer hover:bg-[#c7cb2d] hover:text-black font-bold shrink-0 transition"
+                          >
+                            <Printer className="w-3.5 h-3.5" /> Official PDF
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {activeTab === "receipts" && (<AdminPagination currentPage={receiptsPage} totalItems={receipts.length} pageSize={6} onPageChange={setReceiptsPage} itemLabel="receipts" />)}
             </div>
           </div>
         </div>

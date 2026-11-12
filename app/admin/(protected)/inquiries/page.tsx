@@ -369,7 +369,7 @@ export default function AdminInquiriesPage() {
           client_name: qt.client_name,
           client_company: qt.client_company || qt.client_name,
           client_email: qt.client_email || "",
-          through_person: actor,
+          through_person: qt.through_person || qt.client_name,
           project_title: qt.project_title,
           line_items: qt.line_items || [],
           subtotal: Number(qt.subtotal || qt.total_amount || 0),
