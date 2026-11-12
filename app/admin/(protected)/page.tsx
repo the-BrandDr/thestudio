@@ -1924,7 +1924,7 @@ export default function AdminOverviewAndOpenSpacePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   {
-                    label: "Revenue vs. Target Benchmark",
+                    label: "Target Achievement",
                     score: `${execAnalytics.targetAchievementPct}%`,
                     barPct: Math.min(100, execAnalytics.targetAchievementPct),
                     rating:
@@ -1935,7 +1935,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                         : "Below Target",
                   },
                   {
-                    label: "Net Operating Margin",
+                    label: "Operating Margin",
                     score: `${execAnalytics.operatingMarginPct}%`,
                     barPct: Math.max(0, Math.min(100, execAnalytics.operatingMarginPct)),
                     rating:
@@ -1946,7 +1946,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                         : "Tight Margin",
                   },
                   {
-                    label: "Invoice Collection Rate",
+                    label: "Collection Rate",
                     score: `${execAnalytics.collectionEfficiencyPct}%`,
                     barPct: Math.min(100, execAnalytics.collectionEfficiencyPct),
                     rating:
@@ -1955,7 +1955,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                         : "Follow-up Needed",
                   },
                   {
-                    label: "Approval Turnaround Speed",
+                    label: "Approval Speed",
                     score: `${execAnalytics.approvalTurnaroundPct}%`,
                     barPct: Math.min(100, execAnalytics.approvalTurnaroundPct),
                     rating:
@@ -1970,9 +1970,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                   >
                     <div className="flex items-center justify-between text-[10px] font-mono">
                       <span className="text-[var(--text-muted)] truncate">{metric.label}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-[#c7cb2d]/15 text-[#c7cb2d] font-bold">
-                        {metric.rating}
-                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#c7cb2d]/15 text-[#c7cb2d] text-[9px] font-bold whitespace-nowrap shrink-0">{metric.rating}</span>
                     </div>
                     <div className="flex items-baseline justify-between">
                       <span className="font-display text-lg font-bold">{metric.score}</span>
