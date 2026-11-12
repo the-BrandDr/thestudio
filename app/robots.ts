@@ -13,6 +13,8 @@ export default function robots(): MetadataRoute.Robots {
           "/pricing",
           "/about",
           "/contact",
+          "/favicon.ico",
+          "/site.webmanifest",
           "/icon",
           "/apple-icon",
           "/opengraph-image",
