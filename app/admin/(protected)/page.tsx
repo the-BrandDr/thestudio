@@ -2016,8 +2016,8 @@ export default function AdminOverviewAndOpenSpacePage() {
                   </div>
 
                   <div className="space-y-2">
-                            {/* Compact Responsive Plot Area with 35% Headroom for Higher Amounts */}
-                            <div className="relative h-32 sm:h-36 w-full pr-11 sm:pr-13 pl-1 mt-2">
+                            {/* Triple-Curve Spline Trajectory (Revenue, Expenses & Net Balance Slopes) */}
+                            <div className="relative h-36 sm:h-40 w-full pr-12 sm:pr-14 pl-2 mt-2 select-none">
                               {/* Horizontal Scale Grid Lines (100%, 66%, 33%, 0%) */}
                               {[1, 0.66, 0.33, 0].map((ratio, idx) => {
                                 const topPct = Math.round((1 - ratio) * 100);
@@ -2034,108 +2034,151 @@ export default function AdminOverviewAndOpenSpacePage() {
                                     style={{ top: `${topPct}%` }}
                                     className="absolute inset-x-0 border-t border-dashed border-[var(--border-subtle)]/35 flex items-center justify-end pointer-events-none"
                                   >
-                                    <span className="text-[8.5px] font-mono text-[var(--text-dim)] -mt-2 bg-[var(--bg-main)] pl-1">
+                                    <span className="text-[8.5px] font-mono text-[var(--text-dim)] -mt-2 bg-[var(--bg-main)] pl-1.5">
                                       {formattedAxis}
                                     </span>
                                   </div>
                                 );
                               })}
 
-                              {/* Compact Responsive Bars */}
-                              <div className="absolute inset-y-0 left-1 right-11 sm:right-13 flex items-end justify-between gap-1 sm:gap-1.5 z-10">
-                                {execAnalytics.months.map((m) => {
-                                  const inPct = m.inflow > 0 ? Math.max(4, Math.min(92, (m.inflow / execAnalytics.maxMonthVal) * 100)) : 0;
-                                  const outPct = m.outflow > 0 ? Math.max(4, Math.min(92, (m.outflow / execAnalytics.maxMonthVal) * 100)) : 0;
-                                  const peakVal = Math.max(m.inflow, m.outflow);
-                                  const hasActivity = peakVal > 0;
-                                  const pillLabel =
-                                    peakVal >= 1000000
-                                      ? `₦${(peakVal / 1000000).toFixed(2)}M`
-                                      : `₦${Math.round(peakVal / 1000).toLocaleString()}k`;
-                                  return (
-                                    <div
-                                      key={m.key}
-                                      className="relative flex-1 h-full flex items-end justify-center gap-0.5 sm:gap-1 group min-w-0"
-                                    >
-                                      {/* Hover Tooltip */}
-                                      <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute -top-11 left-1/2 -translate-x-1/2 z-30 bg-[#141619] border border-white/15 rounded-xl px-2 py-1 shadow-2xl whitespace-nowrap text-[8.5px] font-mono">
-                                        <p className="font-bold text-white">{m.label}</p>
-                                        <p className="text-emerald-400">In: ₦{m.inflow.toLocaleString()}</p>
-                                        <p className="text-amber-400">Out: ₦{m.outflow.toLocaleString()}</p>
-                                        <p className={m.net >= 0 ? "text-[#c7cb2d] font-bold" : "text-rose-400 font-bold"}>
-                                          Net: {m.net < 0 ? "-" : ""}₦{Math.abs(m.net).toLocaleString()}
-                                        </p>
-                                      </div>
-
-                                      {/* Compact Value Tag Above Active Month */}
-                                      {hasActivity && (
-                                        <span
-                                          style={{ bottom: `${Math.min(86, Math.max(inPct, outPct) + 3)}%` }}
-                                          className="absolute text-[8px] font-mono font-bold text-zinc-200 bg-black/75 border border-white/10 px-1 py-0.2 rounded pointer-events-none whitespace-nowrap"
-                                        >
-                                          {pillLabel}
-                                        </span>
-                                      )}
-
-                                      {/* Inflow Bar */}
-                                      <div
-                                        style={{
-                                          height: `${inPct}%`,
-                                          backgroundColor: "#10b981",
-                                          opacity: m.inflow > 0 ? 1 : 0,
-                                        }}
-                                        className="w-2 sm:w-2.5 md:w-3 rounded-t-sm group-hover:brightness-110 transition-all"
-                                      />
-
-                                      {/* Outflow Bar */}
-                                      <div
-                                        style={{
-                                          height: `${outPct}%`,
-                                          backgroundColor: "#f59e0b",
-                                          opacity: m.outflow > 0 ? 1 : 0,
-                                        }}
-                                        className="w-2 sm:w-2.5 md:w-3 rounded-t-sm group-hover:brightness-110 transition-all"
-                                      />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-
-                              {/* Net Margin SVG Curve */}
+                              {/* SVG Triple-Curve Canvas (Revenue, Expenses, Net Balance) */}
                               {execAnalytics.months.length > 1 && (
                                 <svg
-                                  viewBox="0 0 600 130"
-                                  className="absolute inset-y-0 left-1 right-11 sm:right-13 w-[calc(100%-3rem)] h-full overflow-visible pointer-events-none z-20"
+                                  viewBox="0 0 600 140"
+                                  className="absolute inset-y-0 left-2 right-12 sm:right-14 w-[calc(100%-3.5rem)] h-full overflow-visible pointer-events-none z-10"
                                   preserveAspectRatio="none"
                                 >
+                                  <defs>
+                                    <linearGradient id="revSlopeGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
+                                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                                    </linearGradient>
+                                    <linearGradient id="expSlopeGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.22" />
+                                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                                    </linearGradient>
+                                    <linearGradient id="netSlopeGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#facc15" stopOpacity="0.16" />
+                                      <stop offset="100%" stopColor="#facc15" stopOpacity="0.0" />
+                                    </linearGradient>
+                                  </defs>
                                   {(() => {
+                                    const H = 140;
                                     const colCount = execAnalytics.months.length;
-                                    const pts = execAnalytics.months.map((m, idx) => {
-                                      const x = ((idx + 0.5) / colCount) * 600;
-                                      const clampedNet = Math.max(0, m.net);
-                                      const ratio = Math.min(0.92, clampedNet / execAnalytics.maxMonthVal);
-                                      const y = Math.round(130 - ratio * 130);
-                                      return { x, y, net: m.net, hasData: m.inflow > 0 || m.outflow > 0 };
-                                    });
-                                    const pathD = pts.reduce((acc, pt, i, a) => {
-                                      if (i === 0) return `M ${pt.x},${pt.y}`;
-                                      const prev = a[i - 1];
-                                      const cx = (prev.x + pt.x) / 2;
-                                      return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
-                                    }, "");
+                                    const maxV = Math.max(1, execAnalytics.maxMonthVal);
+
+                                    const toY = (val: number) => {
+                                      const clamped = Math.max(0, val);
+                                      const r = Math.min(0.94, clamped / maxV);
+                                      return Math.round(H - r * H);
+                                    };
+
+                                    const buildSpline = (pts: Array<{ x: number; y: number }>) =>
+                                      pts.reduce((acc, pt, i, a) => {
+                                        if (i === 0) return `M ${pt.x},${pt.y}`;
+                                        const prev = a[i - 1];
+                                        const cx = (prev.x + pt.x) / 2;
+                                        return `${acc} C ${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
+                                      }, "");
+
+                                    const buildArea = (pts: Array<{ x: number; y: number }>, linePath: string) => {
+                                      if (pts.length === 0) return "";
+                                      const first = pts[0];
+                                      const last = pts[pts.length - 1];
+                                      return `${linePath} L ${last.x},${H} L ${first.x},${H} Z`;
+                                    };
+
+                                    const revPts = execAnalytics.months.map((m, idx) => ({
+                                      x: ((idx + 0.5) / colCount) * 600,
+                                      y: toY(m.inflow),
+                                      val: m.inflow,
+                                      active: m.inflow > 0,
+                                    }));
+
+                                    const expPts = execAnalytics.months.map((m, idx) => ({
+                                      x: ((idx + 0.5) / colCount) * 600,
+                                      y: toY(m.outflow),
+                                      val: m.outflow,
+                                      active: m.outflow > 0,
+                                    }));
+
+                                    const netPts = execAnalytics.months.map((m, idx) => ({
+                                      x: ((idx + 0.5) / colCount) * 600,
+                                      y: toY(Math.max(0, m.net)),
+                                      val: m.net,
+                                      active: m.inflow > 0 || m.outflow > 0,
+                                    }));
+
+                                    const revPath = buildSpline(revPts);
+                                    const expPath = buildSpline(expPts);
+                                    const netPath = buildSpline(netPts);
+
                                     return (
                                       <>
+                                        {/* Subtle Gradient Area Fills Under Slopes */}
+                                        <path d={buildArea(revPts, revPath)} fill="url(#revSlopeGrad)" />
+                                        <path d={buildArea(expPts, expPath)} fill="url(#expSlopeGrad)" />
+                                        <path d={buildArea(netPts, netPath)} fill="url(#netSlopeGrad)" />
+
+                                        {/* 1. Revenue / Inflow Curve (Emerald) */}
                                         <path
-                                          d={pathD}
+                                          d={revPath}
+                                          fill="none"
+                                          stroke="#10b981"
+                                          strokeWidth="2.6"
+                                          strokeLinecap="round"
+                                        />
+
+                                        {/* 2. Expenses / Outflow Curve (Amber-Orange) */}
+                                        <path
+                                          d={expPath}
+                                          fill="none"
+                                          stroke="#f59e0b"
+                                          strokeWidth="2.4"
+                                          strokeLinecap="round"
+                                        />
+
+                                        {/* 3. Net Balance Curve (Gold) */}
+                                        <path
+                                          d={netPath}
                                           fill="none"
                                           stroke="#facc15"
                                           strokeWidth="2.2"
+                                          strokeDasharray="5 3"
                                           strokeLinecap="round"
                                         />
-                                        {pts.map((pt, i) =>
-                                          pt.hasData ? (
+
+                                        {/* Data Nodes on Active Months */}
+                                        {revPts.map((pt, i) =>
+                                          pt.active ? (
                                             <circle
-                                              key={i}
+                                              key={`rev-${i}`}
+                                              cx={pt.x}
+                                              cy={pt.y}
+                                              r="4"
+                                              fill="#10b981"
+                                              stroke="#090a0c"
+                                              strokeWidth="1.8"
+                                            />
+                                          ) : null
+                                        )}
+                                        {expPts.map((pt, i) =>
+                                          pt.active ? (
+                                            <circle
+                                              key={`exp-${i}`}
+                                              cx={pt.x}
+                                              cy={pt.y}
+                                              r="4"
+                                              fill="#f59e0b"
+                                              stroke="#090a0c"
+                                              strokeWidth="1.8"
+                                            />
+                                          ) : null
+                                        )}
+                                        {netPts.map((pt, i) =>
+                                          pt.active ? (
+                                            <circle
+                                              key={`net-${i}`}
                                               cx={pt.x}
                                               cy={pt.y}
                                               r="3.8"
@@ -2150,10 +2193,85 @@ export default function AdminOverviewAndOpenSpacePage() {
                                   })()}
                                 </svg>
                               )}
+
+                              {/* Interactive Hover Columns & Direct Curve Value Pills */}
+                              <div className="absolute inset-y-0 left-2 right-12 sm:right-14 flex items-end justify-between z-20">
+                                {execAnalytics.months.map((m, idx) => {
+                                  const maxV = Math.max(1, execAnalytics.maxMonthVal);
+                                  const inPct = Math.min(94, (m.inflow / maxV) * 100);
+                                  const outPct = Math.min(94, (m.outflow / maxV) * 100);
+                                  const netPct = Math.min(94, (Math.max(0, m.net) / maxV) * 100);
+                                  const hasActivity = m.inflow > 0 || m.outflow > 0;
+                                  const fmtCompact = (v: number) =>
+                                    Math.abs(v) >= 1000000
+                                      ? `₦${(v / 1000000).toFixed(2)}M`
+                                      : `₦${Math.round(v / 1000).toLocaleString()}k`;
+
+                                  // Keep tooltip inside card bounds on rightmost columns (Oct/Nov/Dec)
+                                  const tooltipAlign =
+                                    idx >= execAnalytics.months.length - 2
+                                      ? "right-0"
+                                      : idx <= 1
+                                      ? "left-0"
+                                      : "left-1/2 -translate-x-1/2";
+
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="relative flex-1 h-full flex items-end justify-center group min-w-0 cursor-crosshair"
+                                    >
+                                      {/* Subtle Vertical Guide Line on Hover */}
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity h-full w-px bg-white/15 pointer-events-none" />
+
+                                      {/* Hover Breakdown Card (Stays cleanly inside chart bounds) */}
+                                      <div
+                                        className={`opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute top-1 ${tooltipAlign} z-30 bg-[#141619]/95 border border-white/15 rounded-xl px-2.5 py-1.5 shadow-2xl whitespace-nowrap text-[8.5px] font-mono backdrop-blur-md`}
+                                      >
+                                        <p className="font-bold text-white border-b border-white/10 pb-0.5 mb-0.5">{m.label}</p>
+                                        <p className="text-emerald-400">Rev: ₦{m.inflow.toLocaleString()}</p>
+                                        <p className="text-amber-400">Exp: ₦{m.outflow.toLocaleString()}</p>
+                                        <p className={m.net >= 0 ? "text-yellow-300 font-bold" : "text-rose-400 font-bold"}>
+                                          Net: {m.net < 0 ? "-" : ""}₦{Math.abs(m.net).toLocaleString()}
+                                        </p>
+                                      </div>
+
+                                      {/* Direct Value Pills on Active Slope Peaks */}
+                                      {m.inflow > 0 && (
+                                        <span
+                                          style={{ bottom: `${Math.min(86, inPct + 4)}%` }}
+                                          className="absolute text-[8px] font-mono font-bold text-emerald-300 bg-[#0c1410]/90 border border-emerald-500/30 px-1 py-0.2 rounded pointer-events-none whitespace-nowrap shadow"
+                                        >
+                                          {fmtCompact(m.inflow)}
+                                        </span>
+                                      )}
+                                      {m.outflow > 0 && (
+                                        <span
+                                          style={{
+                                            bottom: `${Math.max(4, Math.abs(inPct - outPct) < 12 ? outPct - 12 : outPct + 4)}%`,
+                                          }}
+                                          className="absolute text-[8px] font-mono font-bold text-amber-300 bg-[#17120a]/90 border border-amber-500/30 px-1 py-0.2 rounded pointer-events-none whitespace-nowrap shadow"
+                                        >
+                                          {fmtCompact(m.outflow)}
+                                        </span>
+                                      )}
+                                      {hasActivity && m.inflow > 0 && m.outflow > 0 && (
+                                        <span
+                                          style={{
+                                            bottom: `${Math.max(4, Math.min(82, netPct - 11))}%`,
+                                          }}
+                                          className="absolute text-[7.5px] font-mono font-bold text-yellow-300 bg-black/85 border border-yellow-400/30 px-1 py-0.2 rounded pointer-events-none whitespace-nowrap"
+                                        >
+                                          Net {fmtCompact(m.net)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
 
                             {/* Month X-Axis Labels */}
-                            <div className="flex items-center justify-between pr-11 sm:pr-13 pl-1 pt-1">
+                            <div className="flex items-center justify-between pr-12 sm:pr-14 pl-2 pt-1">
                               {execAnalytics.months.map((m) => (
                                 <div key={m.key} className="flex-1 text-center min-w-0">
                                   <span className="text-[8.5px] sm:text-[9px] font-mono text-[var(--text-muted)] truncate block">
