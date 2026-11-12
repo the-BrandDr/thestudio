@@ -3,7 +3,7 @@
 import { CommercialActionModals } from "@/components/admin/commercial-action-modals";
 import { AdminPagination } from "@/components/admin/admin-pagination";
 import OfficialDocumentModal from "@/components/admin/official-document-modal";
-import { getStaffApprovalLevel } from "@/utils/resolve-current-staff";
+import { getStaffApprovalLevel, resolveAuthenticatedStaff } from "@/utils/resolve-current-staff";
 
 import * as React from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -119,12 +119,16 @@ export default function AdminInquiriesPage() {
     if (inqData) setInquiries(inqData);
     if (staffData) {
       setStaffList(staffData.filter((s) => s.status === "active"));
-      const email = user?.email?.toLowerCase();
-      const me =
-        staffData.find(
-          (s) => s.id === user?.id || (email && s.email?.toLowerCase() === email)
-        ) || null;
-      setCurrentUser(me);
+      const resolved = resolveAuthenticatedStaff(user, staffData) || staffData[0] || {
+        id: user?.id || null,
+        staff_id: "LS-01",
+        first_name: user?.email ? user.email.split("@")[0] : "Studio",
+        last_name: "Desk",
+        email: user?.email || "",
+        department: "Operations",
+        role: "staff",
+      };
+      setCurrentUser(resolved);
     }
     if (qtData) setQuotes(qtData);
     if (invData) setInvoices(invData);
