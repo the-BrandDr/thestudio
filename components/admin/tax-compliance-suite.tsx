@@ -202,14 +202,25 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
     return p === selectedPeriod && (st === "paid" || st === "completed" || Number(i.amount_paid || 0) > 0);
   });
 
-  const paidRevenueBase = paidMonthInvoices.reduce(
-    (a, i) => a + Number(i.subtotal || i.amount_paid || i.total_amount || 0),
-    0
+  // Only include paid invoices that actually have VAT attached (vat_amount > 0)
+  const vatBearingPaidInvoices = paidMonthInvoices.filter(
+    (i) => Number(i.vat_amount || 0) > 0
   );
-  const monthlyPaidVAT = paidMonthInvoices.reduce(
-    (a, i) => a + Number(i.vat_amount || Math.round(Number(i.subtotal || 0) * 0.075)),
-    0
-  );
+
+  const paidRevenueBase = vatBearingPaidInvoices.reduce((a, i) => {
+    const total = Number(i.total_amount || 0);
+    const paid = Number(i.amount_paid || (String(i.status || "").toLowerCase() === "paid" ? total : 0));
+    const ratio = total > 0 ? Math.min(1, paid / total) : 1;
+    const sub = Number(i.subtotal || Math.max(0, total - Number(i.vat_amount || 0)));
+    return a + Math.round(sub * ratio);
+  }, 0);
+
+  const monthlyPaidVAT = vatBearingPaidInvoices.reduce((a, i) => {
+    const total = Number(i.total_amount || 0);
+    const paid = Number(i.amount_paid || (String(i.status || "").toLowerCase() === "paid" ? total : 0));
+    const ratio = total > 0 ? Math.min(1, paid / total) : 1;
+    return a + Math.round(Number(i.vat_amount || 0) * ratio);
+  }, 0);
 
   // 3. ANNUAL CIT (Strictly on Paid Revenue minus Disbursed Payroll & Approved Vouchers)
   const yearStr = selectedPeriod.slice(0, 4);
@@ -399,7 +410,7 @@ export default function TaxComplianceSuite({ execViewOnly = false }: { execViewO
             </span>
             <p className="font-mono text-2xl font-bold text-[#c7cb2d]">₦{monthlyPaidVAT.toLocaleString()}</p>
             <p className="text-xs text-[var(--text-muted)]">
-              Paid Revenue Base: ₦{paidRevenueBase.toLocaleString()} ({paidMonthInvoices.length} paid invoices)
+              Taxable VAT Base: ₦{paidRevenueBase.toLocaleString()} ({vatBearingPaidInvoices.length} VAT invoice{vatBearingPaidInvoices.length === 1 ? "" : "s"})
             </p>
           </div>
           {!execViewOnly && (

@@ -1507,7 +1507,25 @@ export default function AdminOverviewAndOpenSpacePage() {
       m.net = m.inflow - m.outflow;
     });
 
-    const maxMonthVal = Math.max(1, ...months.map((m) => Math.max(m.inflow, m.outflow, Math.abs(m.net))));
+    const rawPeakMonthVal = Math.max(1, ...months.map((m) => Math.max(m.inflow, m.outflow, Math.abs(m.net))));
+    const computeNiceCeiling = (peak: number) => {
+      if (peak <= 1) return 100000;
+      const withHeadroom = peak * 1.35; // 35% visual headroom above highest bar
+      const magnitude = Math.pow(10, Math.floor(Math.log10(withHeadroom)));
+      const normalized = withHeadroom / magnitude; // 1.0 to 9.99
+      let niceStep = 10;
+      if (normalized <= 1.2) niceStep = 1.2;
+      else if (normalized <= 1.5) niceStep = 1.5;
+      else if (normalized <= 2) niceStep = 2;
+      else if (normalized <= 2.5) niceStep = 2.5;
+      else if (normalized <= 3) niceStep = 3;
+      else if (normalized <= 4) niceStep = 4;
+      else if (normalized <= 5) niceStep = 5;
+      else if (normalized <= 6) niceStep = 6;
+      else if (normalized <= 8) niceStep = 8;
+      return Math.ceil(niceStep * magnitude);
+    };
+    const maxMonthVal = computeNiceCeiling(rawPeakMonthVal);
 
     // Income by Service Stream Curve Data (Sorted automatically by highest income)
     const serviceStatsMap: Record<
@@ -1998,39 +2016,50 @@ export default function AdminOverviewAndOpenSpacePage() {
                   </div>
 
                   <div className="space-y-2">
-                            {/* Unified 180px Plot Area: Grid, Bars & SVG Curve share exact 0-100% Y coordinates */}
-                            <div className="relative h-48 w-full pr-12 pl-2">
+                            {/* Compact Responsive Plot Area with 35% Headroom for Higher Amounts */}
+                            <div className="relative h-32 sm:h-36 w-full pr-11 sm:pr-13 pl-1 mt-2">
                               {/* Horizontal Scale Grid Lines (100%, 66%, 33%, 0%) */}
                               {[1, 0.66, 0.33, 0].map((ratio, idx) => {
                                 const topPct = Math.round((1 - ratio) * 100);
-                                const labelVal = Math.round((execAnalytics.maxMonthVal * ratio) / 1000);
+                                const rawVal = execAnalytics.maxMonthVal * ratio;
+                                const formattedAxis =
+                                  rawVal === 0
+                                    ? "₦0"
+                                    : rawVal >= 1000000
+                                    ? `₦${(rawVal / 1000000).toFixed(rawVal % 1000000 === 0 ? 0 : 1)}M`
+                                    : `₦${Math.round(rawVal / 1000).toLocaleString()}k`;
                                 return (
                                   <div
                                     key={idx}
                                     style={{ top: `${topPct}%` }}
                                     className="absolute inset-x-0 border-t border-dashed border-[var(--border-subtle)]/35 flex items-center justify-end pointer-events-none"
                                   >
-                                    <span className="text-[9px] font-mono text-[var(--text-dim)] -mt-2.5 bg-[var(--bg-main)] pl-1.5">
-                                      ₦{labelVal.toLocaleString()}k
+                                    <span className="text-[8.5px] font-mono text-[var(--text-dim)] -mt-2 bg-[var(--bg-main)] pl-1">
+                                      {formattedAxis}
                                     </span>
                                   </div>
                                 );
                               })}
 
-                              {/* Aligned Bars (Exact % Height of Shared Plot Area) */}
-                              <div className="absolute inset-y-0 left-2 right-12 flex items-end justify-between gap-1.5 z-10">
+                              {/* Compact Responsive Bars */}
+                              <div className="absolute inset-y-0 left-1 right-11 sm:right-13 flex items-end justify-between gap-1 sm:gap-1.5 z-10">
                                 {execAnalytics.months.map((m) => {
-                                  const inPct = m.inflow > 0 ? Math.max(3, Math.min(100, (m.inflow / execAnalytics.maxMonthVal) * 100)) : 0;
-                                  const outPct = m.outflow > 0 ? Math.max(3, Math.min(100, (m.outflow / execAnalytics.maxMonthVal) * 100)) : 0;
-                                  const hasActivity = m.inflow > 0 || m.outflow > 0;
+                                  const inPct = m.inflow > 0 ? Math.max(4, Math.min(92, (m.inflow / execAnalytics.maxMonthVal) * 100)) : 0;
+                                  const outPct = m.outflow > 0 ? Math.max(4, Math.min(92, (m.outflow / execAnalytics.maxMonthVal) * 100)) : 0;
+                                  const peakVal = Math.max(m.inflow, m.outflow);
+                                  const hasActivity = peakVal > 0;
+                                  const pillLabel =
+                                    peakVal >= 1000000
+                                      ? `₦${(peakVal / 1000000).toFixed(2)}M`
+                                      : `₦${Math.round(peakVal / 1000).toLocaleString()}k`;
                                   return (
                                     <div
                                       key={m.key}
-                                      className="relative flex-1 h-full flex items-end justify-center gap-1 group min-w-0"
+                                      className="relative flex-1 h-full flex items-end justify-center gap-0.5 sm:gap-1 group min-w-0"
                                     >
-                                      {/* Hover Tooltip with Exact Breakdown */}
-                                      <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute -top-12 left-1/2 -translate-x-1/2 z-30 bg-[#141619] border border-white/15 rounded-xl px-2.5 py-1.5 shadow-2xl whitespace-nowrap text-[9px] font-mono">
-                                        <p className="font-bold text-white mb-0.5">{m.label}</p>
+                                      {/* Hover Tooltip */}
+                                      <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute -top-11 left-1/2 -translate-x-1/2 z-30 bg-[#141619] border border-white/15 rounded-xl px-2 py-1 shadow-2xl whitespace-nowrap text-[8.5px] font-mono">
+                                        <p className="font-bold text-white">{m.label}</p>
                                         <p className="text-emerald-400">In: ₦{m.inflow.toLocaleString()}</p>
                                         <p className="text-amber-400">Out: ₦{m.outflow.toLocaleString()}</p>
                                         <p className={m.net >= 0 ? "text-[#c7cb2d] font-bold" : "text-rose-400 font-bold"}>
@@ -2038,13 +2067,13 @@ export default function AdminOverviewAndOpenSpacePage() {
                                         </p>
                                       </div>
 
-                                      {/* Direct Value Pill Above Active Month */}
+                                      {/* Compact Value Tag Above Active Month */}
                                       {hasActivity && (
                                         <span
-                                          style={{ bottom: `${Math.min(92, Math.max(inPct, outPct) + 3)}%` }}
-                                          className="absolute text-[8.5px] font-mono font-bold text-zinc-200 bg-black/70 px-1 py-0.5 rounded pointer-events-none whitespace-nowrap"
+                                          style={{ bottom: `${Math.min(86, Math.max(inPct, outPct) + 3)}%` }}
+                                          className="absolute text-[8px] font-mono font-bold text-zinc-200 bg-black/75 border border-white/10 px-1 py-0.2 rounded pointer-events-none whitespace-nowrap"
                                         >
-                                          ₦{Math.round(Math.max(m.inflow, m.outflow) / 1000).toLocaleString()}k
+                                          {pillLabel}
                                         </span>
                                       )}
 
@@ -2053,9 +2082,9 @@ export default function AdminOverviewAndOpenSpacePage() {
                                         style={{
                                           height: `${inPct}%`,
                                           backgroundColor: "#10b981",
-                                          opacity: m.inflow > 0 ? 1 : 0.15,
+                                          opacity: m.inflow > 0 ? 1 : 0,
                                         }}
-                                        className="w-2.5 sm:w-3.5 rounded-t-md group-hover:brightness-110 transition-all"
+                                        className="w-2 sm:w-2.5 md:w-3 rounded-t-sm group-hover:brightness-110 transition-all"
                                       />
 
                                       {/* Outflow Bar */}
@@ -2063,20 +2092,20 @@ export default function AdminOverviewAndOpenSpacePage() {
                                         style={{
                                           height: `${outPct}%`,
                                           backgroundColor: "#f59e0b",
-                                          opacity: m.outflow > 0 ? 1 : 0.15,
+                                          opacity: m.outflow > 0 ? 1 : 0,
                                         }}
-                                        className="w-2.5 sm:w-3.5 rounded-t-md group-hover:brightness-110 transition-all"
+                                        className="w-2 sm:w-2.5 md:w-3 rounded-t-sm group-hover:brightness-110 transition-all"
                                       />
                                     </div>
                                   );
                                 })}
                               </div>
 
-                              {/* Net Margin SVG Curve (Locked to Exact Same 0-100% Plot Box) */}
+                              {/* Net Margin SVG Curve */}
                               {execAnalytics.months.length > 1 && (
                                 <svg
-                                  viewBox="0 0 600 160"
-                                  className="absolute inset-y-0 left-2 right-12 w-[calc(100%-3.5rem)] h-full overflow-visible pointer-events-none z-20"
+                                  viewBox="0 0 600 130"
+                                  className="absolute inset-y-0 left-1 right-11 sm:right-13 w-[calc(100%-3rem)] h-full overflow-visible pointer-events-none z-20"
                                   preserveAspectRatio="none"
                                 >
                                   {(() => {
@@ -2084,8 +2113,8 @@ export default function AdminOverviewAndOpenSpacePage() {
                                     const pts = execAnalytics.months.map((m, idx) => {
                                       const x = ((idx + 0.5) / colCount) * 600;
                                       const clampedNet = Math.max(0, m.net);
-                                      const ratio = Math.min(1, clampedNet / execAnalytics.maxMonthVal);
-                                      const y = Math.round(160 - ratio * 160);
+                                      const ratio = Math.min(0.92, clampedNet / execAnalytics.maxMonthVal);
+                                      const y = Math.round(130 - ratio * 130);
                                       return { x, y, net: m.net, hasData: m.inflow > 0 || m.outflow > 0 };
                                     });
                                     const pathD = pts.reduce((acc, pt, i, a) => {
@@ -2100,7 +2129,7 @@ export default function AdminOverviewAndOpenSpacePage() {
                                           d={pathD}
                                           fill="none"
                                           stroke="#facc15"
-                                          strokeWidth="2.5"
+                                          strokeWidth="2.2"
                                           strokeLinecap="round"
                                         />
                                         {pts.map((pt, i) =>
@@ -2109,10 +2138,10 @@ export default function AdminOverviewAndOpenSpacePage() {
                                               key={i}
                                               cx={pt.x}
                                               cy={pt.y}
-                                              r="4.5"
+                                              r="3.8"
                                               fill="#facc15"
                                               stroke="#090a0c"
-                                              strokeWidth="2"
+                                              strokeWidth="1.8"
                                             />
                                           ) : null
                                         )}
@@ -2124,10 +2153,10 @@ export default function AdminOverviewAndOpenSpacePage() {
                             </div>
 
                             {/* Month X-Axis Labels */}
-                            <div className="flex items-center justify-between pr-12 pl-2 pt-1">
+                            <div className="flex items-center justify-between pr-11 sm:pr-13 pl-1 pt-1">
                               {execAnalytics.months.map((m) => (
                                 <div key={m.key} className="flex-1 text-center min-w-0">
-                                  <span className="text-[9px] font-mono text-[var(--text-muted)] truncate block">
+                                  <span className="text-[8.5px] sm:text-[9px] font-mono text-[var(--text-muted)] truncate block">
                                     {m.label}
                                   </span>
                                 </div>
